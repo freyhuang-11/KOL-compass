@@ -43,6 +43,9 @@ const seed = {
     kolRegion: "全部",
     kolFollowers: "全部",
     kolReplyRate: "全部",
+    outreachSearch: "",
+    outreachStatus: "全部",
+    outreachChannel: "全部",
     coopStatus: "全部",
     coopTag: "全部",
   },
@@ -476,9 +479,31 @@ function renderKolPool() {
 }
 
 function renderOutreach() {
+  const channels = Array.from(new Set(state.outreach.map((o) => o.channel).filter(Boolean)));
+  const statuses = Array.from(new Set(state.outreach.map((o) => o.status).filter(Boolean)));
+  const rows = state.outreach.filter((o) => {
+    const c = creator(o.creatorId);
+    const p = product(o.productId);
+    const kw = state.filters.outreachSearch.trim().toLowerCase();
+    const kwOk = !kw || [c?.username, c?.nickname, p?.name, o.lastMessage].join(" ").toLowerCase().includes(kw);
+    const statusOk = state.filters.outreachStatus === "全部" || o.status === state.filters.outreachStatus;
+    const channelOk = state.filters.outreachChannel === "全部" || o.channel === state.filters.outreachChannel;
+    return kwOk && statusOk && channelOk;
+  });
   return `
     ${pageHead("建联记录", "统一查看 TikTok 私信、Email、WhatsApp 的沟通状态和待处理消息。")}
-    ${table(["达人", "产品", "渠道", "状态", "最后消息", "更新时间", "操作"], state.outreach.map((o) => [
+    <div class="toolbar">
+      <div class="filters">
+        <input class="input" placeholder="搜索达人、产品、消息..." value="${escapeHtml(state.filters.outreachSearch)}" oninput="setFilter('outreachSearch', this.value)" />
+        <select class="select" onchange="setFilter('outreachStatus', this.value)">
+          ${["全部", ...statuses].map((x) => `<option ${state.filters.outreachStatus === x ? "selected" : ""}>${escapeHtml(x)}</option>`).join("")}
+        </select>
+        <select class="select" onchange="setFilter('outreachChannel', this.value)">
+          ${["全部", ...channels].map((x) => `<option ${state.filters.outreachChannel === x ? "selected" : ""}>${escapeHtml(x)}</option>`).join("")}
+        </select>
+      </div>
+    </div>
+    ${table(["达人", "产品", "渠道", "状态", "最后消息", "更新时间", "操作"], rows.map((o) => [
       personCell(creator(o.creatorId)),
       product(o.productId)?.name || "-",
       o.channel,
