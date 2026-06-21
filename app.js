@@ -31,6 +31,7 @@ const outputStatuses = ["全部", "待产出", "已发视频", "已直播", "视
 const seed = {
   page: "dashboard",
   selectedCreatorId: null,
+  bulkCreatorIds: [],
   filters: {
     kolSearch: "",
     kolType: "全部",
@@ -136,7 +137,7 @@ const seed = {
   ],
 };
 
-let state = loadState();
+let state = normalizeState(loadState());
 applyRoute();
 
 function loadState() {
@@ -147,6 +148,14 @@ function loadState() {
     console.warn(error);
   }
   return structuredClone(seed);
+}
+
+function normalizeState(next) {
+  const merged = { ...structuredClone(seed), ...next };
+  merged.filters = { ...seed.filters, ...(next.filters || {}) };
+  merged.settings = { ...seed.settings, ...(next.settings || {}) };
+  if (!Array.isArray(merged.bulkCreatorIds)) merged.bulkCreatorIds = [];
+  return merged;
 }
 
 function saveState() {
@@ -380,11 +389,13 @@ function renderKolPool() {
         </select>
       </div>
       <div class="filters">
+        <button class="btn primary" onclick="openOutreachModal()">一键建联(${state.bulkCreatorIds.length})</button>
         <button class="btn" onclick="importCreatorsCsv()">导入KOL CSV</button>
         <button class="btn" onclick="syncCreators()">同步达人数据</button>
       </div>
     </div>
-    ${table(["达人", "类型", "类目/地区", "粉丝", "GMV", "回复率", "标签", "操作"], rows.map((c) => [
+    ${table(["选择", "达人", "类型", "类目/地区", "粉丝", "GMV", "回复率", "标签", "操作"], rows.map((c) => [
+      `<input type="checkbox" ${state.bulkCreatorIds.includes(c.id) ? "checked" : ""} onchange="toggleCreatorSelection(${c.id}, this.checked)" aria-label="选择 @${escapeHtml(c.username)}" />`,
       personCell(c),
       c.type,
       `${c.category}<br><span class="muted">${c.region}</span>`,
@@ -392,7 +403,7 @@ function renderKolPool() {
       c.gmv,
       c.replyRate,
       c.tags.map((t) => `<span class="tag">${escapeHtml(t)}</span>`).join(""),
-      `<button class="btn" onclick="createOutreach(${c.id})">建联</button> <button class="btn ghost" onclick="showCreator(${c.id})">详情</button> <button class="btn ghost" onclick="openCreatorModal(${c.id})">编辑</button> <button class="btn ghost" onclick="blacklistCreator(${c.id})">拉黑</button>`,
+      `<button class="btn" onclick="openOutreachModal(${c.id})">建联</button> <button class="btn ghost" onclick="showCreator(${c.id})">详情</button> <button class="btn ghost" onclick="openCreatorModal(${c.id})">编辑</button> <button class="btn ghost" onclick="blacklistCreator(${c.id})">拉黑</button>`,
     ]))}
   `;
 }
@@ -622,7 +633,7 @@ function renderCreatorDetail() {
           <p><b>类型：</b>${c.type}</p>
           <p><b>Email：</b>${c.email || "未提供"}</p>
           <p><b>WhatsApp：</b>${c.whatsapp || "未提供"}</p>
-          <button class="btn primary" onclick="createOutreach(${c.id})">发起建联</button>
+          <button class="btn primary" onclick="openOutreachModal(${c.id})">发起建联</button>
         </div>
         <div class="card" style="margin-top:16px">
           <h3>合作记录入口</h3>
@@ -967,20 +978,81 @@ function blacklistCreator(id) {
   render();
 }
 
-function createOutreach(creatorId) {
-  const productId = Number(prompt("输入产品ID（1/2/3），留空默认第一个产品", state.products[0]?.id || ""));
-  const p = product(productId) || state.products[0];
-  state.outreach.unshift({
-    id: Date.now(),
-    creatorId,
-    productId: p.id,
-    channel: "TikTok私信",
-    status: "待回复",
-    lastMessage: `已创建给 @${creator(creatorId)?.username} 的 ${p.name} 建联任务。`,
-    updatedAt: nowText(),
+function toggleCreatorSelection(id, checked) {
+  const next = new Set(state.bulkCreatorIds || []);
+  if (checked) next.add(id);
+  else next.delete(id);
+  state.bulkCreatorIds = Array.from(next);
+  saveState();
+  render();
+}
+
+function openOutreachModal(creatorId = 0) {
+  const selectedIds = creatorId ? [creatorId] : (state.bulkCreatorIds || []);
+  const targets = selectedIds.map((id) => creator(id)).filter(Boolean).filter((c) => c.status !== "黑名单");
+  if (!targets.length) {
+    alert("请先选择至少一位可建联达人");
+    return;
+  }
+  const first = targets[0];
+  const channelOptions = [["TikTok私信", "TikTok私信"]];
+  if (targets.every((c) => c.email)) channelOptions.push(["Email", "Email"]);
+  if (targets.every((c) => c.whatsapp)) channelOptions.push(["WhatsApp", "WhatsApp"]);
+  const defaultTemplate = state.templates[0]?.content || "Hi {KOL名称}，我们想邀请你合作 {产品名称}。";
+  openModal("发起建联", `
+    <div class="notice">本次将联系 ${targets.length} 位达人：${targets.slice(0, 4).map((c) => `@${escapeHtml(c.username)}`).join("、")}${targets.length > 4 ? " 等" : ""}。未录入 Email/WhatsApp 的达人仅显示 TikTok 私信渠道。</div>
+    <div class="form-grid" style="margin-top:12px">
+      ${selectField("outreachProductId", "建联产品", state.products.map((x) => [x.id, `${x.name} · ${x.commission}`]), state.products[0]?.id)}
+      ${selectField("outreachChannel", "发送渠道", channelOptions, "TikTok私信")}
+      ${selectField("outreachTemplateId", "消息模板", [["0", "不使用模板"], ...state.templates.map((x) => [x.id, x.name])], state.templates[0]?.id || "0")}
+      ${selectField("outreachSendMode", "发送方式", [["立即发送", "立即发送"], ["定时发送", "定时发送"]], "立即发送")}
+      ${field("outreachScheduleAt", "定时发送时间", "2026-06-22 09:30", "")}
+      ${selectField("outreachInvite", "附加邀请链接", [["否", "否"], ["是", "是，创建待产出合作"]], "否")}
+    </div>
+    <div class="form-field" style="margin-top:12px"><label>消息内容</label><textarea id="outreachMessage" class="textarea">${escapeHtml(defaultTemplate)}</textarea></div>
+  `, `<button class="btn primary" onclick="saveOutreach('${selectedIds.join(",")}')">确认建联</button>`);
+}
+
+function renderTemplate(content, c, p) {
+  return String(content || "")
+    .replaceAll("{KOL名称}", c.nickname || c.username)
+    .replaceAll("{达人名称}", c.nickname || c.username)
+    .replaceAll("{产品名称}", p.name)
+    .replaceAll("{联盟佣金率}", p.commission || "-");
+}
+
+function saveOutreach(idList) {
+  const ids = String(idList || "").split(",").map((x) => Number(x)).filter(Boolean);
+  const p = product(Number(document.getElementById("outreachProductId").value)) || state.products[0];
+  const templateId = Number(document.getElementById("outreachTemplateId").value);
+  const template = state.templates.find((x) => x.id === templateId);
+  const channel = document.getElementById("outreachChannel").value;
+  const sendMode = document.getElementById("outreachSendMode").value;
+  const scheduleAt = document.getElementById("outreachScheduleAt").value.trim();
+  const invite = document.getElementById("outreachInvite").value === "是";
+  const message = document.getElementById("outreachMessage").value.trim() || template?.content || "";
+  let created = 0;
+  ids.forEach((id, index) => {
+    const c = creator(id);
+    if (!c || c.status === "黑名单") return;
+    const rendered = renderTemplate(message, c, p);
+    const scheduledText = sendMode === "定时发送" && scheduleAt ? `定时发送：${scheduleAt}` : "立即发送";
+    state.outreach.unshift({
+      id: Date.now() + index,
+      creatorId: c.id,
+      productId: p.id,
+      channel,
+      status: "待回复",
+      lastMessage: `${scheduledText} · ${rendered}`,
+      updatedAt: nowText(),
+    });
+    c.status = "已发送";
+    if (invite) createCoopRecord(c.id, p.id, "建联时附加邀请链接");
+    created += 1;
   });
-  const c = creator(creatorId);
-  if (c) c.status = "已发送";
+  state.bulkCreatorIds = [];
+  pushMessage("批量建联", `已创建 ${created} 条建联记录，渠道：${channel}，产品：${p.name}。`);
+  closeModal();
   saveState();
   state.page = "outreach";
   state.selectedCreatorId = null;
@@ -1428,7 +1500,9 @@ window.simulateConnect = simulateConnect;
 window.addProduct = addProduct;
 window.openCreatorModal = openCreatorModal;
 window.saveCreator = saveCreator;
-window.createOutreach = createOutreach;
+window.toggleCreatorSelection = toggleCreatorSelection;
+window.openOutreachModal = openOutreachModal;
+window.saveOutreach = saveOutreach;
 window.openCoopModal = openCoopModal;
 window.saveCoop = saveCoop;
 window.addCoopTag = addCoopTag;

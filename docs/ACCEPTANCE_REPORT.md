@@ -110,6 +110,7 @@ node smoke-test.js
 - 合作管理包含内容追踪状态筛选
 - 合作管理包含催发、匹配、结束、删除操作
 - KOL池包含编辑和拉黑操作
+- KOL池支持勾选达人、一键建联、选择产品/模板/渠道、定时发送记录和附加邀请链接
 - KOL池和合作管理包含 CSV 导入能力
 - 建联记录支持标记已回复、安排寄样、进入合作、关闭和删除
 - 寄样管理支持新增/更新、删除、已签收后进入合作
@@ -122,6 +123,7 @@ node smoke-test.js
 ## 截图证据
 
 - `smoke-dashboard.png`
+- `smoke-kol-pool.png`
 - `smoke-cooperations.png`
 - `smoke-kol-detail.png`
 - `smoke-outreach.png`
