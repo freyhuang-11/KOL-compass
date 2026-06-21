@@ -39,6 +39,10 @@ const seed = {
     productMode: "全部",
     kolSearch: "",
     kolType: "全部",
+    kolCategory: "全部",
+    kolRegion: "全部",
+    kolFollowers: "全部",
+    kolReplyRate: "全部",
     coopStatus: "全部",
     coopTag: "全部",
   },
@@ -203,6 +207,23 @@ function money(v) {
 
 function pct(v) {
   return Number.isFinite(v) ? `${v.toFixed(1)}%` : "-";
+}
+
+function creatorFollowerTierOk(followers, tier) {
+  const value = Number(followers || 0);
+  if (tier === "<10K") return value < 10000;
+  if (tier === "10K-100K") return value >= 10000 && value <= 100000;
+  if (tier === "100K-1M") return value > 100000 && value <= 1000000;
+  if (tier === ">1M") return value > 1000000;
+  return true;
+}
+
+function creatorReplyRateOk(replyRate, tier) {
+  const value = Number(String(replyRate || "0").replace("%", ""));
+  if (tier === ">=60%") return value >= 60;
+  if (tier === "40%-60%") return value >= 40 && value < 60;
+  if (tier === "<40%") return value < 40;
+  return true;
 }
 
 function roi(row) {
@@ -401,11 +422,17 @@ function renderProducts() {
 }
 
 function renderKolPool() {
+  const categories = Array.from(new Set(state.creators.map((c) => c.category).filter(Boolean)));
+  const regions = Array.from(new Set(state.creators.map((c) => c.region).filter(Boolean)));
   const rows = state.creators.filter((c) => {
     const kw = state.filters.kolSearch.trim().toLowerCase();
     const typeOk = state.filters.kolType === "全部" || c.type === state.filters.kolType;
+    const categoryOk = state.filters.kolCategory === "全部" || c.category === state.filters.kolCategory;
+    const regionOk = state.filters.kolRegion === "全部" || c.region === state.filters.kolRegion;
+    const followersOk = creatorFollowerTierOk(c.followers, state.filters.kolFollowers);
+    const replyRateOk = creatorReplyRateOk(c.replyRate, state.filters.kolReplyRate);
     const kwOk = !kw || [c.username, c.nickname, c.category, c.region, c.tags.join(",")].join(" ").toLowerCase().includes(kw);
-    return typeOk && kwOk && c.status !== "黑名单";
+    return typeOk && categoryOk && regionOk && followersOk && replyRateOk && kwOk && c.status !== "黑名单";
   });
   return `
     ${pageHead("KOL池", "筛选达人并发起建联。KOL 详情只看基础信息与沟通入口，不展示合作产出指标。", `<button class="btn primary" onclick="openCreatorModal()">新增达人</button>`)}
@@ -414,6 +441,18 @@ function renderKolPool() {
         <input class="input" placeholder="搜索达人、用户名、标签..." value="${escapeHtml(state.filters.kolSearch)}" oninput="setFilter('kolSearch', this.value)" />
         <select class="select" onchange="setFilter('kolType', this.value)">
           ${["全部", "短视频达人", "直播达人", "短视频/直播达人"].map((x) => `<option ${state.filters.kolType === x ? "selected" : ""}>${x}</option>`).join("")}
+        </select>
+        <select class="select" onchange="setFilter('kolCategory', this.value)">
+          ${["全部", ...categories].map((x) => `<option ${state.filters.kolCategory === x ? "selected" : ""}>${escapeHtml(x)}</option>`).join("")}
+        </select>
+        <select class="select" onchange="setFilter('kolRegion', this.value)">
+          ${["全部", ...regions].map((x) => `<option ${state.filters.kolRegion === x ? "selected" : ""}>${escapeHtml(x)}</option>`).join("")}
+        </select>
+        <select class="select" onchange="setFilter('kolFollowers', this.value)">
+          ${["全部", "<10K", "10K-100K", "100K-1M", ">1M"].map((x) => `<option ${state.filters.kolFollowers === x ? "selected" : ""}>${x}</option>`).join("")}
+        </select>
+        <select class="select" onchange="setFilter('kolReplyRate', this.value)">
+          ${["全部", ">=60%", "40%-60%", "<40%"].map((x) => `<option ${state.filters.kolReplyRate === x ? "selected" : ""}>${x}</option>`).join("")}
         </select>
       </div>
       <div class="filters">
