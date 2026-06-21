@@ -530,12 +530,12 @@ function renderAutoReply() {
 
 function renderTemplates() {
   return `
-    ${pageHead("消息模板", "维护 TikTok 私信、Email、WhatsApp 的建联与跟进模板。", `<button class="btn primary" onclick="addTemplate()">新增模板</button>`)}
+    ${pageHead("消息模板", "维护 TikTok 私信、Email、WhatsApp 的建联与跟进模板。", `<button class="btn primary" onclick="openTemplateModal()">新增模板</button>`)}
     ${table(["模板名称", "渠道", "内容", "操作"], state.templates.map((t) => [
       t.name,
       t.channel,
       escapeHtml(t.content),
-      `<button class="btn" onclick="editTemplate(${t.id})">编辑</button>`,
+      `<button class="btn" onclick="openTemplateModal(${t.id})">编辑</button> <button class="btn ghost" onclick="deleteTemplate(${t.id})">删除</button>`,
     ]))}
   `;
 }
@@ -1383,20 +1383,38 @@ function toggleAutoReply(id) {
   render();
 }
 
-function addTemplate() {
-  const name = prompt("模板名称");
-  if (!name) return;
-  state.templates.push({ id: Date.now(), name, channel: "TikTok私信", content: "Hi {KOL名称}，我们想邀请你合作。" });
+function openTemplateModal(id = 0) {
+  const row = state.templates.find((x) => x.id === id);
+  openModal(row ? "编辑消息模板" : "新增消息模板", `
+    <div class="form-grid">
+      ${field("templateName", "模板名称", "首次建联 - 短视频", row?.name || "")}
+      ${selectField("templateChannel", "渠道", [["TikTok私信", "TikTok私信"], ["Email", "Email"], ["WhatsApp", "WhatsApp"]], row?.channel || "TikTok私信")}
+    </div>
+    <div class="form-field" style="margin-top:12px"><label>模板内容</label><textarea id="templateContent" class="textarea" placeholder="Hi {KOL名称}，我们想邀请你合作 {产品名称}。">${escapeHtml(row?.content || "Hi {KOL名称}，我们想邀请你合作 {产品名称}，佣金为 {联盟佣金率}。")}</textarea></div>
+    <div class="muted" style="margin-top:8px">支持变量：{KOL名称}、{产品名称}、{联盟佣金率}</div>
+  `, `<button class="btn primary" onclick="saveTemplate(${row?.id || 0})">保存</button>`);
+}
+
+function saveTemplate(id = 0) {
+  const name = document.getElementById("templateName").value.trim();
+  const channel = document.getElementById("templateChannel").value;
+  const content = document.getElementById("templateContent").value.trim();
+  if (!name || !content) {
+    alert("请填写模板名称和内容");
+    return;
+  }
+  const payload = { id: id || Date.now(), name, channel, content };
+  if (id) state.templates = state.templates.map((x) => x.id === id ? payload : x);
+  else state.templates.push(payload);
+  pushMessage("模板更新", `消息模板“${name}”已保存。`);
+  closeModal();
   saveState();
   render();
 }
 
-function editTemplate(id) {
-  const row = state.templates.find((x) => x.id === id);
-  if (!row) return;
-  const content = prompt("模板内容", row.content);
-  if (content == null) return;
-  row.content = content;
+function deleteTemplate(id) {
+  if (!confirm("确认删除该消息模板？")) return;
+  state.templates = state.templates.filter((x) => x.id !== id);
   saveState();
   render();
 }
@@ -1663,8 +1681,9 @@ window.createCoopFromSample = createCoopFromSample;
 window.deleteSample = deleteSample;
 window.addAutoReply = addAutoReply;
 window.toggleAutoReply = toggleAutoReply;
-window.addTemplate = addTemplate;
-window.editTemplate = editTemplate;
+window.openTemplateModal = openTemplateModal;
+window.saveTemplate = saveTemplate;
+window.deleteTemplate = deleteTemplate;
 window.restoreCreator = restoreCreator;
 window.addTeamMember = addTeamMember;
 window.exportState = exportState;

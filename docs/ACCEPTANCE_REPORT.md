@@ -126,6 +126,7 @@ node smoke-test.js
 - KOL详情和达人编辑弹窗支持录入 Email / WhatsApp
 - 建联记录和KOL详情沟通记录支持直接回复
 - 建联记录支持按达人/产品/消息关键词、沟通状态、渠道筛选
+- 消息模板支持新增、编辑、删除，并支持变量提示
 - KOL池和合作管理包含 CSV 导入能力
 - 建联记录支持标记已回复、安排寄样、进入合作、关闭和删除
 - 寄样管理支持新增/更新、删除、已签收后进入合作
@@ -144,6 +145,7 @@ node smoke-test.js
 - `smoke-kol-detail.png`
 - `smoke-outreach.png`
 - `smoke-samples.png`
+- `smoke-templates.png`
 
 ## 当前限制
 
