@@ -175,6 +175,11 @@ const seed = {
     { id: 1, name: "Sam", role: "超级管理员", email: "sam@example.com", stores: "全部店铺", status: "启用" },
     { id: 2, name: "Mia", role: "BD专员", email: "mia@example.com", stores: "美国店,英国店", status: "启用" },
   ],
+  merchantApplications: [
+    { id: 1, merchant: "GlowLab US", store: "美国店", contact: "ops@glowlab.example", plan: "专业版", apiStatus: "待授权", status: "待审批", appliedAt: "2026-06-20 11:30", notes: "已提交 Partner App 信息，等待 scope 审批。" },
+    { id: 2, merchant: "FitWave SG", store: "新加坡店", contact: "bd@fitwave.example", plan: "基础版", apiStatus: "配置不完整", status: "资料补充", appliedAt: "2026-06-19 15:10", notes: "缺少 OAuth Redirect URL 和 Affiliate 权限截图。" },
+    { id: 3, merchant: "Nina Fashion", store: "印尼店", contact: "nina@example.com", plan: "专业版", apiStatus: "待同步", status: "已通过", appliedAt: "2026-06-18 09:45", notes: "可进入本地试用，真实 API 同步仍需 OAuth。" },
+  ],
   operationLogs: [
     { id: 1, operator: "System", action: "初始化", target: "KOL Compass", detail: "创建本地演示数据。", ip: "127.0.0.1", at: "2026-06-21 09:00" },
   ],
@@ -200,6 +205,7 @@ function normalizeState(next) {
   merged.settings.featureSwitches = { ...seed.settings.featureSwitches, ...((next.settings || {}).featureSwitches || {}) };
   if (Array.isArray(merged.autoReplies)) merged.autoReplies = merged.autoReplies.map(normalizeAutoReply);
   if (Array.isArray(merged.team)) merged.team = merged.team.map(normalizeTeamMember);
+  if (!Array.isArray(merged.merchantApplications)) merged.merchantApplications = [];
   if (!Array.isArray(merged.bulkCreatorIds)) merged.bulkCreatorIds = [];
   if (!Array.isArray(merged.syncLogs)) merged.syncLogs = [];
   if (!Array.isArray(merged.operationLogs)) merged.operationLogs = [];
@@ -980,8 +986,19 @@ function renderAdmin() {
     ["translation", "消息翻译", "控制翻译功能入口"],
     ["stripePayment", "Stripe支付", "控制订阅页 Stripe 支付入口"],
   ];
+  const applications = state.merchantApplications || [];
+  const pending = applications.filter((x) => x.status === "待审批").length;
+  const approved = applications.filter((x) => x.status === "已通过").length;
+  const needsInfo = applications.filter((x) => x.status === "资料补充").length;
+  const blocked = applications.filter((x) => ["授权阻塞", "配置不完整"].includes(x.apiStatus)).length;
   return `
     ${pageHead("平台管理端", "功能开关、API 接入状态、商家统计和入驻审批。")}
+    <div class="grid grid-4" style="margin-bottom:16px">
+      ${stat("申请商家", applications.length, "本地入驻台账")}
+      ${stat("待审批", pending, "需要平台处理")}
+      ${stat("已通过", approved, "可进入本地试用")}
+      ${stat("接入阻塞", blocked + needsInfo, "资料或 API 未就绪")}
+    </div>
     <div class="grid grid-2">
       <div class="card">
         <h3>功能开关</h3>
@@ -1032,6 +1049,21 @@ function renderAdmin() {
         <p><b>商品同步：</b>${escapeHtml(state.settings.lastProductSync)}</p>
         <p><b>达人同步：</b>${escapeHtml(state.settings.lastCreatorSync)}</p>
         <p class="muted">保存配置不会触发真实 API 调用；它只让首次验收时能清楚看到接入准备状态。</p>
+      </div>
+      <div class="card" style="grid-column: 1 / -1">
+        <h3>商家入驻审批</h3>
+        <div class="notice" style="margin-bottom:12px">这是本地审批台账，用于验收平台管理流程；批准或驳回不会调用真实商户系统、支付系统或 TikTok API。</div>
+        ${table(["商家", "店铺", "联系人", "套餐", "API状态", "审批状态", "申请时间", "备注", "操作"], applications.map((row) => [
+          escapeHtml(row.merchant),
+          escapeHtml(row.store),
+          escapeHtml(row.contact),
+          escapeHtml(row.plan),
+          badge(row.apiStatus),
+          badge(row.status),
+          escapeHtml(row.appliedAt),
+          escapeHtml(row.notes),
+          merchantApplicationActions(row),
+        ]))}
       </div>
     </div>
   `;
@@ -1286,6 +1318,40 @@ function markApiAuthBlocked() {
   pushMessage("API授权阻塞", "TikTok API 接入需要人工处理 OAuth、验证码、scope 审批或 redirect URL 配置。");
   saveState();
   render();
+}
+
+function merchantApplicationActions(row) {
+  const buttons = [];
+  if (row.status !== "已通过") buttons.push(`<button class="btn" onclick="approveMerchantApplication(${row.id})">通过</button>`);
+  if (row.status !== "已驳回") buttons.push(`<button class="btn ghost" onclick="rejectMerchantApplication(${row.id})">驳回</button>`);
+  if (row.status !== "待审批") buttons.push(`<button class="btn ghost" onclick="resetMerchantApplication(${row.id})">转待审</button>`);
+  return buttons.join(" ");
+}
+
+function updateMerchantApplication(id, status, apiStatus, notePrefix) {
+  const row = (state.merchantApplications || []).find((x) => x.id === id);
+  if (!row) return alert("入驻申请不存在。");
+  row.status = status;
+  row.apiStatus = apiStatus || row.apiStatus;
+  row.notes = `[${nowText()}] ${notePrefix}。${row.notes ? ` ${row.notes}` : ""}`;
+  logOperation("入驻审批", row.merchant, `状态变更为：${status}；API状态：${row.apiStatus}`);
+  pushMessage("入驻审批", `${row.merchant} 已更新为：${status}。`);
+  saveState();
+  render();
+}
+
+function approveMerchantApplication(id) {
+  updateMerchantApplication(id, "已通过", "待OAuth授权", "平台已通过本地入驻审批，等待真实 TikTok OAuth 授权");
+}
+
+function rejectMerchantApplication(id) {
+  const reason = prompt("请输入驳回原因", "资料不完整，需补充 Partner App / 店铺权限信息");
+  if (reason === null) return;
+  updateMerchantApplication(id, "已驳回", "配置不完整", `平台已驳回：${reason || "未填写原因"}`);
+}
+
+function resetMerchantApplication(id) {
+  updateMerchantApplication(id, "待审批", "待审核", "已恢复为待审批");
 }
 
 function toggleFeatureSwitch(key) {
@@ -2446,6 +2512,9 @@ window.deleteMessage = deleteMessage;
 window.simulateConnect = simulateConnect;
 window.saveApiSettings = saveApiSettings;
 window.markApiAuthBlocked = markApiAuthBlocked;
+window.approveMerchantApplication = approveMerchantApplication;
+window.rejectMerchantApplication = rejectMerchantApplication;
+window.resetMerchantApplication = resetMerchantApplication;
 window.toggleFeatureSwitch = toggleFeatureSwitch;
 window.selectPlan = selectPlan;
 window.addProduct = addProduct;
