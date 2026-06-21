@@ -70,6 +70,7 @@ async function main() {
   assert("KOL pool batch outreach supported", ["toggleCreatorSelection", "openOutreachModal", "saveOutreach", "renderTemplate"].every((name) => app.includes(`function ${name}`)) && app.includes("一键建联"));
   assert("outreach replies supported", ["openReplyModal", "saveReply", "replyChannelOptions"].every((name) => app.includes(`function ${name}`)) && app.includes("回复达人"));
   assert("outreach filters supported", ["outreachSearch", "outreachStatus", "outreachChannel"].every((name) => app.includes(name)) && app.includes("搜索达人、产品、消息"));
+  assert("auto reply CRUD and local trigger test supported", ["openAutoReplyModal", "saveAutoReply", "deleteAutoReply", "openAutoReplyTest", "runAutoReplyTest", "autoReplyMatches"].every((name) => app.includes(`function ${name}`)) && app.includes("自动回复规则最多 50 条"));
   assert("message template CRUD supported", ["openTemplateModal", "saveTemplate", "deleteTemplate"].every((name) => app.includes(`function ${name}`)) && app.includes("支持变量"));
   assert("outreach workflow advances to sample and cooperation", ["advanceOutreach", "createSampleFromOutreach", "createCoopFromOutreach", "deleteOutreach"].every((name) => app.includes(`function ${name}`)));
   assert("sample workflow supports edit and cooperation handoff", ["openSampleModal", "saveSample", "createCoopFromSample", "deleteSample"].every((name) => app.includes(`function ${name}`)));

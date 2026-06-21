@@ -148,8 +148,8 @@ const seed = {
     { id: 2, name: "样品寄送确认", channel: "Email", content: "请确认收货地址，我们会在 48 小时内寄出样品。" },
   ],
   autoReplies: [
-    { id: 1, name: "感兴趣回复", condition: "包含 interested / yes / details", action: "发送合作说明与样品申请指引", enabled: true },
-    { id: 2, name: "价格咨询", condition: "包含 rate / price / paid", action: "发送佣金与付费合作口径", enabled: true },
+    { id: 1, name: "感兴趣回复", matchType: "包含关键词", keywords: "interested,yes,details,感兴趣", creatorType: "全部", region: "全部", minFollowers: 0, priority: 10, replyContent: "感谢你的回复，我们可以提供样品和联盟佣金，下面是合作说明。", enabled: true },
+    { id: 2, name: "价格咨询", matchType: "包含关键词", keywords: "rate,price,paid,报价", creatorType: "全部", region: "全部", minFollowers: 0, priority: 20, replyContent: "当前合作以联盟佣金为主，具体佣金以产品卡片为准，也可以讨论固定费用。", enabled: true },
   ],
   systemMessages: [
     { id: 1, type: "合作提醒", text: "@tech_review_jack 距离产出截止日还有 7 天。", at: "2026-06-21 09:00", read: false },
@@ -182,9 +182,25 @@ function normalizeState(next) {
   merged.filters = { ...seed.filters, ...(next.filters || {}) };
   merged.settings = { ...seed.settings, ...(next.settings || {}) };
   merged.settings.featureSwitches = { ...seed.settings.featureSwitches, ...((next.settings || {}).featureSwitches || {}) };
+  if (Array.isArray(merged.autoReplies)) merged.autoReplies = merged.autoReplies.map(normalizeAutoReply);
   if (!Array.isArray(merged.bulkCreatorIds)) merged.bulkCreatorIds = [];
   if (!Array.isArray(merged.syncLogs)) merged.syncLogs = [];
   return merged;
+}
+
+function normalizeAutoReply(rule) {
+  return {
+    id: rule.id || Date.now(),
+    name: rule.name || "未命名规则",
+    matchType: rule.matchType || "包含关键词",
+    keywords: rule.keywords || String(rule.condition || "").replace(/^包含\s*/, ""),
+    creatorType: rule.creatorType || "全部",
+    region: rule.region || "全部",
+    minFollowers: Number(rule.minFollowers || 0),
+    priority: Number(rule.priority || 50),
+    replyContent: rule.replyContent || rule.action || "发送指定模板",
+    enabled: rule.enabled !== false,
+  };
 }
 
 function saveState() {
@@ -534,14 +550,21 @@ function renderOutreach() {
 }
 
 function renderAutoReply() {
+  const enabledCount = state.autoReplies.filter((r) => r.enabled).length;
   return `
-    ${pageHead("自动回复", "配置关键词和条件触发后的自动回复动作。", `<button class="btn primary" onclick="addAutoReply()">新增规则</button>`)}
-    ${table(["规则名称", "触发条件", "执行动作", "状态", "操作"], state.autoReplies.map((r) => [
-      r.name,
-      r.condition,
-      r.action,
-      r.enabled ? badge("启用") : badge("停用"),
-      `<button class="btn" onclick="toggleAutoReply(${r.id})">${r.enabled ? "停用" : "启用"}</button>`,
+    ${pageHead("自动回复", "配置关键词和条件触发后的自动回复动作；本地测试只验证规则命中，不发送真实外部消息。", `<button class="btn primary" onclick="openAutoReplyModal()">新增规则</button>`)}
+    <div class="grid grid-3" style="margin-bottom:16px">
+      ${stat("规则总数", state.autoReplies.length, "最多 50 条")}
+      ${stat("启用规则", enabledCount, "按优先级命中第一条")}
+      ${stat("触发渠道", "同来源", "真实收发接入后按消息来源回复")}
+    </div>
+    ${table(["规则名称", "规则类型", "触发条件", "回复内容", "优先级/状态", "操作"], [...state.autoReplies].sort((a, b) => a.priority - b.priority).map((r) => [
+      escapeHtml(r.name),
+      escapeHtml(r.matchType),
+      autoReplyConditionText(r),
+      escapeHtml(r.replyContent),
+      `P${Number(r.priority || 50)}<br>${r.enabled ? badge("启用") : badge("停用")}`,
+      `<button class="btn" onclick="openAutoReplyModal(${r.id})">编辑</button> <button class="btn ghost" onclick="openAutoReplyTest(${r.id})">测试</button> <button class="btn ghost" onclick="toggleAutoReply(${r.id})">${r.enabled ? "停用" : "启用"}</button> <button class="btn ghost" onclick="deleteAutoReply(${r.id})">删除</button>`,
     ]))}
   `;
 }
@@ -1533,18 +1556,124 @@ function deleteSample(id) {
   render();
 }
 
-function addAutoReply() {
-  const name = prompt("规则名称");
-  if (!name) return;
-  state.autoReplies.push({ id: Date.now(), name, condition: "自定义关键词", action: "发送指定模板", enabled: true });
+function autoReplyConditionText(rule) {
+  const parts = [];
+  if (rule.matchType === "条件组合") {
+    parts.push(`达人类型：${escapeHtml(rule.creatorType || "全部")}`);
+    parts.push(`地区：${escapeHtml(rule.region || "全部")}`);
+    if (Number(rule.minFollowers || 0) > 0) parts.push(`粉丝≥${Number(rule.minFollowers).toLocaleString("en-US")}`);
+  } else {
+    parts.push(`${escapeHtml(rule.matchType)}：${escapeHtml(rule.keywords || "-")}`);
+  }
+  return parts.join("<br>");
+}
+
+function openAutoReplyModal(id = 0) {
+  const row = id ? state.autoReplies.find((x) => x.id === id) : null;
+  const creatorTypes = ["全部", ...Array.from(new Set(state.creators.map((x) => x.type).filter(Boolean)))];
+  const regions = ["全部", ...Array.from(new Set(state.creators.map((x) => x.region).filter(Boolean)))];
+  openModal(row ? "编辑自动回复规则" : "新增自动回复规则", `
+    <div class="notice">自动回复只会在真实接入消息回调/轮询后发送；当前本地测试用于验证规则是否命中，不会向达人发送外部消息。</div>
+    <div class="form-grid" style="margin-top:12px">
+      ${field("autoReplyName", "规则名称", "感兴趣回复", row?.name || "")}
+      ${selectField("autoReplyMatchType", "规则类型", [["包含关键词", "包含关键词"], ["完全匹配", "完全匹配"], ["条件组合", "条件组合"]], row?.matchType || "包含关键词")}
+      ${field("autoReplyKeywords", "关键词（逗号分隔）", "interested,yes,details", row?.keywords || "")}
+      ${selectField("autoReplyCreatorType", "达人类型条件", creatorTypes.map((x) => [x, x]), row?.creatorType || "全部")}
+      ${selectField("autoReplyRegion", "地区条件", regions.map((x) => [x, x]), row?.region || "全部")}
+      ${field("autoReplyMinFollowers", "最低粉丝数", "100000", row?.minFollowers ?? 0)}
+      ${field("autoReplyPriority", "优先级（数字越小越先命中）", "10", row?.priority ?? 50)}
+      ${selectField("autoReplyEnabled", "状态", [["启用", "启用"], ["停用", "停用"]], row?.enabled === false ? "停用" : "启用")}
+    </div>
+    <div class="form-field" style="margin-top:12px"><label>回复内容</label><textarea id="autoReplyContent" class="textarea" placeholder="感谢回复，我们会继续推进合作。">${escapeHtml(row?.replyContent || "感谢回复，我们会继续推进合作。")}</textarea></div>
+  `, `<button class="btn primary" onclick="saveAutoReply(${row?.id || 0})">保存规则</button>`);
+}
+
+function saveAutoReply(id = 0) {
+  const get = (x) => document.getElementById(x).value.trim();
+  const name = get("autoReplyName");
+  const replyContent = document.getElementById("autoReplyContent").value.trim();
+  if (!name || !replyContent) return alert("请填写规则名称和回复内容");
+  if (!id && state.autoReplies.length >= 50) return alert("自动回复规则最多 50 条");
+  const payload = normalizeAutoReply({
+    id: id || Date.now(),
+    name,
+    matchType: get("autoReplyMatchType"),
+    keywords: get("autoReplyKeywords"),
+    creatorType: get("autoReplyCreatorType"),
+    region: get("autoReplyRegion"),
+    minFollowers: Number(get("autoReplyMinFollowers") || 0),
+    priority: Number(get("autoReplyPriority") || 50),
+    replyContent,
+    enabled: get("autoReplyEnabled") === "启用",
+  });
+  if (id) state.autoReplies = state.autoReplies.map((x) => x.id === id ? payload : x);
+  else state.autoReplies.push(payload);
+  pushMessage("自动回复配置", `${payload.name} 已保存，状态：${payload.enabled ? "启用" : "停用"}。`);
+  closeModal();
   saveState();
   render();
 }
 
 function toggleAutoReply(id) {
   const row = state.autoReplies.find((x) => x.id === id);
-  if (row) row.enabled = !row.enabled;
+  if (row) {
+    row.enabled = !row.enabled;
+    pushMessage("自动回复配置", `${row.name} 已${row.enabled ? "启用" : "停用"}。`);
+  }
   saveState();
+  render();
+}
+
+function deleteAutoReply(id) {
+  const row = state.autoReplies.find((x) => x.id === id);
+  if (!row || !confirm(`确认删除自动回复规则「${row.name}」？`)) return;
+  state.autoReplies = state.autoReplies.filter((x) => x.id !== id);
+  pushMessage("自动回复配置", `${row.name} 已删除。`);
+  saveState();
+  render();
+}
+
+function autoReplyMatches(rule, message, c) {
+  if (!rule.enabled) return false;
+  if (rule.matchType === "条件组合") {
+    const typeOk = rule.creatorType === "全部" || c?.type === rule.creatorType;
+    const regionOk = rule.region === "全部" || c?.region === rule.region;
+    const followersOk = Number(c?.followers || 0) >= Number(rule.minFollowers || 0);
+    return typeOk && regionOk && followersOk;
+  }
+  const msg = String(message || "").trim().toLowerCase();
+  const keywords = String(rule.keywords || "").split(/[，,]/).map((x) => x.trim().toLowerCase()).filter(Boolean);
+  if (!keywords.length) return false;
+  if (rule.matchType === "完全匹配") return keywords.some((kw) => msg === kw);
+  return keywords.some((kw) => msg.includes(kw));
+}
+
+function openAutoReplyTest(id = 0) {
+  const row = id ? state.autoReplies.find((x) => x.id === id) : null;
+  const firstCreator = state.creators.find((x) => x.status !== "黑名单") || state.creators[0];
+  openModal(row ? "测试自动回复规则" : "测试自动回复", `
+    <div class="notice">本地测试只写入系统消息，不会发送 TikTok / Email / WhatsApp 真实消息。</div>
+    <div class="form-grid" style="margin-top:12px">
+      ${selectField("autoReplyTestRule", "测试规则", [["0", "按优先级测试全部启用规则"], ...state.autoReplies.map((x) => [x.id, x.name])], row?.id || "0")}
+      ${selectField("autoReplyTestCreator", "模拟达人", state.creators.filter((x) => x.status !== "黑名单").map((x) => [x.id, `@${x.username} · ${x.type} · ${x.region}`]), firstCreator?.id)}
+    </div>
+    <div class="form-field" style="margin-top:12px"><label>模拟达人消息</label><textarea id="autoReplyTestMessage" class="textarea">I am interested, please send details.</textarea></div>
+  `, `<button class="btn primary" onclick="runAutoReplyTest()">运行测试</button>`);
+}
+
+function runAutoReplyTest() {
+  const selectedRuleId = Number(document.getElementById("autoReplyTestRule").value);
+  const c = creator(Number(document.getElementById("autoReplyTestCreator").value));
+  const message = document.getElementById("autoReplyTestMessage").value.trim();
+  const candidates = (selectedRuleId ? state.autoReplies.filter((x) => x.id === selectedRuleId) : state.autoReplies.filter((x) => x.enabled))
+    .sort((a, b) => a.priority - b.priority);
+  const matched = candidates.find((rule) => autoReplyMatches(rule, message, c));
+  if (!matched) return alert("未命中自动回复规则。请检查关键词、达人类型、地区或粉丝数条件。");
+  pushMessage("自动回复触发", `本地测试命中「${matched.name}」，模拟回复 @${c?.username || "-"}：${matched.replyContent}`);
+  closeModal();
+  saveState();
+  state.page = "messages";
+  location.hash = "#messages";
   render();
 }
 
@@ -1847,8 +1976,12 @@ window.openSampleModal = openSampleModal;
 window.saveSample = saveSample;
 window.createCoopFromSample = createCoopFromSample;
 window.deleteSample = deleteSample;
-window.addAutoReply = addAutoReply;
+window.openAutoReplyModal = openAutoReplyModal;
+window.saveAutoReply = saveAutoReply;
 window.toggleAutoReply = toggleAutoReply;
+window.deleteAutoReply = deleteAutoReply;
+window.openAutoReplyTest = openAutoReplyTest;
+window.runAutoReplyTest = runAutoReplyTest;
 window.openTemplateModal = openTemplateModal;
 window.saveTemplate = saveTemplate;
 window.deleteTemplate = deleteTemplate;

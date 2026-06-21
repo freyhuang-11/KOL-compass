@@ -31,7 +31,7 @@
 - `stop-5175.bat`
 - `smoke-test.js`
 
-最近一次心跳检查：2026-06-21 23:20 CST，当前分支已连接 GitHub 远端，`node --check app.js` 与 `node smoke-test.js` 通过。本轮新增平台功能开关真实约束：Email/WhatsApp 开关会影响建联和回复渠道，Stripe 开关会影响订阅页提示；产品管理不允许手动新增伪造商品。
+最近一次心跳检查：2026-06-21 23:23 CST，当前分支已连接 GitHub 远端，`node --check app.js` 与 `node smoke-test.js` 通过。本轮补齐自动回复配置闭环：新增/编辑/删除/启停、关键词/完全匹配/条件组合、本地触发测试；测试只写系统消息，不发送真实外部消息。
 
 启动：
 
@@ -110,6 +110,7 @@ P0：
    - KOL 详情沟通记录可直接回复
    - 回复后沟通状态回到待达人回复
    - 消息模板可新增、编辑、删除，并保留变量提示
+   - 自动回复可新增、编辑、删除、启停和本地测试触发；真实发送必须等 TikTok/Email/WhatsApp 接入完成后再启用外部发送
 7. 增强数据持久化：
    - 当前使用 localStorage
    - 后续如果需要后端，新增本项目自己的后端端口，例如 `8015`
@@ -175,4 +176,5 @@ GitHub 提交流程：
 "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --headless=new --disable-gpu --no-first-run --window-size=1440,1000 --screenshot="smoke-kol-detail.png" "http://127.0.0.1:5175/#kol/creator/1"
 "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --headless=new --disable-gpu --no-first-run --window-size=1440,1000 --screenshot="smoke-messages.png" "http://127.0.0.1:5175/#messages"
 "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --headless=new --disable-gpu --no-first-run --window-size=1440,1000 --screenshot="smoke-billing.png" "http://127.0.0.1:5175/#billing"
+"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --headless=new --disable-gpu --no-first-run --window-size=1440,1000 --screenshot="smoke-auto-reply.png" "http://127.0.0.1:5175/#autoReply"
 ```
