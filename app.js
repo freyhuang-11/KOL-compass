@@ -183,6 +183,10 @@ const seed = {
     { id: 2, merchant: "FitWave SG", store: "新加坡店", contact: "bd@fitwave.example", plan: "基础版", apiStatus: "配置不完整", status: "资料补充", appliedAt: "2026-06-19 15:10", notes: "缺少 OAuth Redirect URL 和 Affiliate 权限截图。" },
     { id: 3, merchant: "Nina Fashion", store: "印尼店", contact: "nina@example.com", plan: "专业版", apiStatus: "待同步", status: "已通过", appliedAt: "2026-06-18 09:45", notes: "可进入本地试用，真实 API 同步仍需 OAuth。" },
   ],
+  billingRecords: [
+    { id: 1, plan: "专业版", amount: "$99", channel: "支付宝", status: "已支付", invoiceNo: "LOCAL-202606-001", period: "2026-06", createdAt: "2026-06-01 09:00", note: "本地演示账单，不代表真实扣款。" },
+    { id: 2, plan: "基础版", amount: "$29", channel: "微信支付", status: "已支付", invoiceNo: "LOCAL-202605-001", period: "2026-05", createdAt: "2026-05-01 09:00", note: "历史演示账单。" },
+  ],
   operationLogs: [
     { id: 1, operator: "System", action: "初始化", target: "KOL Compass", detail: "创建本地演示数据。", ip: "127.0.0.1", at: "2026-06-21 09:00" },
   ],
@@ -209,6 +213,7 @@ function normalizeState(next) {
   if (Array.isArray(merged.autoReplies)) merged.autoReplies = merged.autoReplies.map(normalizeAutoReply);
   if (Array.isArray(merged.team)) merged.team = merged.team.map(normalizeTeamMember);
   if (!Array.isArray(merged.merchantApplications)) merged.merchantApplications = [];
+  if (!Array.isArray(merged.billingRecords)) merged.billingRecords = [];
   if (!Array.isArray(merged.bulkCreatorIds)) merged.bulkCreatorIds = [];
   if (!Array.isArray(merged.syncLogs)) merged.syncLogs = [];
   if (!Array.isArray(merged.operationLogs)) merged.operationLogs = [];
@@ -1012,13 +1017,17 @@ function renderTeam() {
 
 function renderBilling() {
   const stripeEnabled = Boolean(state.settings.featureSwitches.stripePayment);
+  const records = state.billingRecords || [];
+  const paid = records.filter((x) => x.status === "已支付").length;
+  const pending = records.filter((x) => x.status !== "已支付").length;
   return `
     ${pageHead("订阅计费", "查看套餐、配额和账单。支付通道由平台管理端开关控制。")}
     <div class="notice" style="margin-bottom:16px">当前可用支付通道：支付宝、微信支付${stripeEnabled ? "、Stripe" : "。Stripe 支付已由平台管理端关闭"}。</div>
-    <div class="grid grid-3" style="margin-bottom:16px">
+    <div class="grid grid-4" style="margin-bottom:16px">
       ${stat("当前套餐", state.settings.planName, "本地演示可切换")}
       ${stat("本月建联配额", quotaLabel(), "按建联记录计算")}
       ${stat("剩余额度", Number.isFinite(quotaRemaining()) ? quotaRemaining() : "不限", "额度不足会拦截建联")}
+      ${stat("账单记录", records.length, `${paid} 已支付 / ${pending} 待处理`)}
     </div>
     <div class="grid grid-4">
       ${["免费版|$0|100 建联/月", "基础版|$29|1,000 建联/月", "专业版|$99|5,000 建联/月", "企业版|$299|不限量"].map((raw) => {
@@ -1026,6 +1035,20 @@ function renderBilling() {
         const active = state.settings.planName === name;
         return `<div class="card"><h3>${name}</h3><div class="stat-value">${price}</div><p>${quota}</p><button class="btn ${active ? "primary" : ""}" onclick="selectPlan('${name}')">${active ? "当前套餐" : "选择套餐"}</button></div>`;
       }).join("")}
+    </div>
+    <div class="card" style="margin-top:16px">
+      <h3>账单与支付记录</h3>
+      <div class="notice" style="margin-bottom:12px">当前为本地账单台账，用于验收套餐和配额流程；切换套餐只记录本地变更，不会发起真实扣款或开票。</div>
+      ${table(["账单号", "周期", "套餐", "金额", "支付通道", "状态", "创建时间", "备注"], records.map((row) => [
+        escapeHtml(row.invoiceNo),
+        escapeHtml(row.period),
+        escapeHtml(row.plan),
+        escapeHtml(row.amount),
+        escapeHtml(row.channel),
+        badge(row.status),
+        escapeHtml(row.createdAt),
+        escapeHtml(row.note || "-"),
+      ]))}
     </div>
   `;
 }
@@ -1425,7 +1448,23 @@ function toggleFeatureSwitch(key) {
 
 function selectPlan(name) {
   if (!Object.prototype.hasOwnProperty.call(planQuotas, name)) return;
+  const previous = state.settings.planName;
   state.settings.planName = name;
+  const price = { "免费版": "$0", "基础版": "$29", "专业版": "$99", "企业版": "$299" }[name] || "$0";
+  state.billingRecords = state.billingRecords || [];
+  state.billingRecords.unshift({
+    id: Date.now(),
+    plan: name,
+    amount: price,
+    channel: "本地切换",
+    status: price === "$0" ? "无需支付" : "待支付",
+    invoiceNo: `LOCAL-${Date.now()}`,
+    period: monthKey(),
+    createdAt: nowText(),
+    note: `由 ${previous} 切换为 ${name}；本地记录不代表真实扣款或开票。`,
+  });
+  state.billingRecords = state.billingRecords.slice(0, 50);
+  logOperation("套餐切换", name, `由 ${previous} 切换为 ${name}；支付状态：本地记录`);
   pushMessage("订阅套餐", `当前套餐已切换为 ${name}，本月建联配额：${Number.isFinite(outreachQuota()) ? outreachQuota() : "不限"}。`);
   saveState();
   render();

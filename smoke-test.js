@@ -89,6 +89,7 @@ async function main() {
   assert("sync logs are visible and recorded", ["syncLogs", "addSyncLog"].every((name) => app.includes(name)) && app.includes("同步日志"));
   assert("system message center supports read state and filters", ["messageType", "messageRead", "markMessageRead", "markAllMessagesRead", "deleteMessage", "pruneSystemMessages"].every((name) => app.includes(name)) && app.includes("本地保留最近 90 天"));
   assert("platform feature switches govern channels", ["featureSwitches", "toggleFeatureSwitch", "channelOptionsForCreators", "validateChannelForCreators"].every((name) => app.includes(name)) && app.includes("Stripe 支付已由平台管理端关闭"));
+  assert("billing ledger and local payment boundary supported", app.includes("billingRecords") && app.includes("账单与支付记录") && app.includes("不会发起真实扣款或开票") && app.includes("本地记录不代表真实扣款或开票"));
   assert("admin merchant onboarding workflow supported", ["merchantApplications", "approveMerchantApplication", "rejectMerchantApplication", "resetMerchantApplication", "merchantApplicationActions"].every((name) => app.includes(name)) && app.includes("商家入驻审批") && app.includes("不会调用真实商户系统、支付系统或 TikTok API"));
   assert("team management and operation logs supported", ["rolePermissions", "operationLogs", "logOperation", "openTeamMemberModal", "saveTeamMember", "toggleTeamMember"].every((name) => app.includes(name)) && app.includes("操作日志") && app.includes("可访问店铺"));
   assert("products cannot be manually faked", app.includes("本地版本不允许手动新增") && app.includes("产品数据应来自 TikTok Shop Partner API"));
