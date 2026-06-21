@@ -28,6 +28,12 @@ const pageKeys = new Set(pages.flatMap(([, items]) => items.map(([key]) => key))
 const fixedTags = ["高ROI", "可复投", "需催发", "内容优质", "低效合作"];
 const outputStatuses = ["全部", "待产出", "已发视频", "已直播", "视频+直播", "逾期未产出", "有订单未匹配内容", "合作结束"];
 const planQuotas = { "免费版": 100, "基础版": 1000, "专业版": 5000, "企业版": Infinity };
+const rolePermissions = {
+  "超级管理员": "全局数据、团队管理、订阅管理、全部业务操作",
+  "运营经理": "全局数据、自动回复、模板、寄样审批、合作管理",
+  "BD专员": "个人达人筛选、建联发送、沟通回复、寄样发起",
+  "客服": "已建立联系达人回复、寄样物流跟进、只读合作记录",
+};
 
 const seed = {
   page: "dashboard",
@@ -162,8 +168,11 @@ const seed = {
     { id: 1, module: "API状态", status: "未连接", reason: "TikTok Partner API 尚未授权，当前使用本地数据模式。", at: "2026-06-21 09:05" },
   ],
   team: [
-    { id: 1, name: "Sam", role: "超级管理员", email: "sam@example.com", status: "启用" },
-    { id: 2, name: "Mia", role: "BD专员", email: "mia@example.com", status: "启用" },
+    { id: 1, name: "Sam", role: "超级管理员", email: "sam@example.com", stores: "全部店铺", status: "启用" },
+    { id: 2, name: "Mia", role: "BD专员", email: "mia@example.com", stores: "美国店,英国店", status: "启用" },
+  ],
+  operationLogs: [
+    { id: 1, operator: "System", action: "初始化", target: "KOL Compass", detail: "创建本地演示数据。", ip: "127.0.0.1", at: "2026-06-21 09:00" },
   ],
 };
 
@@ -186,8 +195,10 @@ function normalizeState(next) {
   merged.settings = { ...seed.settings, ...(next.settings || {}) };
   merged.settings.featureSwitches = { ...seed.settings.featureSwitches, ...((next.settings || {}).featureSwitches || {}) };
   if (Array.isArray(merged.autoReplies)) merged.autoReplies = merged.autoReplies.map(normalizeAutoReply);
+  if (Array.isArray(merged.team)) merged.team = merged.team.map(normalizeTeamMember);
   if (!Array.isArray(merged.bulkCreatorIds)) merged.bulkCreatorIds = [];
   if (!Array.isArray(merged.syncLogs)) merged.syncLogs = [];
+  if (!Array.isArray(merged.operationLogs)) merged.operationLogs = [];
   return merged;
 }
 
@@ -203,6 +214,17 @@ function normalizeAutoReply(rule) {
     priority: Number(rule.priority || 50),
     replyContent: rule.replyContent || rule.action || "发送指定模板",
     enabled: rule.enabled !== false,
+  };
+}
+
+function normalizeTeamMember(member) {
+  return {
+    id: member.id || Date.now(),
+    name: member.name || "未命名成员",
+    role: member.role || "BD专员",
+    email: member.email || "",
+    stores: member.stores || "全部店铺",
+    status: member.status || "启用",
   };
 }
 
@@ -762,8 +784,15 @@ function renderMessages() {
 }
 
 function renderTeam() {
+  const enabled = state.team.filter((m) => m.status === "启用").length;
+  const roles = Array.from(new Set(state.team.map((m) => m.role)));
   return `
-    ${pageHead("账号与团队", "管理团队成员、角色、渠道账号和 TikTok Shop 连接。", `<button class="btn primary" onclick="addTeamMember()">新增成员</button>`)}
+    ${pageHead("账号与团队", "管理团队成员、角色权限、可访问店铺和操作日志。", `<button class="btn primary" onclick="openTeamMemberModal()">新增成员</button>`)}
+    <div class="grid grid-3" style="margin-bottom:16px">
+      ${stat("团队成员", state.team.length, `${enabled} 人启用`)}
+      ${stat("角色数量", roles.length, "按 PRD 权限矩阵")}
+      ${stat("操作日志", state.operationLogs.length, "本地保留最近 180 天")}
+    </div>
     <div class="grid grid-2">
       <div class="card">
         <h3>TikTok Shop Partner 账号</h3>
@@ -776,7 +805,26 @@ function renderTeam() {
       </div>
     </div>
     <div style="margin-top:16px">
-      ${table(["姓名", "角色", "邮箱", "状态"], state.team.map((m) => [m.name, m.role, m.email, badge(m.status)]))}
+      ${table(["姓名", "角色", "权限摘要", "可访问店铺", "邮箱", "状态", "操作"], state.team.map((m) => [
+        escapeHtml(m.name),
+        escapeHtml(m.role),
+        escapeHtml(rolePermissions[m.role] || "-"),
+        escapeHtml(m.stores || "-"),
+        escapeHtml(m.email),
+        badge(m.status),
+        `<button class="btn" onclick="openTeamMemberModal(${m.id})">编辑</button> <button class="btn ghost" onclick="toggleTeamMember(${m.id})">${m.status === "启用" ? "禁用" : "启用"}</button>`,
+      ]))}
+    </div>
+    <div class="card" style="margin-top:16px">
+      <h3>操作日志</h3>
+      ${table(["操作人", "动作", "对象", "内容", "IP", "时间"], state.operationLogs.slice(0, 10).map((log) => [
+        escapeHtml(log.operator),
+        escapeHtml(log.action),
+        escapeHtml(log.target),
+        escapeHtml(log.detail),
+        escapeHtml(log.ip),
+        escapeHtml(log.at),
+      ]))}
     </div>
   `;
 }
@@ -1111,6 +1159,7 @@ function toggleFeatureSwitch(key) {
   if (!Object.prototype.hasOwnProperty.call(state.settings.featureSwitches, key)) return;
   state.settings.featureSwitches[key] = !state.settings.featureSwitches[key];
   const status = state.settings.featureSwitches[key] ? "启用" : "停用";
+  logOperation("功能开关", names[key] || key, `状态变更为：${status}`);
   pushMessage("功能开关", `${names[key] || key} 已${status}。`);
   saveState();
   render();
@@ -1136,6 +1185,23 @@ function dateAfter(days) {
 
 function pushMessage(type, text) {
   state.systemMessages.unshift({ id: Date.now(), type, text, at: nowText(), read: false });
+}
+
+function logOperation(action, target, detail, operator = "Sam") {
+  state.operationLogs.unshift({
+    id: Date.now(),
+    operator,
+    action,
+    target,
+    detail,
+    ip: "127.0.0.1",
+    at: nowText(),
+  });
+  const cutoff = Date.now() - 180 * 24 * 60 * 60 * 1000;
+  state.operationLogs = state.operationLogs.filter((log) => {
+    const time = new Date(log.at).getTime();
+    return !Number.isFinite(time) || time >= cutoff;
+  }).slice(0, 100);
 }
 
 function outreachActions(o) {
@@ -1524,6 +1590,7 @@ function saveOutreach(idList) {
     created += 1;
   });
   state.bulkCreatorIds = [];
+  logOperation("建联发送", channel, `创建 ${created} 条建联记录；产品：${p.name}；方式：${sendMode}`);
   pushMessage("批量建联", `已创建 ${created} 条建联记录，渠道：${channel}，产品：${p.name}。`);
   closeModal();
   saveState();
@@ -1749,6 +1816,7 @@ function saveAutoReply(id = 0) {
   });
   if (id) state.autoReplies = state.autoReplies.map((x) => x.id === id ? payload : x);
   else state.autoReplies.push(payload);
+  logOperation(id ? "编辑自动回复" : "新增自动回复", payload.name, `规则：${payload.matchType}；优先级：${payload.priority}`);
   pushMessage("自动回复配置", `${payload.name} 已保存，状态：${payload.enabled ? "启用" : "停用"}。`);
   closeModal();
   saveState();
@@ -1759,6 +1827,7 @@ function toggleAutoReply(id) {
   const row = state.autoReplies.find((x) => x.id === id);
   if (row) {
     row.enabled = !row.enabled;
+    logOperation("自动回复状态", row.name, `状态变更为：${row.enabled ? "启用" : "停用"}`);
     pushMessage("自动回复配置", `${row.name} 已${row.enabled ? "启用" : "停用"}。`);
   }
   saveState();
@@ -1769,6 +1838,7 @@ function deleteAutoReply(id) {
   const row = state.autoReplies.find((x) => x.id === id);
   if (!row || !confirm(`确认删除自动回复规则「${row.name}」？`)) return;
   state.autoReplies = state.autoReplies.filter((x) => x.id !== id);
+  logOperation("删除自动回复", row.name, "删除规则");
   pushMessage("自动回复配置", `${row.name} 已删除。`);
   saveState();
   render();
@@ -1841,6 +1911,7 @@ function saveTemplate(id = 0) {
   const payload = { id: id || Date.now(), name, channel, content };
   if (id) state.templates = state.templates.map((x) => x.id === id ? payload : x);
   else state.templates.push(payload);
+  logOperation(id ? "编辑模板" : "新增模板", name, `渠道：${channel}`);
   pushMessage("模板更新", `消息模板“${name}”已保存。`);
   closeModal();
   saveState();
@@ -1849,7 +1920,9 @@ function saveTemplate(id = 0) {
 
 function deleteTemplate(id) {
   if (!confirm("确认删除该消息模板？")) return;
+  const row = state.templates.find((x) => x.id === id);
   state.templates = state.templates.filter((x) => x.id !== id);
+  if (row) logOperation("删除模板", row.name, `渠道：${row.channel}`);
   saveState();
   render();
 }
@@ -1861,10 +1934,49 @@ function restoreCreator(id) {
   render();
 }
 
-function addTeamMember() {
-  const name = prompt("成员姓名");
-  if (!name) return;
-  state.team.push({ id: Date.now(), name, role: "BD专员", email: `${name.toLowerCase()}@example.com`, status: "启用" });
+function openTeamMemberModal(id = 0) {
+  const row = id ? state.team.find((x) => x.id === id) : null;
+  const roleOptions = Object.keys(rolePermissions).map((role) => [role, role]);
+  openModal(row ? "编辑团队成员" : "新增团队成员", `
+    <div class="notice">本地版本记录团队配置和操作日志；真实邀请邮件、登录账号和权限拦截需要后端账号系统接入。</div>
+    <div class="form-grid" style="margin-top:12px">
+      ${field("teamName", "姓名", "Mia", row?.name || "")}
+      ${field("teamEmail", "邮箱", "mia@example.com", row?.email || "")}
+      ${selectField("teamRole", "角色", roleOptions, row?.role || "BD专员")}
+      ${field("teamStores", "可访问店铺", "美国店,英国店", row?.stores || "全部店铺")}
+      ${selectField("teamStatus", "状态", [["启用", "启用"], ["禁用", "禁用"]], row?.status || "启用")}
+    </div>
+  `, `<button class="btn primary" onclick="saveTeamMember(${row?.id || 0})">保存成员</button>`);
+}
+
+function saveTeamMember(id = 0) {
+  const get = (x) => document.getElementById(x).value.trim();
+  const name = get("teamName");
+  const email = get("teamEmail");
+  if (!name || !email) return alert("请填写姓名和邮箱");
+  const payload = normalizeTeamMember({
+    id: id || Date.now(),
+    name,
+    email,
+    role: get("teamRole"),
+    stores: get("teamStores") || "全部店铺",
+    status: get("teamStatus"),
+  });
+  if (id) state.team = state.team.map((x) => x.id === id ? payload : x);
+  else state.team.push(payload);
+  logOperation(id ? "编辑成员" : "新增成员", payload.name, `角色：${payload.role}；店铺：${payload.stores}；状态：${payload.status}`);
+  pushMessage("团队成员", `${payload.name} 已${id ? "更新" : "新增"}，角色：${payload.role}。`);
+  closeModal();
+  saveState();
+  render();
+}
+
+function toggleTeamMember(id) {
+  const row = state.team.find((x) => x.id === id);
+  if (!row) return;
+  row.status = row.status === "启用" ? "禁用" : "启用";
+  logOperation("成员状态", row.name, `状态变更为：${row.status}`);
+  pushMessage("团队成员", `${row.name} 已${row.status}。`);
   saveState();
   render();
 }
@@ -2130,7 +2242,9 @@ window.openTemplateModal = openTemplateModal;
 window.saveTemplate = saveTemplate;
 window.deleteTemplate = deleteTemplate;
 window.restoreCreator = restoreCreator;
-window.addTeamMember = addTeamMember;
+window.openTeamMemberModal = openTeamMemberModal;
+window.saveTeamMember = saveTeamMember;
+window.toggleTeamMember = toggleTeamMember;
 window.exportState = exportState;
 window.importState = importState;
 window.importCreatorsCsv = importCreatorsCsv;

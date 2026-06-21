@@ -31,7 +31,7 @@
 - `stop-5175.bat`
 - `smoke-test.js`
 
-最近一次心跳检查：2026-06-21 23:31 CST，当前分支已连接 GitHub 远端，`node --check app.js` 与 `node smoke-test.js` 通过。本轮补齐建联安全规则：月配额、同一达人 24 小时限发、不感兴趣 30 天屏蔽；订阅页本地切换套餐会影响配额显示和建联拦截。
+最近一次心跳检查：2026-06-21 23:37 CST，当前分支已连接 GitHub 远端，`node --check app.js` 与 `node smoke-test.js` 通过。本轮补齐账号与团队闭环：成员新增/编辑/启禁用、角色权限摘要、可访问店铺、操作日志；模板、自动回复、功能开关、建联发送等关键动作会写入日志。
 
 启动：
 
@@ -121,6 +121,10 @@ P0：
    - Email / WhatsApp 关闭后，新建联和回复渠道不展示对应入口
    - 保存建联/回复时必须二次校验渠道开关和达人联系方式
    - Stripe 关闭后，订阅页必须明确展示 Stripe 不可用
+9. 保持团队管理可用：
+   - 成员可新增、编辑、启禁用
+   - 角色权限摘要和可访问店铺必须可见
+   - 关键操作要写入操作日志，日志包含操作人、动作、对象、内容、IP、时间
 
 P1：
 
@@ -179,4 +183,5 @@ GitHub 提交流程：
 "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --headless=new --disable-gpu --no-first-run --window-size=1440,1000 --screenshot="smoke-messages.png" "http://127.0.0.1:5175/#messages"
 "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --headless=new --disable-gpu --no-first-run --window-size=1440,1000 --screenshot="smoke-billing.png" "http://127.0.0.1:5175/#billing"
 "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --headless=new --disable-gpu --no-first-run --window-size=1440,1000 --screenshot="smoke-auto-reply.png" "http://127.0.0.1:5175/#autoReply"
+"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --headless=new --disable-gpu --no-first-run --window-size=1440,1000 --screenshot="smoke-team.png" "http://127.0.0.1:5175/#team"
 ```
