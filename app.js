@@ -51,6 +51,7 @@ const seed = {
     kolFollowers: "全部",
     kolReplyRate: "全部",
     kolInterest: "可建联",
+    blacklistSearch: "",
     outreachSearch: "",
     outreachStatus: "全部",
     outreachChannel: "全部",
@@ -779,13 +780,33 @@ function renderTemplates() {
 }
 
 function renderBlacklist() {
-  const rows = state.creators.filter((c) => c.status === "黑名单");
+  const rows = state.creators.filter((c) => {
+    if (c.status !== "黑名单") return false;
+    const kw = state.filters.blacklistSearch.trim().toLowerCase();
+    return !kw || [c.username, c.nickname, c.category, c.region, c.blacklistReason, c.notes, (c.tags || []).join(",")].join(" ").toLowerCase().includes(kw);
+  });
+  const total = state.creators.filter((c) => c.status === "黑名单").length;
+  const withReason = state.creators.filter((c) => c.status === "黑名单" && (c.blacklistReason || c.notes)).length;
   return `
     ${pageHead("KOL黑名单", "管理不可再触达的达人，防止重复骚扰和低效合作。")}
-    ${table(["达人", "类目", "原因/备注", "操作"], rows.map((c) => [
+    <div class="grid grid-3">
+      ${stat("黑名单达人", total, "保存建联时自动拦截")}
+      ${stat("有原因记录", withReason, "便于团队复盘")}
+      ${stat("当前显示", rows.length, "受搜索条件影响")}
+    </div>
+    <div class="toolbar">
+      <div class="filters">
+        <input class="input" placeholder="搜索达人、类目、地区、原因..." value="${escapeHtml(state.filters.blacklistSearch)}" oninput="setFilter('blacklistSearch', this.value)" />
+      </div>
+      <div class="filters">
+        <span class="muted">移出黑名单后达人回到待联系，但仍受 24 小时限发和不感兴趣规则约束。</span>
+      </div>
+    </div>
+    ${table(["达人", "类目/地区", "原因/备注", "拉黑时间", "操作"], rows.map((c) => [
       personCell(c),
-      c.category,
-      escapeHtml(c.notes),
+      `${escapeHtml(c.category || "-")}<br><span class="muted">${escapeHtml(c.region || "-")}</span>`,
+      escapeHtml(c.blacklistReason || c.notes || "-"),
+      escapeHtml(c.blacklistedAt || "历史数据"),
       `<button class="btn" onclick="restoreCreator(${c.id})">移出黑名单</button>`,
     ]))}
   `;
@@ -1787,8 +1808,12 @@ function blacklistCreator(id) {
   const reason = prompt("拉黑原因", c.notes || "不适合继续触达");
   if (reason == null) return;
   c.status = "黑名单";
+  c.blacklistReason = reason || "未填写原因";
+  c.blacklistedAt = nowText();
   c.notes = reason;
   state.bulkCreatorIds = (state.bulkCreatorIds || []).filter((x) => x !== id);
+  logOperation("拉黑达人", c.username, c.blacklistReason);
+  pushMessage("KOL黑名单", `@${c.username} 已加入黑名单，后续建联会被拦截。`);
   saveState();
   render();
 }
@@ -2260,7 +2285,12 @@ function deleteTemplate(id) {
 
 function restoreCreator(id) {
   const c = creator(id);
-  if (c) c.status = "待联系";
+  if (c) {
+    c.status = "待联系";
+    c.blacklistRestoredAt = nowText();
+    logOperation("移出黑名单", c.username, "恢复为待联系");
+    pushMessage("KOL黑名单", `@${c.username} 已移出黑名单。`);
+  }
   saveState();
   render();
 }

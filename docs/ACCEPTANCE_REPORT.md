@@ -171,6 +171,23 @@ KOL详情页只展示基础资料、联系方式、标签备注、沟通记录�
 
 `smoke-samples.png`
 
+### KOL黑名单
+
+KOL黑名单用于避免重复触达不可合作达人。
+
+已包含：
+
+- 黑名单统计
+- 达人/类目/地区/原因搜索
+- 拉黑原因
+- 拉黑时间
+- 移出黑名单
+- 拉黑和移出动作写入系统消息与操作日志
+
+验收截图：
+
+`smoke-blacklist.png`
+
 ## 已执行测试
 
 命令：
@@ -193,6 +210,7 @@ node smoke-test.js
 - 合作管理包含内容追踪状态筛选
 - 合作管理包含催发、匹配、结束、删除操作
 - KOL池包含编辑和拉黑操作
+- KOL黑名单支持搜索、原因/时间审计和移出黑名单
 - KOL池支持勾选达人、一键建联、选择产品/模板/渠道、定时发送记录和附加邀请链接
 - KOL池支持关键词、达人类型、类目、地区、粉丝量级、回复率区间筛选
 - 建联保存会校验月配额、同一达人 24 小时限发、不感兴趣 30 天屏蔽
@@ -229,6 +247,7 @@ node smoke-test.js
 - `smoke-dashboard.png`
 - `smoke-products.png`
 - `smoke-kol-pool.png`
+- `smoke-blacklist.png`
 - `smoke-cooperations.png`
 - `smoke-kol-detail.png`
 - `smoke-outreach.png`
