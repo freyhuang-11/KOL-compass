@@ -627,13 +627,14 @@ function renderProducts() {
       </div>
     </div>
     <div class="notice" style="margin-bottom:12px">真实商品、佣金率和合作模式应来自 TikTok Shop Partner API；当前未授权时仅使用本地数据，不伪造同步成功。</div>
-    ${table(["产品", "类目", "价格", "佣金", "合作模式", "状态"], rows.map((p) => [
+    ${table(["产品", "类目", "价格", "佣金", "合作模式", "状态", "操作"], rows.map((p) => [
       `<b>${escapeHtml(p.name)}</b>`,
       p.category,
       p.price,
       p.commission,
       p.mode,
       badge(p.status),
+      `<button class="btn" onclick="openProductModal(${p.id})">详情</button> <button class="btn ghost" onclick="goProductCoops(${p.id})">相关合作</button> <button class="btn ghost" onclick="goProductOutreach(${p.id})">相关建联</button>`,
     ]))}
   `;
 }
@@ -1314,6 +1315,70 @@ function selectPlan(name) {
 
 function addProduct() {
   alert("产品数据应来自 TikTok Shop Partner API。本地版本不允许手动新增，避免和真实店铺商品冲突。");
+}
+
+function productUsage(productId) {
+  return {
+    outreach: state.outreach.filter((x) => x.productId === productId),
+    samples: state.samples.filter((x) => x.productId === productId),
+    cooperations: state.cooperations.filter((x) => x.productId === productId),
+  };
+}
+
+function openProductModal(id) {
+  const row = product(id);
+  if (!row) return alert("产品不存在。");
+  const usage = productUsage(row.id);
+  const source = state.settings.tiktokConnected ? "待 OAuth 授权后由 TikTok Partner API 同步" : "本地演示缓存，未连接真实 TikTok API";
+  openModal("商品详情", `
+    <div class="notice">商品、价格、佣金和合作模式应来自 TikTok Shop Partner API；当前只读展示，不支持本地手动新增或改写真实商品源。</div>
+    <div class="grid grid-2" style="margin-top:12px">
+      <div class="card">
+        <h3>${escapeHtml(row.name)}</h3>
+        <p><b>类目：</b>${escapeHtml(row.category || "-")}</p>
+        <p><b>价格：</b>${escapeHtml(row.price || "-")}</p>
+        <p><b>联盟佣金：</b>${escapeHtml(row.commission || "-")}</p>
+        <p><b>合作模式：</b>${escapeHtml(row.mode || "-")}</p>
+        <p><b>状态：</b>${badge(row.status || "-")}</p>
+      </div>
+      <div class="card">
+        <h3>数据来源</h3>
+        <p>${escapeHtml(source)}</p>
+        <p class="muted">client_secret 不保存在前端；真实同步失败原因进入系统消息的同步日志。</p>
+      </div>
+    </div>
+    <div class="grid grid-3" style="margin-top:12px">
+      ${stat("相关建联", usage.outreach.length, "按此商品发起过的沟通记录")}
+      ${stat("相关寄样", usage.samples.length, "按此商品创建的寄样记录")}
+      ${stat("相关合作", usage.cooperations.length, "已进入合作管理的记录")}
+    </div>
+    <div class="notice" style="margin-top:12px">视频、直播、GMV、订单、佣金支出和 ROI 仍只在合作管理查看，避免产品页和履约台账口径冲突。</div>
+  `, `
+    <button class="btn" onclick="goProductOutreach(${row.id})">查看相关建联</button>
+    <button class="btn" onclick="goProductCoops(${row.id})">查看相关合作</button>
+    <button class="btn primary" onclick="closeModal()">关闭</button>
+  `);
+}
+
+function goProductCoops(id) {
+  const row = product(id);
+  if (!row) return;
+  state.filters.coopSearch = row.name;
+  state.filters.coopOutput = "全部";
+  state.filters.coopStatus = "全部";
+  state.filters.coopTag = "全部";
+  closeModal();
+  navigateHash("cooperations");
+}
+
+function goProductOutreach(id) {
+  const row = product(id);
+  if (!row) return;
+  state.filters.outreachSearch = row.name;
+  state.filters.outreachStatus = "全部";
+  state.filters.outreachChannel = "全部";
+  closeModal();
+  navigateHash("outreach");
 }
 
 function dateAfter(days) {
@@ -2384,6 +2449,9 @@ window.markApiAuthBlocked = markApiAuthBlocked;
 window.toggleFeatureSwitch = toggleFeatureSwitch;
 window.selectPlan = selectPlan;
 window.addProduct = addProduct;
+window.openProductModal = openProductModal;
+window.goProductCoops = goProductCoops;
+window.goProductOutreach = goProductOutreach;
 window.openCreatorModal = openCreatorModal;
 window.saveCreator = saveCreator;
 window.markNotInterested = markNotInterested;

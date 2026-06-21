@@ -63,6 +63,8 @@ async function main() {
   assert("dashboard separates activity and due ranges", ["inActivityRange", "inDueRange"].every((name) => app.includes(`function ${name}`)) && app.includes("活动按更新时间统计，合作按产出截止日统计"));
   assert("cooperation search and output filters supported", ["coopSearch", "coopOutput"].every((name) => app.includes(name)) && app.includes("搜索达人、产品、负责人、备注"));
   assert("product filters supported", ["productSearch", "productCategory", "productStatus", "productMode"].every((name) => app.includes(name)) && app.includes("真实商品、佣金率和合作模式应来自 TikTok Shop Partner API"));
+  assert("product detail is read-only with business drilldowns", ["openProductModal", "productUsage", "goProductCoops", "goProductOutreach"].every((name) => app.includes(`function ${name}`)) && app.includes("当前只读展示，不支持本地手动新增或改写真实商品源"));
+  assert("product detail keeps performance metrics in cooperations", app.includes("视频、直播、GMV、订单、佣金支出和 ROI 仍只在合作管理查看"));
   assert("cooperation has content tracking status filters", app.includes("逾期未产出") && app.includes("有订单未匹配内容"));
   assert("custom cooperation tags supported", app.includes("addCoopTag") && app.includes("固定标签"));
   assert("cooperation operational actions supported", ["urgeOutput", "resolveUnmatched", "finishCoop", "deleteCoop"].every((name) => app.includes(`function ${name}`)));
