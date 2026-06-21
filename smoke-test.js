@@ -63,7 +63,9 @@ async function main() {
   assert("custom cooperation tags supported", app.includes("addCoopTag") && app.includes("固定标签"));
   assert("cooperation operational actions supported", ["urgeOutput", "resolveUnmatched", "finishCoop", "deleteCoop"].every((name) => app.includes(`function ${name}`)));
   assert("creator edit and blacklist supported", app.includes("openCreatorModal(${c.id})") && app.includes("function blacklistCreator"));
+  assert("creator contact fields editable", app.includes('field("email", "Email"') && app.includes('field("whatsapp", "WhatsApp"') && app.includes('email: get("email")'));
   assert("KOL pool batch outreach supported", ["toggleCreatorSelection", "openOutreachModal", "saveOutreach", "renderTemplate"].every((name) => app.includes(`function ${name}`)) && app.includes("一键建联"));
+  assert("outreach replies supported", ["openReplyModal", "saveReply", "replyChannelOptions"].every((name) => app.includes(`function ${name}`)) && app.includes("回复达人"));
   assert("outreach workflow advances to sample and cooperation", ["advanceOutreach", "createSampleFromOutreach", "createCoopFromOutreach", "deleteOutreach"].every((name) => app.includes(`function ${name}`)));
   assert("sample workflow supports edit and cooperation handoff", ["openSampleModal", "saveSample", "createCoopFromSample", "deleteSample"].every((name) => app.includes(`function ${name}`)));
   assert("CSV imports supported", app.includes("function importCreatorsCsv") && app.includes("function importCoopsCsv") && app.includes("parseCsv"));

@@ -622,7 +622,7 @@ function renderCreatorDetail() {
         <div class="card" style="margin-top:16px">
           <h3>沟通记录</h3>
           <div class="timeline">
-            ${records.map((r) => `<div class="message ${r.status === "待我方回复" ? "inbound" : "outbound"}"><b>${r.channel}</b> · ${badge(r.status)}<div>${escapeHtml(r.lastMessage)}</div><span class="muted">${r.updatedAt}</span></div>`).join("") || `<div class="empty">暂无沟通记录。</div>`}
+            ${records.map((r) => `<div class="message ${r.status === "待我方回复" ? "inbound" : "outbound"}"><b>${r.channel}</b> · ${badge(r.status)}<div>${escapeHtml(r.lastMessage)}</div><span class="muted">${r.updatedAt}</span><div style="margin-top:8px"><button class="btn ghost" onclick="openReplyModal(${r.id})">回复</button></div></div>`).join("") || `<div class="empty">暂无沟通记录。</div>`}
           </div>
         </div>
       </div>
@@ -634,6 +634,7 @@ function renderCreatorDetail() {
           <p><b>Email：</b>${c.email || "未提供"}</p>
           <p><b>WhatsApp：</b>${c.whatsapp || "未提供"}</p>
           <button class="btn primary" onclick="openOutreachModal(${c.id})">发起建联</button>
+          <button class="btn" onclick="openCreatorModal(${c.id})">编辑联系方式</button>
         </div>
         <div class="card" style="margin-top:16px">
           <h3>合作记录入口</h3>
@@ -777,6 +778,9 @@ function outreachActions(o) {
   const parts = [
     `<button class="btn ghost" onclick="showCreator(${o.creatorId})">查看沟通</button>`,
   ];
+  if (o.status !== "已关闭" && o.status !== "已转合作") {
+    parts.push(`<button class="btn" onclick="openReplyModal(${o.id})">回复</button>`);
+  }
   if (o.status === "待回复") {
     parts.push(`<button class="btn" onclick="advanceOutreach(${o.id}, '待我方回复')">标记已回复</button>`);
   }
@@ -812,6 +816,52 @@ function advanceOutreach(id, status) {
   if (c && status === "待我方回复") c.status = "已回复";
   if (c && status === "已关闭") c.status = "待联系";
   pushMessage("建联状态", `@${c?.username || "-"} 的建联记录已更新为：${status}。`);
+  saveState();
+  render();
+}
+
+function replyChannelOptions(row) {
+  const c = creator(row.creatorId);
+  const channels = new Map();
+  channels.set(row.channel || "TikTok私信", row.channel || "TikTok私信");
+  channels.set("TikTok私信", "TikTok私信");
+  if (c?.email) channels.set("Email", "Email");
+  if (c?.whatsapp) channels.set("WhatsApp", "WhatsApp");
+  return Array.from(channels.entries());
+}
+
+function openReplyModal(id) {
+  const row = state.outreach.find((x) => x.id === id);
+  if (!row) return;
+  const c = creator(row.creatorId);
+  const p = product(row.productId) || state.products[0];
+  const defaultTemplate = state.templates[1]?.content || "Hi {KOL名称}，感谢回复，我们会继续推进 {产品名称} 的合作。";
+  openModal("回复达人", `
+    <div class="notice">正在回复 @${escapeHtml(c?.username || "-")}。如达人已提供 Email 或 WhatsApp，可先在 KOL 详情中录入联系方式后切换渠道。</div>
+    <div class="form-grid" style="margin-top:12px">
+      ${selectField("replyChannel", "回复渠道", replyChannelOptions(row), row.channel || "TikTok私信")}
+      ${selectField("replyTemplateId", "消息模板", [["0", "不使用模板"], ...state.templates.map((x) => [x.id, x.name])], state.templates[1]?.id || "0")}
+    </div>
+    <div class="form-field" style="margin-top:12px"><label>回复内容</label><textarea id="replyMessage" class="textarea">${escapeHtml(renderTemplate(defaultTemplate, c || {}, p))}</textarea></div>
+  `, `<button class="btn primary" onclick="saveReply(${row.id})">发送回复</button>`);
+}
+
+function saveReply(id) {
+  const row = state.outreach.find((x) => x.id === id);
+  if (!row) return;
+  const c = creator(row.creatorId);
+  const p = product(row.productId) || state.products[0];
+  const templateId = Number(document.getElementById("replyTemplateId").value);
+  const template = state.templates.find((x) => x.id === templateId);
+  const rawMessage = document.getElementById("replyMessage").value.trim() || template?.content || "";
+  const message = renderTemplate(rawMessage, c || {}, p);
+  row.channel = document.getElementById("replyChannel").value;
+  row.status = "待回复";
+  row.updatedAt = nowText();
+  row.lastMessage = `[${row.updatedAt}] 我方回复：${message}`;
+  if (c) c.status = "已发送";
+  pushMessage("建联回复", `已通过 ${row.channel} 回复 @${c?.username || "-"}。`);
+  closeModal();
   saveState();
   render();
 }
@@ -931,6 +981,8 @@ function openCreatorModal(id = 0) {
       ${field("followers", "粉丝数", "100000", row?.followers ?? "")}
       ${field("gmv", "近30天GMV", "$10K/月", row?.gmv || "")}
       ${field("replyRate", "回复率", "35%", row?.replyRate || "")}
+      ${field("email", "Email", "creator@example.com", row?.email || "")}
+      ${field("whatsapp", "WhatsApp", "+62812345678", row?.whatsapp || "")}
     </div>
     <div class="form-field" style="margin-top:12px"><label>标签（逗号分隔）</label><input id="creatorTags" class="input" style="width:100%" placeholder="美妆,英语" value="${escapeHtml((row?.tags || []).join(","))}" /></div>
     <div class="form-field" style="margin-top:12px"><label>备注</label><textarea id="creatorNotes" class="textarea">${escapeHtml(row?.notes || "")}</textarea></div>
@@ -956,8 +1008,8 @@ function saveCreator(id = 0) {
     replyRate: get("replyRate") || "-",
     tags: document.getElementById("creatorTags").value.split(",").map((x) => x.trim()).filter(Boolean),
     status: id ? (creator(id)?.status || "待联系") : "待联系",
-    email: id ? (creator(id)?.email || "") : "",
-    whatsapp: id ? (creator(id)?.whatsapp || "") : "",
+    email: get("email"),
+    whatsapp: get("whatsapp"),
     notes: document.getElementById("creatorNotes").value.trim(),
   };
   if (id) state.creators = state.creators.map((x) => x.id === id ? payload : x);
@@ -1503,6 +1555,8 @@ window.saveCreator = saveCreator;
 window.toggleCreatorSelection = toggleCreatorSelection;
 window.openOutreachModal = openOutreachModal;
 window.saveOutreach = saveOutreach;
+window.openReplyModal = openReplyModal;
+window.saveReply = saveReply;
 window.openCoopModal = openCoopModal;
 window.saveCoop = saveCoop;
 window.addCoopTag = addCoopTag;
