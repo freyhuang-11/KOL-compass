@@ -78,6 +78,7 @@ async function main() {
   assert("hash routes supported", app.includes("routeFromHash") && app.includes("kol/creator/"));
   assert("TikTok API handoff exists", fs.existsSync("docs/TIKTOK_API_HANDOFF.md"));
   assert("TikTok API settings can be saved locally", ["tiktokClientKey", "tiktokRedirectUrl", "tiktokScopes", "saveApiSettings", "markApiAuthBlocked"].every((name) => app.includes(name)) && app.includes("client_secret 不应保存在前端"));
+  assert("sync logs are visible and recorded", ["syncLogs", "addSyncLog"].every((name) => app.includes(name)) && app.includes("同步日志"));
   assert("Claude continuation doc exists", fs.existsSync("docs/CLAUDE_CONTINUE.md"));
   assert("acceptance report exists", fs.existsSync("docs/ACCEPTANCE_REPORT.md"));
 

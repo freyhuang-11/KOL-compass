@@ -125,6 +125,7 @@ node smoke-test.js
 - KOL池支持勾选达人、一键建联、选择产品/模板/渠道、定时发送记录和附加邀请链接
 - KOL池支持关键词、达人类型、类目、地区、粉丝量级、回复率区间筛选
 - 产品管理支持产品搜索、类目筛选、状态筛选和合作模式筛选
+- 系统消息包含同步日志，展示 API/同步状态、原因和时间
 - KOL详情和达人编辑弹窗支持录入 Email / WhatsApp
 - 建联记录和KOL详情沟通记录支持直接回复
 - 建联记录支持按达人/产品/消息关键词、沟通状态、渠道筛选
@@ -137,6 +138,7 @@ node smoke-test.js
 - 支持 hash 直达路由
 - TikTok API 交接文档存在
 - TikTok API 本地配置字段可保存，且明确不在前端保存 client_secret
+- 同步日志可见，外部 API 未授权时显示原因，不伪造同步成功
 - KOL详情排除产出/经营指标
 - `5175` 服务返回 200
 
@@ -151,6 +153,7 @@ node smoke-test.js
 - `smoke-samples.png`
 - `smoke-templates.png`
 - `smoke-admin.png`
+- `smoke-messages.png`
 
 ## 当前限制
 

@@ -1,6 +1,6 @@
 # KOL Compass 项目记忆
 
-更新时间：2026-06-21 23:00 CST
+更新时间：2026-06-21 23:14 CST
 
 ## 当前工作目录
 
@@ -40,6 +40,7 @@ node smoke-test.js
 
 - `node --check app.js` 通过。
 - `node smoke-test.js` 全部通过。
+- 系统消息截图 `smoke-messages.png` 已生成并目视检查通过。
 - 产品管理截图 `smoke-products.png` 已生成并目视检查通过。
 - 平台管理端截图 `smoke-admin.png` 已重新生成并目视检查通过。
 - 合作管理截图 `smoke-cooperations.png` 已重新生成并目视检查通过。
@@ -65,34 +66,26 @@ node smoke-test.js
 - 本地数据支持 JSON 导入/导出。
 - 建联记录已支持：标记已回复、安排寄样、进入合作、关闭、删除。
 - 寄样管理已支持：新增/更新寄样、删除、已签收后进入合作。
+- 系统消息已支持同步日志，记录 API/商品/达人/内容订单同步的模块、状态、失败原因和时间；外部 API 未授权时不伪造同步成功。
 
-## 当前硬阻塞
+## 当前阻塞
 
-GitHub 推送暂时不可执行：
+暂无 GitHub 远端阻塞：
 
-- 当前仓库没有配置 `origin` 远端。
-- 当前机器没有可用的 `gh` 命令。
-- 用户提示“git已连接”后已多次复查，`git remote -v` 仍为空，需要在本目录重新确认远端地址。
+- `origin` 已配置为 `https://github.com/freyhuang-11/KOL-compass.git`。
+- 当前分支为 `codex/kol-compass-mvp`。
+- 每次可验证阶段完成后，先跑 `node smoke-test.js`，再小步 commit/push。
 
-要完成“提交 GitHub”，需要用户先处理其中一种路径：
+仍未真实接入的外部能力：
 
-1. 安装并登录 GitHub CLI：
-
-```bat
-winget install --id GitHub.cli
-gh auth login
-```
-
-2. 或者直接提供 GitHub 仓库地址，然后执行：
-
-```bat
-git remote add origin <repo-url>
-git push -u origin <branch>
-```
+- TikTok Partner API
+- WhatsApp Business API
+- Email SMTP/IMAP
+- 支付
 
 ## 下次继续优先级
 
 1. 继续保持 `docs/PROJECT_MEMORY.md` 和 `docs/CLAUDE_CONTINUE.md` 最新。
 2. 每次阶段完成后先跑 `node smoke-test.js`。
-3. 有远端和 GitHub 授权后，小步提交并推送。
+3. 验证通过后小步提交并推送到 GitHub。
 4. TikTok Partner API 接入前先读 `docs/TIKTOK_API_HANDOFF.md`，遇到 OAuth、验证码、scope、redirect URL 问题时给用户操作流程。

@@ -31,7 +31,7 @@
 - `stop-5175.bat`
 - `smoke-test.js`
 
-最近一次心跳检查：2026-06-21 22:25 CST，当前分支已连接 GitHub 远端，`node smoke-test.js` 全部通过，继续围绕 P0 合作管理筛选增强推进。
+最近一次心跳检查：2026-06-21 23:14 CST，当前分支已连接 GitHub 远端，`node --check app.js` 与 `node smoke-test.js` 通过。本轮新增系统消息同步日志，用于展示 API/同步状态、失败原因和时间。
 
 启动：
 
@@ -122,7 +122,7 @@ P1：
    - scope 状态
    - last_sync_at
    - client_secret 不允许保存到前端 localStorage
-2. 增加“同步日志”视图，让用户知道同步失败原因。
+2. “同步日志”视图已实现，位于系统消息页；后续接真实 API 时继续复用该日志展示同步失败原因。
 3. 增加 CSV 导入 KOL / 合作记录。
    - 已有 `importCreatorsCsv` / `importCoopsCsv`
    - 后续增强时必须保持 `smoke-test.js` 里的 CSV 导入检查通过
@@ -159,8 +159,8 @@ GitHub 提交流程：
 1. 先跑 `node smoke-test.js`。
 2. 确认只在 `D:\SamsoData\Documents\Kol compass`。
 3. 如果存在 `origin` 且 GitHub 授权可用，按小步提交。
-4. 如果没有远端或没有 GitHub CLI，不要假装推送成功，写入阻塞项并等待用户处理。
-5. 当前已多次复查：`git remote -v` 仍为空；如用户说已连接，必须先在本目录重新执行远端检查。
+4. 如果 push 失败或授权过期，不要假装推送成功，写入阻塞项并等待用户处理。
+5. 当前已复查：`origin` 为 `https://github.com/freyhuang-11/KOL-compass.git`。
 
 如果有 UI 改动，使用 Edge headless 重新生成截图：
 
@@ -168,4 +168,5 @@ GitHub 提交流程：
 "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --headless=new --disable-gpu --no-first-run --window-size=1440,1000 --screenshot="smoke-dashboard.png" "http://127.0.0.1:5175/#dashboard"
 "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --headless=new --disable-gpu --no-first-run --window-size=1440,1000 --screenshot="smoke-cooperations.png" "http://127.0.0.1:5175/#cooperations"
 "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --headless=new --disable-gpu --no-first-run --window-size=1440,1000 --screenshot="smoke-kol-detail.png" "http://127.0.0.1:5175/#kol/creator/1"
+"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --headless=new --disable-gpu --no-first-run --window-size=1440,1000 --screenshot="smoke-messages.png" "http://127.0.0.1:5175/#messages"
 ```

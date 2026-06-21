@@ -148,6 +148,9 @@ const seed = {
     { id: 1, type: "合作提醒", text: "@tech_review_jack 距离产出截止日还有 7 天。", at: "2026-06-21 09:00", read: false },
     { id: 2, type: "API状态", text: "TikTok Partner API 尚未连接，当前使用本地数据模式。", at: "2026-06-21 09:05", read: false },
   ],
+  syncLogs: [
+    { id: 1, module: "API状态", status: "未连接", reason: "TikTok Partner API 尚未授权，当前使用本地数据模式。", at: "2026-06-21 09:05" },
+  ],
   team: [
     { id: 1, name: "Sam", role: "超级管理员", email: "sam@example.com", status: "启用" },
     { id: 2, name: "Mia", role: "BD专员", email: "mia@example.com", status: "启用" },
@@ -172,6 +175,7 @@ function normalizeState(next) {
   merged.filters = { ...seed.filters, ...(next.filters || {}) };
   merged.settings = { ...seed.settings, ...(next.settings || {}) };
   if (!Array.isArray(merged.bulkCreatorIds)) merged.bulkCreatorIds = [];
+  if (!Array.isArray(merged.syncLogs)) merged.syncLogs = [];
   return merged;
 }
 
@@ -635,7 +639,16 @@ function renderCooperations() {
 
 function renderMessages() {
   return `
-    ${pageHead("系统消息", "新回复、自动回复、寄样状态、合作到期和系统公告。")}
+    ${pageHead("系统消息", "新回复、自动回复、寄样状态、合作到期、同步日志和系统公告。")}
+    <div class="card" style="margin-bottom:16px">
+      <h3>同步日志</h3>
+      ${table(["模块", "状态", "原因", "时间"], state.syncLogs.slice(0, 8).map((log) => [
+        escapeHtml(log.module),
+        badge(log.status),
+        escapeHtml(log.reason),
+        escapeHtml(log.at),
+      ]))}
+    </div>
     <div class="timeline">
       ${state.systemMessages.map((m) => `
         <div class="message ${m.read ? "" : "inbound"}">
@@ -856,23 +869,34 @@ function nowText() {
   return new Date().toLocaleString("zh-CN", { hour12: false });
 }
 
+function addSyncLog(module, status, reason) {
+  state.syncLogs.unshift({ id: Date.now(), module, status, reason, at: nowText() });
+  state.syncLogs = state.syncLogs.slice(0, 50);
+}
+
 function syncProducts() {
   state.settings.lastProductSync = nowText();
-  state.systemMessages.unshift({ id: Date.now(), type: "商品同步", text: "已触发商品同步。本地模式下仅更新时间；真实数据需完成 TikTok Partner API 授权。", at: nowText(), read: false });
+  const reason = "本地模式下仅更新时间；真实商品数据需完成 TikTok Partner API 授权。";
+  addSyncLog("商品同步", state.settings.tiktokConnected ? "待OAuth授权" : "未连接", reason);
+  pushMessage("商品同步", `已触发商品同步。${reason}`);
   saveState();
   render();
 }
 
 function syncCreators() {
   state.settings.lastCreatorSync = nowText();
-  state.systemMessages.unshift({ id: Date.now(), type: "达人同步", text: "已触发达人同步。本地模式下不会抓取 Partner API 数据。", at: nowText(), read: false });
+  const reason = "本地模式下不会抓取 Partner API 达人数据；需完成 Affiliate / Messaging scope 授权。";
+  addSyncLog("达人同步", state.settings.tiktokConnected ? "待OAuth授权" : "未连接", reason);
+  pushMessage("达人同步", `已触发达人同步。${reason}`);
   saveState();
   render();
 }
 
 function syncCoopData() {
-  state.systemMessages.unshift({ id: Date.now(), type: "内容/订单同步", text: "已触发内容与联盟订单同步。若 API 未授权，请先到平台管理端完成接入。", at: nowText(), read: false });
   state.settings.apiStatus = state.settings.tiktokConnected ? "待同步" : "未连接";
+  const reason = "内容、直播和联盟订单需要 TikTok OAuth 授权及 Order / Affiliate scope。";
+  addSyncLog("内容/订单同步", state.settings.apiStatus, reason);
+  pushMessage("内容/订单同步", `已触发内容与联盟订单同步。${reason}`);
   saveState();
   render();
 }
@@ -896,6 +920,7 @@ function saveApiSettings() {
   state.settings.tiktokLastAuthCheck = lastCheck;
   state.settings.tiktokConnected = Boolean(clientKey && redirectUrl && scopes);
   state.settings.apiStatus = state.settings.tiktokConnected ? "待OAuth授权" : "配置不完整";
+  addSyncLog("API配置", state.settings.apiStatus, "本地接入配置已保存；保存配置不会触发真实 API 调用。");
   pushMessage("API配置", `TikTok API 本地配置已保存，状态：${state.settings.apiStatus}。`);
   saveState();
   render();
@@ -904,6 +929,7 @@ function saveApiSettings() {
 function markApiAuthBlocked() {
   state.settings.apiStatus = "授权阻塞";
   state.settings.tiktokLastAuthCheck = nowText();
+  addSyncLog("API授权", "授权阻塞", "需要人工处理 OAuth、验证码、scope 审批或 redirect URL 配置。");
   pushMessage("API授权阻塞", "TikTok API 接入需要人工处理 OAuth、验证码、scope 审批或 redirect URL 配置。");
   saveState();
   render();
