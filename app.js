@@ -58,6 +58,8 @@ const seed = {
     coopOutput: "全部",
     coopStatus: "全部",
     coopTag: "全部",
+    messageType: "全部",
+    messageRead: "全部",
   },
   settings: {
     tiktokConnected: false,
@@ -761,8 +763,20 @@ function renderCooperations() {
 }
 
 function renderMessages() {
+  pruneSystemMessages();
+  const types = Array.from(new Set(state.systemMessages.map((m) => m.type).filter(Boolean)));
+  const rows = state.systemMessages
+    .filter((m) => state.filters.messageType === "全部" || m.type === state.filters.messageType)
+    .filter((m) => state.filters.messageRead === "全部" || (state.filters.messageRead === "未读" ? !m.read : m.read))
+    .sort((a, b) => new Date(b.at) - new Date(a.at));
+  const unread = state.systemMessages.filter((m) => !m.read).length;
   return `
-    ${pageHead("系统消息", "新回复、自动回复、寄样状态、合作到期、同步日志和系统公告。")}
+    ${pageHead("系统消息", "新回复、自动回复、寄样状态、合作到期、同步日志和系统公告。", `<button class="btn primary" onclick="markAllMessagesRead()">全部已读</button>`)}
+    <div class="grid grid-3" style="margin-bottom:16px">
+      ${stat("消息总数", state.systemMessages.length, "本地保留最近 90 天")}
+      ${stat("未读消息", unread, "需要跟进")}
+      ${stat("消息类型", types.length, "可按类型筛选")}
+    </div>
     <div class="card" style="margin-bottom:16px">
       <h3>同步日志</h3>
       ${table(["模块", "状态", "原因", "时间"], state.syncLogs.slice(0, 8).map((log) => [
@@ -772,11 +786,25 @@ function renderMessages() {
         escapeHtml(log.at),
       ]))}
     </div>
+    <div class="toolbar">
+      <div class="filters">
+        <select class="select" onchange="setFilter('messageType', this.value)">
+          ${["全部", ...types].map((x) => `<option ${state.filters.messageType === x ? "selected" : ""}>${escapeHtml(x)}</option>`).join("")}
+        </select>
+        <select class="select" onchange="setFilter('messageRead', this.value)">
+          ${["全部", "未读", "已读"].map((x) => `<option ${state.filters.messageRead === x ? "selected" : ""}>${x}</option>`).join("")}
+        </select>
+      </div>
+    </div>
     <div class="timeline">
-      ${state.systemMessages.map((m) => `
+      ${rows.map((m) => `
         <div class="message ${m.read ? "" : "inbound"}">
-          <b>${m.type}</b> · <span class="muted">${m.at}</span>
+          <b>${escapeHtml(m.type)}</b> · <span class="muted">${escapeHtml(m.at)}</span> · ${m.read ? badge("已读") : badge("未读")}
           <div>${escapeHtml(m.text)}</div>
+          <div style="margin-top:8px">
+            ${m.read ? "" : `<button class="btn ghost" onclick="markMessageRead(${m.id})">标记已读</button>`}
+            <button class="btn ghost" onclick="deleteMessage(${m.id})">删除</button>
+          </div>
         </div>
       `).join("")}
     </div>
@@ -1185,6 +1213,36 @@ function dateAfter(days) {
 
 function pushMessage(type, text) {
   state.systemMessages.unshift({ id: Date.now(), type, text, at: nowText(), read: false });
+  pruneSystemMessages();
+}
+
+function pruneSystemMessages() {
+  const cutoff = Date.now() - 90 * 24 * 60 * 60 * 1000;
+  state.systemMessages = state.systemMessages.filter((m) => {
+    const time = new Date(m.at).getTime();
+    return !Number.isFinite(time) || time >= cutoff;
+  }).slice(0, 200);
+}
+
+function markMessageRead(id) {
+  const row = state.systemMessages.find((m) => m.id === id);
+  if (!row) return;
+  row.read = true;
+  saveState();
+  render();
+}
+
+function markAllMessagesRead() {
+  state.systemMessages.forEach((m) => { m.read = true; });
+  saveState();
+  render();
+}
+
+function deleteMessage(id) {
+  if (!confirm("确认删除该系统消息？")) return;
+  state.systemMessages = state.systemMessages.filter((m) => m.id !== id);
+  saveState();
+  render();
 }
 
 function logOperation(action, target, detail, operator = "Sam") {
@@ -2205,6 +2263,9 @@ window.showCreator = showCreator;
 window.syncProducts = syncProducts;
 window.syncCreators = syncCreators;
 window.syncCoopData = syncCoopData;
+window.markMessageRead = markMessageRead;
+window.markAllMessagesRead = markAllMessagesRead;
+window.deleteMessage = deleteMessage;
 window.simulateConnect = simulateConnect;
 window.saveApiSettings = saveApiSettings;
 window.markApiAuthBlocked = markApiAuthBlocked;

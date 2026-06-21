@@ -81,6 +81,7 @@ async function main() {
   assert("TikTok API handoff exists", fs.existsSync("docs/TIKTOK_API_HANDOFF.md"));
   assert("TikTok API settings can be saved locally", ["tiktokClientKey", "tiktokRedirectUrl", "tiktokScopes", "saveApiSettings", "markApiAuthBlocked"].every((name) => app.includes(name)) && app.includes("client_secret 不应保存在前端"));
   assert("sync logs are visible and recorded", ["syncLogs", "addSyncLog"].every((name) => app.includes(name)) && app.includes("同步日志"));
+  assert("system message center supports read state and filters", ["messageType", "messageRead", "markMessageRead", "markAllMessagesRead", "deleteMessage", "pruneSystemMessages"].every((name) => app.includes(name)) && app.includes("本地保留最近 90 天"));
   assert("platform feature switches govern channels", ["featureSwitches", "toggleFeatureSwitch", "channelOptionsForCreators", "validateChannelForCreators"].every((name) => app.includes(name)) && app.includes("Stripe 支付已由平台管理端关闭"));
   assert("team management and operation logs supported", ["rolePermissions", "operationLogs", "logOperation", "openTeamMemberModal", "saveTeamMember", "toggleTeamMember"].every((name) => app.includes(name)) && app.includes("操作日志") && app.includes("可访问店铺"));
   assert("products cannot be manually faked", app.includes("本地版本不允许手动新增") && app.includes("产品数据应来自 TikTok Shop Partner API"));
