@@ -1,0 +1,84 @@
+# KOL Compass
+
+独立的 TikTok Shop KOL 建联与合作管理后台原型，运行目录为：
+
+`D:\SamsoData\Documents\Kol compass`
+
+## 启动
+
+不占用 `5173` / `5174`。推荐使用：
+
+双击：
+
+```text
+start-5175.bat
+```
+
+或命令行：
+
+```powershell
+python -m http.server 5175
+```
+
+然后打开：
+
+```text
+http://localhost:5175
+```
+
+可直接打开的验收页面：
+
+```text
+http://localhost:5175/#dashboard
+http://localhost:5175/#cooperations
+http://localhost:5175/#kol/creator/1
+http://localhost:5175/#admin
+```
+
+停止本项目服务：
+
+```text
+stop-5175.bat
+```
+
+## 冒烟测试
+
+启动后运行：
+
+```powershell
+node smoke-test.js
+```
+
+测试会检查文件完整性、JS 语法、核心页面覆盖、合作管理边界、KOL 详情边界，以及 `5175` 服务是否可访问。
+
+## CSV 导入字段
+
+KOL CSV 支持表头：
+
+`username,tiktok_username,TikTok用户名,达人账号,达人,nickname,昵称,type,creator_type,达人类型,category,类目,region,地区,followers,粉丝,gmv,replyRate,tags,email,whatsapp,notes`
+
+合作 CSV 支持表头：
+
+`username,tiktok_username,达人,product,product_name,产品,type,合作类型,status,内容状态,dueDate,产出截止日,videos,视频数,lives,直播场次,orders,订单数,gmv,commission,adSpend,contentUrl,tags,owner,notes`
+
+## 当前版本范围
+
+- 本地静态 SPA，无需安装 npm 依赖。
+- 数据存储在浏览器 `localStorage`，支持刷新后保留。
+- 顶部工具栏支持导出/导入 JSON，便于本地备份、迁移和恢复。
+- KOL池支持导入 KOL CSV；合作管理支持导入合作 CSV。
+- 已覆盖控制台、产品管理、KOL池、建联记录、自动回复、消息模板、黑名单、寄样管理、合作管理、系统消息、账号团队、订阅计费、平台管理端。
+- 合作管理是内容追踪唯一主入口，包含已产出/未产出、视频、直播、GMV、订单、佣金、ROI 和自定义标签筛选。
+- KOL详情只展示基础资料、联系方式、标签备注、沟通记录和合作入口，不展示视频/直播/GMV/ROI。
+
+## TikTok API 接入边界
+
+当前版本不会伪造 TikTok Partner API 数据。真实接入需要：
+
+1. Partner Center 已登录并有店铺 Affiliate 权限。
+2. Partner App 已开通 Product、Affiliate、Messaging、Order 相关 scope。
+3. 配置 OAuth Redirect URL。
+4. 提供 client_key / client_secret。
+5. 如果出现验证码、人机校验或 scope 审批缺失，需要人工在浏览器中处理。
+
+详细交接见 `docs/TIKTOK_API_HANDOFF.md`。
