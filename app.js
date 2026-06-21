@@ -46,6 +46,8 @@ const seed = {
     outreachSearch: "",
     outreachStatus: "全部",
     outreachChannel: "全部",
+    coopSearch: "",
+    coopOutput: "全部",
     coopStatus: "全部",
     coopTag: "全部",
   },
@@ -569,9 +571,15 @@ function renderSamples() {
 
 function renderCooperations() {
   const rows = state.cooperations.filter((c) => {
+    const cr = creator(c.creatorId);
+    const p = product(c.productId);
+    const kw = state.filters.coopSearch.trim().toLowerCase();
+    const produced = Number(c.videos || 0) > 0 || Number(c.lives || 0) > 0;
+    const kwOk = !kw || [cr?.username, cr?.nickname, p?.name, c.type, c.status, c.owner, c.notes, c.tags.join(",")].join(" ").toLowerCase().includes(kw);
+    const outputOk = state.filters.coopOutput === "全部" || (state.filters.coopOutput === "已产出" ? produced : !produced);
     const statusOk = state.filters.coopStatus === "全部" || c.status === state.filters.coopStatus;
     const tagOk = state.filters.coopTag === "全部" || c.tags.includes(state.filters.coopTag);
-    return statusOk && tagOk;
+    return kwOk && outputOk && statusOk && tagOk;
   });
   const produced = state.cooperations.filter((x) => x.videos > 0 || x.lives > 0).length;
   const unproduced = state.cooperations.length - produced;
@@ -587,6 +595,10 @@ function renderCooperations() {
     </div>
     <div class="toolbar">
       <div class="filters">
+        <input class="input" placeholder="搜索达人、产品、负责人、备注..." value="${escapeHtml(state.filters.coopSearch)}" oninput="setFilter('coopSearch', this.value)" />
+        <select class="select" onchange="setFilter('coopOutput', this.value)">
+          ${["全部", "已产出", "未产出"].map((x) => `<option ${state.filters.coopOutput === x ? "selected" : ""}>${x}</option>`).join("")}
+        </select>
         <select class="select" onchange="setFilter('coopStatus', this.value)">
           ${outputStatuses.map((x) => `<option ${state.filters.coopStatus === x ? "selected" : ""}>${x}</option>`).join("")}
         </select>
