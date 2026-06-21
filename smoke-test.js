@@ -63,6 +63,8 @@ async function main() {
   assert("custom cooperation tags supported", app.includes("addCoopTag") && app.includes("固定标签"));
   assert("cooperation operational actions supported", ["urgeOutput", "resolveUnmatched", "finishCoop", "deleteCoop"].every((name) => app.includes(`function ${name}`)));
   assert("creator edit and blacklist supported", app.includes("openCreatorModal(${c.id})") && app.includes("function blacklistCreator"));
+  assert("outreach workflow advances to sample and cooperation", ["advanceOutreach", "createSampleFromOutreach", "createCoopFromOutreach", "deleteOutreach"].every((name) => app.includes(`function ${name}`)));
+  assert("sample workflow supports edit and cooperation handoff", ["openSampleModal", "saveSample", "createCoopFromSample", "deleteSample"].every((name) => app.includes(`function ${name}`)));
   assert("CSV imports supported", app.includes("function importCreatorsCsv") && app.includes("function importCoopsCsv") && app.includes("parseCsv"));
   assert("local data import/export supported", app.includes("function exportState") && app.includes("function importState"));
   assert("hash routes supported", app.includes("routeFromHash") && app.includes("kol/creator/"));

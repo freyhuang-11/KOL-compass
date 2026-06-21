@@ -407,7 +407,7 @@ function renderOutreach() {
       badge(o.status),
       escapeHtml(o.lastMessage),
       o.updatedAt,
-      `<button class="btn ghost" onclick="showCreator(${o.creatorId})">查看沟通</button>`,
+      outreachActions(o),
     ]))}
   `;
 }
@@ -452,14 +452,14 @@ function renderBlacklist() {
 
 function renderSamples() {
   return `
-    ${pageHead("寄样管理", "同步或手工维护样品申请、审核、发货和签收状态。", `<button class="btn primary" onclick="addSample()">新增寄样</button>`)}
+    ${pageHead("寄样管理", "同步或手工维护样品申请、审核、发货和签收状态。", `<button class="btn primary" onclick="openSampleModal()">新增寄样</button>`)}
     ${table(["达人", "产品", "状态", "物流单号", "更新时间", "操作"], state.samples.map((s) => [
       personCell(creator(s.creatorId)),
       product(s.productId)?.name || "-",
       badge(s.status),
       s.tracking || "-",
       s.updatedAt,
-      `<button class="btn" onclick="updateSample(${s.id})">更新</button>`,
+      sampleActions(s),
     ]))}
   `;
 }
@@ -752,6 +752,144 @@ function addProduct() {
   render();
 }
 
+function dateAfter(days) {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function pushMessage(type, text) {
+  state.systemMessages.unshift({ id: Date.now(), type, text, at: nowText(), read: false });
+}
+
+function outreachActions(o) {
+  const parts = [
+    `<button class="btn ghost" onclick="showCreator(${o.creatorId})">查看沟通</button>`,
+  ];
+  if (o.status === "待回复") {
+    parts.push(`<button class="btn" onclick="advanceOutreach(${o.id}, '待我方回复')">标记已回复</button>`);
+  }
+  if (o.status === "待我方回复") {
+    parts.push(`<button class="btn" onclick="createSampleFromOutreach(${o.id})">安排寄样</button>`);
+    parts.push(`<button class="btn ghost" onclick="createCoopFromOutreach(${o.id})">进入合作</button>`);
+  }
+  if (o.status !== "已关闭") {
+    parts.push(`<button class="btn ghost" onclick="advanceOutreach(${o.id}, '已关闭')">关闭</button>`);
+  }
+  parts.push(`<button class="btn ghost" onclick="deleteOutreach(${o.id})">删除</button>`);
+  return parts.join(" ");
+}
+
+function sampleActions(s) {
+  const parts = [
+    `<button class="btn" onclick="openSampleModal(${s.id})">更新</button>`,
+  ];
+  if (s.status === "已签收") {
+    parts.push(`<button class="btn ghost" onclick="createCoopFromSample(${s.id})">进入合作</button>`);
+  }
+  parts.push(`<button class="btn ghost" onclick="deleteSample(${s.id})">删除</button>`);
+  return parts.join(" ");
+}
+
+function advanceOutreach(id, status) {
+  const row = state.outreach.find((x) => x.id === id);
+  if (!row) return;
+  row.status = status;
+  row.updatedAt = nowText();
+  row.lastMessage = `[${row.updatedAt}] 建联状态已更新为：${status}。`;
+  const c = creator(row.creatorId);
+  if (c && status === "待我方回复") c.status = "已回复";
+  if (c && status === "已关闭") c.status = "待联系";
+  pushMessage("建联状态", `@${c?.username || "-"} 的建联记录已更新为：${status}。`);
+  saveState();
+  render();
+}
+
+function deleteOutreach(id) {
+  if (!confirm("确认删除该建联记录？")) return;
+  state.outreach = state.outreach.filter((x) => x.id !== id);
+  saveState();
+  render();
+}
+
+function createSampleRecord(creatorId, productId, status = "待审核", tracking = "") {
+  const existing = state.samples.find((x) => x.creatorId === creatorId && x.productId === productId && x.status !== "已拒绝");
+  if (existing) return existing;
+  const row = { id: Date.now(), creatorId, productId, status, tracking, updatedAt: nowText() };
+  state.samples.unshift(row);
+  return row;
+}
+
+function createSampleFromOutreach(id) {
+  const row = state.outreach.find((x) => x.id === id);
+  if (!row) return;
+  const sample = createSampleRecord(row.creatorId, row.productId, "待审核", "");
+  row.status = "待我方回复";
+  row.updatedAt = nowText();
+  row.lastMessage = `[${row.updatedAt}] 已从建联记录安排寄样，寄样状态：${sample.status}。`;
+  pushMessage("寄样创建", `已为 @${creator(row.creatorId)?.username || "-"} 创建寄样任务。`);
+  saveState();
+  state.page = "samples";
+  state.selectedCreatorId = null;
+  location.hash = "#samples";
+  render();
+}
+
+function createCoopRecord(creatorId, productId, source = "手动创建") {
+  const existing = state.cooperations.find((x) => x.creatorId === creatorId && x.productId === productId && x.status !== "合作结束");
+  if (existing) return existing;
+  const row = {
+    id: Date.now(),
+    creatorId,
+    productId,
+    type: "短视频",
+    status: "待产出",
+    dueDate: dateAfter(14),
+    videos: 0,
+    lives: 0,
+    orders: 0,
+    gmv: 0,
+    commission: 0,
+    adSpend: 0,
+    contentUrl: "",
+    tags: ["需催发"],
+    owner: "Sam",
+    notes: `[${nowText()}] ${source}，等待达人产出内容。`,
+  };
+  state.cooperations.unshift(row);
+  const c = creator(creatorId);
+  if (c) c.status = "已合作";
+  return row;
+}
+
+function createCoopFromOutreach(id) {
+  const row = state.outreach.find((x) => x.id === id);
+  if (!row) return;
+  const coop = createCoopRecord(row.creatorId, row.productId, "由建联记录转入合作");
+  row.status = "已转合作";
+  row.updatedAt = nowText();
+  row.lastMessage = `[${row.updatedAt}] 已转入合作管理，合作截止日：${coop.dueDate}。`;
+  pushMessage("合作创建", `@${creator(row.creatorId)?.username || "-"} 已从建联记录转入合作管理。`);
+  saveState();
+  state.page = "cooperations";
+  state.selectedCreatorId = null;
+  location.hash = "#cooperations";
+  render();
+}
+
+function createCoopFromSample(id) {
+  const sample = state.samples.find((x) => x.id === id);
+  if (!sample) return;
+  if (sample.status !== "已签收" && !confirm("样品尚未签收，仍要进入合作吗？")) return;
+  const coop = createCoopRecord(sample.creatorId, sample.productId, "由寄样记录转入合作");
+  pushMessage("合作创建", `@${creator(sample.creatorId)?.username || "-"} 已从寄样记录转入合作管理，截止日 ${coop.dueDate}。`);
+  saveState();
+  state.page = "cooperations";
+  state.selectedCreatorId = null;
+  location.hash = "#cooperations";
+  render();
+}
+
 function coopActions(c) {
   const parts = [
     `<button class="btn" onclick="openCoopModal(${c.id})">编辑</button>`,
@@ -845,6 +983,8 @@ function createOutreach(creatorId) {
   if (c) c.status = "已发送";
   saveState();
   state.page = "outreach";
+  state.selectedCreatorId = null;
+  location.hash = "#outreach";
   render();
 }
 
@@ -975,22 +1115,39 @@ function markOverdue() {
   render();
 }
 
-function updateSample(id) {
+function openSampleModal(id = 0) {
   const row = state.samples.find((x) => x.id === id);
-  if (!row) return;
-  const status = prompt("新状态：待审核/待发货/已发货/已签收/已拒绝", row.status);
-  if (!status) return;
-  row.status = status;
-  row.tracking = prompt("物流单号", row.tracking) || row.tracking;
-  row.updatedAt = nowText();
+  openModal(row ? "更新寄样" : "新增寄样", `
+    <div class="form-grid">
+      ${selectField("sampleCreatorId", "达人", state.creators.filter((x) => x.status !== "黑名单").map((x) => [x.id, `@${x.username}`]), row?.creatorId)}
+      ${selectField("sampleProductId", "产品", state.products.map((x) => [x.id, x.name]), row?.productId)}
+      ${selectField("sampleStatus", "寄样状态", [["待审核", "待审核"], ["待发货", "待发货"], ["已发货", "已发货"], ["已签收", "已签收"], ["已拒绝", "已拒绝"]], row?.status || "待审核")}
+      ${field("sampleTracking", "物流单号", "SG123456789", row?.tracking || "")}
+    </div>
+  `, `<button class="btn primary" onclick="saveSample(${row?.id || 0})">保存</button>`);
+}
+
+function saveSample(id = 0) {
+  const get = (x) => document.getElementById(x).value.trim();
+  const payload = {
+    id: id || Date.now(),
+    creatorId: Number(get("sampleCreatorId")),
+    productId: Number(get("sampleProductId")),
+    status: get("sampleStatus"),
+    tracking: get("sampleTracking"),
+    updatedAt: nowText(),
+  };
+  if (id) state.samples = state.samples.map((x) => x.id === id ? payload : x);
+  else state.samples.unshift(payload);
+  pushMessage("寄样状态", `@${creator(payload.creatorId)?.username || "-"} 的寄样状态已更新为：${payload.status}。`);
+  closeModal();
   saveState();
   render();
 }
 
-function addSample() {
-  const c = state.creators[0];
-  const p = state.products[0];
-  state.samples.unshift({ id: Date.now(), creatorId: c.id, productId: p.id, status: "待审核", tracking: "", updatedAt: nowText() });
+function deleteSample(id) {
+  if (!confirm("确认删除该寄样记录？")) return;
+  state.samples = state.samples.filter((x) => x.id !== id);
   saveState();
   render();
 }
@@ -1276,8 +1433,14 @@ window.openCoopModal = openCoopModal;
 window.saveCoop = saveCoop;
 window.addCoopTag = addCoopTag;
 window.markOverdue = markOverdue;
-window.addSample = addSample;
-window.updateSample = updateSample;
+window.advanceOutreach = advanceOutreach;
+window.createSampleFromOutreach = createSampleFromOutreach;
+window.createCoopFromOutreach = createCoopFromOutreach;
+window.deleteOutreach = deleteOutreach;
+window.openSampleModal = openSampleModal;
+window.saveSample = saveSample;
+window.createCoopFromSample = createCoopFromSample;
+window.deleteSample = deleteSample;
 window.addAutoReply = addAutoReply;
 window.toggleAutoReply = toggleAutoReply;
 window.addTemplate = addTemplate;

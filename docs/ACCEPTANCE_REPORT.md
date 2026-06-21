@@ -111,6 +111,8 @@ node smoke-test.js
 - 合作管理包含催发、匹配、结束、删除操作
 - KOL池包含编辑和拉黑操作
 - KOL池和合作管理包含 CSV 导入能力
+- 建联记录支持标记已回复、安排寄样、进入合作、关闭和删除
+- 寄样管理支持新增/更新、删除、已签收后进入合作
 - 支持本地数据导入/导出
 - 支持 hash 直达路由
 - TikTok API 交接文档存在
@@ -122,6 +124,8 @@ node smoke-test.js
 - `smoke-dashboard.png`
 - `smoke-cooperations.png`
 - `smoke-kol-detail.png`
+- `smoke-outreach.png`
+- `smoke-samples.png`
 
 ## 当前限制
 
