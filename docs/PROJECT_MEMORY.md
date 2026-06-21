@@ -1,6 +1,6 @@
 # KOL Compass 项目记忆
 
-更新时间：2026-06-21 19:03 CST
+更新时间：2026-06-21 19:10 CST
 
 ## 当前工作目录
 
@@ -40,6 +40,7 @@ node smoke-test.js
 
 - `node --check app.js` 通过。
 - `node smoke-test.js` 全部通过。
+- 产品管理截图 `smoke-products.png` 已生成并目视检查通过。
 - 合作管理截图 `smoke-cooperations.png` 已重新生成并目视检查通过。
 - 建联记录截图 `smoke-outreach.png` 已生成并目视检查通过。
 - KOL 池截图 `smoke-kol-pool.png` 已生成并目视检查通过。
@@ -49,6 +50,7 @@ node smoke-test.js
 - `5173` / `5174` 不属于本项目，不能占用或关闭。
 - KOL 详情页不展示内容产出、视频、直播、GMV、订单、佣金、ROI。
 - 内容追踪只放在合作管理。
+- 产品管理已支持按产品关键词、类目、状态、合作模式筛选，并明确提示真实数据来自 TikTok Shop Partner API。
 - KOL 池和合作管理已支持 CSV 导入。
 - KOL 池已支持勾选达人、一键建联、选择产品/模板/渠道、定时发送记录和附加邀请链接。
 - 达人联系方式已支持在编辑弹窗录入 Email / WhatsApp。

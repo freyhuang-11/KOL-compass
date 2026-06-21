@@ -59,6 +59,7 @@ async function main() {
   }
 
   assert("cooperation has produced/unproduced metrics", app.includes("已产出达人") && app.includes("未产出达人"));
+  assert("product filters supported", ["productSearch", "productCategory", "productStatus", "productMode"].every((name) => app.includes(name)) && app.includes("真实商品、佣金率和合作模式应来自 TikTok Shop Partner API"));
   assert("cooperation has content tracking status filters", app.includes("逾期未产出") && app.includes("有订单未匹配内容"));
   assert("custom cooperation tags supported", app.includes("addCoopTag") && app.includes("固定标签"));
   assert("cooperation operational actions supported", ["urgeOutput", "resolveUnmatched", "finishCoop", "deleteCoop"].every((name) => app.includes(`function ${name}`)));

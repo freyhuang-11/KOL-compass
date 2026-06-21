@@ -33,6 +33,10 @@ const seed = {
   selectedCreatorId: null,
   bulkCreatorIds: [],
   filters: {
+    productSearch: "",
+    productCategory: "全部",
+    productStatus: "全部",
+    productMode: "全部",
     kolSearch: "",
     kolType: "全部",
     coopStatus: "全部",
@@ -353,15 +357,39 @@ function renderDashboard() {
 }
 
 function renderProducts() {
+  const categories = Array.from(new Set(state.products.map((p) => p.category).filter(Boolean)));
+  const statuses = Array.from(new Set(state.products.map((p) => p.status).filter(Boolean)));
+  const modes = Array.from(new Set(state.products.map((p) => p.mode).filter(Boolean)));
+  const rows = state.products.filter((p) => {
+    const kw = state.filters.productSearch.trim().toLowerCase();
+    const kwOk = !kw || [p.name, p.category, p.mode, p.status].join(" ").toLowerCase().includes(kw);
+    const categoryOk = state.filters.productCategory === "全部" || p.category === state.filters.productCategory;
+    const statusOk = state.filters.productStatus === "全部" || p.status === state.filters.productStatus;
+    const modeOk = state.filters.productMode === "全部" || p.mode === state.filters.productMode;
+    return kwOk && categoryOk && statusOk && modeOk;
+  });
   return `
     ${pageHead("产品管理", "同步和查看 TikTok Shop 商品、联盟佣金与合作模式。", `<button class="btn primary" onclick="syncProducts()">同步商品</button>`)}
     <div class="toolbar">
-      <div class="muted">上次同步：${state.settings.lastProductSync}</div>
       <div class="filters">
+        <input class="input" placeholder="搜索产品名称、类目、模式..." value="${escapeHtml(state.filters.productSearch)}" oninput="setFilter('productSearch', this.value)" />
+        <select class="select" onchange="setFilter('productCategory', this.value)">
+          ${["全部", ...categories].map((x) => `<option ${state.filters.productCategory === x ? "selected" : ""}>${escapeHtml(x)}</option>`).join("")}
+        </select>
+        <select class="select" onchange="setFilter('productStatus', this.value)">
+          ${["全部", ...statuses].map((x) => `<option ${state.filters.productStatus === x ? "selected" : ""}>${escapeHtml(x)}</option>`).join("")}
+        </select>
+        <select class="select" onchange="setFilter('productMode', this.value)">
+          ${["全部", ...modes].map((x) => `<option ${state.filters.productMode === x ? "selected" : ""}>${escapeHtml(x)}</option>`).join("")}
+        </select>
+      </div>
+      <div class="filters">
+        <span class="muted">上次同步：${state.settings.lastProductSync}</span>
         <button class="btn" onclick="addProduct()">手动新增测试商品</button>
       </div>
     </div>
-    ${table(["产品", "类目", "价格", "佣金", "合作模式", "状态"], state.products.map((p) => [
+    <div class="notice" style="margin-bottom:12px">真实商品、佣金率和合作模式应来自 TikTok Shop Partner API；当前未授权时仅使用本地数据，不伪造同步成功。</div>
+    ${table(["产品", "类目", "价格", "佣金", "合作模式", "状态"], rows.map((p) => [
       `<b>${escapeHtml(p.name)}</b>`,
       p.category,
       p.price,

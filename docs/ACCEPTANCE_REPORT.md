@@ -89,6 +89,16 @@ KOL详情页只展示基础资料、联系方式、标签备注、沟通记录�
 
 `smoke-kol-detail.png`
 
+### 产品管理
+
+产品管理支持搜索产品名称、类目、状态和合作模式筛选。
+
+页面已明确提示：真实商品、佣金率和合作模式应来自 TikTok Shop Partner API；未授权时仅使用本地数据，不伪造同步成功。
+
+验收截图：
+
+`smoke-products.png`
+
 ## 已执行测试
 
 命令：
@@ -111,6 +121,7 @@ node smoke-test.js
 - 合作管理包含催发、匹配、结束、删除操作
 - KOL池包含编辑和拉黑操作
 - KOL池支持勾选达人、一键建联、选择产品/模板/渠道、定时发送记录和附加邀请链接
+- 产品管理支持产品搜索、类目筛选、状态筛选和合作模式筛选
 - KOL详情和达人编辑弹窗支持录入 Email / WhatsApp
 - 建联记录和KOL详情沟通记录支持直接回复
 - KOL池和合作管理包含 CSV 导入能力
@@ -125,6 +136,7 @@ node smoke-test.js
 ## 截图证据
 
 - `smoke-dashboard.png`
+- `smoke-products.png`
 - `smoke-kol-pool.png`
 - `smoke-cooperations.png`
 - `smoke-kol-detail.png`
