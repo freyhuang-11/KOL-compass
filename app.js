@@ -56,6 +56,10 @@ const seed = {
     apiStatus: "未连接",
     lastProductSync: "尚未同步",
     lastCreatorSync: "尚未同步",
+    tiktokClientKey: "",
+    tiktokRedirectUrl: "http://localhost:8015/api/tiktok/callback",
+    tiktokScopes: "product,affiliate,messaging,order",
+    tiktokLastAuthCheck: "尚未检查",
   },
   products: [
     { id: 1, name: "无线蓝牙耳机 Pro Max", category: "电子配件", price: "$49.90", commission: "15%", mode: "公开合作", status: "在售" },
@@ -699,6 +703,27 @@ function renderAdmin() {
         </ol>
         <div class="warning-box">当前本地版本不会伪造 TikTok API 数据。未授权时，产品/达人/订单同步按钮只更新时间并写入系统提示。</div>
       </div>
+      <div class="card">
+        <h3>TikTok API 本地配置</h3>
+        <div class="form-grid">
+          ${field("apiClientKey", "client_key", "Partner App client_key", state.settings.tiktokClientKey || "")}
+          ${field("apiRedirectUrl", "OAuth Redirect URL", "http://localhost:8015/api/tiktok/callback", state.settings.tiktokRedirectUrl || "")}
+          ${field("apiScopes", "已申请 scope", "product,affiliate,messaging,order", state.settings.tiktokScopes || "")}
+          ${field("apiLastCheck", "最近检查", "尚未检查", state.settings.tiktokLastAuthCheck || "尚未检查")}
+        </div>
+        <div class="warning-box" style="margin-top:12px">client_secret 不应保存在前端 localStorage。真实接入时请放在本项目后端环境变量中；遇到 OAuth、验证码、scope 审批时需要人工在浏览器完成。</div>
+        <div style="margin-top:12px">
+          <button class="btn primary" onclick="saveApiSettings()">保存配置</button>
+          <button class="btn" onclick="markApiAuthBlocked()">标记授权阻塞</button>
+        </div>
+      </div>
+      <div class="card">
+        <h3>接入状态</h3>
+        <p><b>当前状态：</b>${badge(state.settings.apiStatus)}</p>
+        <p><b>商品同步：</b>${escapeHtml(state.settings.lastProductSync)}</p>
+        <p><b>达人同步：</b>${escapeHtml(state.settings.lastCreatorSync)}</p>
+        <p class="muted">保存配置不会触发真实 API 调用；它只让首次验收时能清楚看到接入准备状态。</p>
+      </div>
     </div>
   `;
 }
@@ -856,6 +881,30 @@ function simulateConnect() {
   state.settings.tiktokConnected = true;
   state.settings.apiStatus = "待授权";
   state.systemMessages.unshift({ id: Date.now(), type: "API状态", text: "已标记 Partner 账号登录。下一步需要配置 app scope、client_key/client_secret 和回调地址。", at: nowText(), read: false });
+  saveState();
+  render();
+}
+
+function saveApiSettings() {
+  const clientKey = document.getElementById("apiClientKey").value.trim();
+  const redirectUrl = document.getElementById("apiRedirectUrl").value.trim();
+  const scopes = document.getElementById("apiScopes").value.trim();
+  const lastCheck = nowText();
+  state.settings.tiktokClientKey = clientKey;
+  state.settings.tiktokRedirectUrl = redirectUrl;
+  state.settings.tiktokScopes = scopes;
+  state.settings.tiktokLastAuthCheck = lastCheck;
+  state.settings.tiktokConnected = Boolean(clientKey && redirectUrl && scopes);
+  state.settings.apiStatus = state.settings.tiktokConnected ? "待OAuth授权" : "配置不完整";
+  pushMessage("API配置", `TikTok API 本地配置已保存，状态：${state.settings.apiStatus}。`);
+  saveState();
+  render();
+}
+
+function markApiAuthBlocked() {
+  state.settings.apiStatus = "授权阻塞";
+  state.settings.tiktokLastAuthCheck = nowText();
+  pushMessage("API授权阻塞", "TikTok API 接入需要人工处理 OAuth、验证码、scope 审批或 redirect URL 配置。");
   saveState();
   render();
 }
@@ -1671,6 +1720,8 @@ window.syncProducts = syncProducts;
 window.syncCreators = syncCreators;
 window.syncCoopData = syncCoopData;
 window.simulateConnect = simulateConnect;
+window.saveApiSettings = saveApiSettings;
+window.markApiAuthBlocked = markApiAuthBlocked;
 window.addProduct = addProduct;
 window.openCreatorModal = openCreatorModal;
 window.saveCreator = saveCreator;

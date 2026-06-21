@@ -81,6 +81,8 @@ KOL CSV 支持表头：
 
 当前版本不会伪造 TikTok Partner API 数据。真实接入需要：
 
+平台管理端可保存本地接入准备信息：client_key、OAuth Redirect URL、scope、最近检查时间；client_secret 不保存在前端。
+
 1. Partner Center 已登录并有店铺 Affiliate 权限。
 2. Partner App 已开通 Product、Affiliate、Messaging、Order 相关 scope。
 3. 配置 OAuth Redirect URL。

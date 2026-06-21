@@ -116,11 +116,12 @@ P0：
 
 P1：
 
-1. 增加 TikTok API 配置页面的字段保存：
+1. 保持 TikTok API 配置页面的字段保存：
    - client_key
    - redirect_url
    - scope 状态
    - last_sync_at
+   - client_secret 不允许保存到前端 localStorage
 2. 增加“同步日志”视图，让用户知道同步失败原因。
 3. 增加 CSV 导入 KOL / 合作记录。
    - 已有 `importCreatorsCsv` / `importCoopsCsv`

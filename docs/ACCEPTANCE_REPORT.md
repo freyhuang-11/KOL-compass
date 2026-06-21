@@ -136,6 +136,7 @@ node smoke-test.js
 - 支持本地数据导入/导出
 - 支持 hash 直达路由
 - TikTok API 交接文档存在
+- TikTok API 本地配置字段可保存，且明确不在前端保存 client_secret
 - KOL详情排除产出/经营指标
 - `5175` 服务返回 200
 
@@ -149,6 +150,7 @@ node smoke-test.js
 - `smoke-outreach.png`
 - `smoke-samples.png`
 - `smoke-templates.png`
+- `smoke-admin.png`
 
 ## 当前限制
 
@@ -172,6 +174,15 @@ node smoke-test.js
 这些能力不能在未授权时假装成功。
 
 ## TikTok API 人工操作边界
+
+平台管理端已支持本地保存 TikTok API 接入准备信息：
+
+- client_key
+- OAuth Redirect URL
+- 已申请 scope
+- 最近检查时间
+
+client_secret 不保存在前端 localStorage，真实接入时应放到本项目后端环境变量中。
 
 遇到以下情况需要用户操作：
 
