@@ -58,6 +58,8 @@ const seed = {
     coopOutput: "全部",
     coopStatus: "全部",
     coopTag: "全部",
+    dashboardRange: "本月",
+    dashboardOwner: "全部",
     messageType: "全部",
     messageRead: "全部",
   },
@@ -283,6 +285,38 @@ function monthKey(value = new Date()) {
   return parsed.toISOString().slice(0, 7);
 }
 
+function dateOnly(value) {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
+}
+
+function datePlus(base, days) {
+  const next = new Date(base);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function inActivityRange(value, range) {
+  if (range === "全部") return true;
+  const date = dateOnly(value);
+  if (!date) return false;
+  const today = dateOnly(new Date());
+  if (range === "本月") return date.getFullYear() === today.getFullYear() && date.getMonth() === today.getMonth();
+  const days = range === "近7天" ? 7 : 30;
+  return date >= datePlus(today, -(days - 1)) && date <= today;
+}
+
+function inDueRange(value, range) {
+  if (range === "全部") return true;
+  const date = dateOnly(value);
+  if (!date) return false;
+  const today = dateOnly(new Date());
+  if (range === "本月") return date.getFullYear() === today.getFullYear() && date.getMonth() === today.getMonth();
+  const days = range === "近7天" ? 7 : 30;
+  return date >= today && date <= datePlus(today, days);
+}
+
 function outreachQuota() {
   return planQuotas[state.settings.planName] ?? planQuotas["专业版"];
 }
@@ -452,40 +486,100 @@ function pageHead(title, desc, action = "") {
   `;
 }
 
-function stat(label, value, note = "") {
-  return `<div class="card"><div class="stat-label">${label}</div><div class="stat-value">${value}</div><div class="stat-note">${note}</div></div>`;
+function stat(label, value, note = "", action = "") {
+  const attrs = action ? ` role="button" tabindex="0" onclick="${action}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();${action}}"` : "";
+  return `<div class="card stat-card ${action ? "clickable" : ""}"${attrs}><div class="stat-label">${label}</div><div class="stat-value">${value}</div><div class="stat-note">${note}</div></div>`;
+}
+
+function trendBar(label, value, max, note = "", action = "") {
+  const width = max > 0 ? Math.max(6, Math.round((value / max) * 100)) : 0;
+  const click = action ? ` onclick="${action}"` : "";
+  return `
+    <div class="trend-row ${action ? "clickable" : ""}"${click}>
+      <div class="trend-head"><b>${label}</b><span>${value}</span></div>
+      <div class="trend-track"><div class="trend-fill" style="width:${width}%"></div></div>
+      ${note ? `<div class="muted">${note}</div>` : ""}
+    </div>
+  `;
 }
 
 function renderDashboard() {
-  const totalOutreach = state.outreach.length;
-  const replied = state.outreach.filter((x) => x.status === "待我方回复").length;
-  const activeCoops = state.cooperations.filter((x) => x.status !== "合作结束").length;
-  const sampleOpen = state.samples.filter((x) => x.status !== "已签收").length;
-  const gmv = state.cooperations.reduce((sum, x) => sum + Number(x.gmv || 0), 0);
-  const output = state.cooperations.filter((x) => x.videos > 0 || x.lives > 0).length;
+  const range = state.filters.dashboardRange || "本月";
+  const owner = state.filters.dashboardOwner || "全部";
+  const owners = Array.from(new Set(state.cooperations.map((x) => x.owner).filter(Boolean)));
+  const dashboardCoops = state.cooperations.filter((x) => {
+    const ownerOk = owner === "全部" || x.owner === owner;
+    return ownerOk && inDueRange(x.dueDate, range);
+  });
+  const dashboardOutreach = state.outreach.filter((x) => inActivityRange(x.updatedAt, range));
+  const dashboardSamples = state.samples.filter((x) => inActivityRange(x.updatedAt, range));
+  const totalOutreach = dashboardOutreach.length;
+  const replied = dashboardOutreach.filter((x) => x.status === "待我方回复").length;
+  const activeCoops = dashboardCoops.filter((x) => x.status !== "合作结束").length;
+  const sampleOpen = dashboardSamples.filter((x) => x.status !== "已签收").length;
+  const gmv = dashboardCoops.reduce((sum, x) => sum + Number(x.gmv || 0), 0);
+  const output = dashboardCoops.filter((x) => x.videos > 0 || x.lives > 0).length;
+  const riskCoops = dashboardCoops.filter((x) => ["逾期未产出", "有订单未匹配内容", "待产出"].includes(x.status));
+  const statusCounts = outputStatuses
+    .filter((x) => x !== "全部")
+    .map((status) => ({ status, count: dashboardCoops.filter((x) => x.status === status).length }))
+    .filter((x) => x.count > 0);
+  const maxStatus = Math.max(0, ...statusCounts.map((x) => x.count));
+  const ownerRows = owners.map((name) => {
+    const rows = state.cooperations.filter((x) => x.owner === name && inDueRange(x.dueDate, range));
+    const produced = rows.filter((x) => x.videos > 0 || x.lives > 0).length;
+    return { name, rows, produced, gmv: rows.reduce((sum, x) => sum + Number(x.gmv || 0), 0) };
+  }).filter((x) => x.rows.length > 0);
+  const maxOwnerGmv = Math.max(0, ...ownerRows.map((x) => x.gmv));
   return `
     ${pageHead("控制台", "查看建联、寄样、合作履约和归因 GMV 的整体状态。")}
+    <div class="toolbar">
+      <div class="filters">
+        <select class="select" onchange="setFilter('dashboardRange', this.value)" aria-label="控制台时间范围">
+          ${["本月", "近7天", "近30天", "全部"].map((x) => `<option ${range === x ? "selected" : ""}>${x}</option>`).join("")}
+        </select>
+        <select class="select" onchange="setFilter('dashboardOwner', this.value)" aria-label="控制台负责人">
+          ${["全部", ...owners].map((x) => `<option ${owner === x ? "selected" : ""}>${escapeHtml(x)}</option>`).join("")}
+        </select>
+        <span class="muted">活动按更新时间统计，合作按产出截止日统计。</span>
+      </div>
+      <div class="filters">
+        <button class="btn" onclick="dashboardGo('messages')">查看系统消息</button>
+        <button class="btn" onclick="dashboardGo('cooperations')">进入合作管理</button>
+      </div>
+    </div>
     <div class="grid grid-4">
-      ${stat("本月建联数", totalOutreach, "点击建联记录查看明细")}
-      ${stat("待回复消息", replied, "需要 BD 处理")}
-      ${stat("合作中 KOL", activeCoops, "包含待产出与已产出")}
-      ${stat("寄样中", sampleOpen, "待审核/待发货/运输中")}
-      ${stat("本月预估 GMV", money(gmv), "仅统计合作管理中的归因 GMV")}
-      ${stat("已产出合作", output, "视频或直播数大于 0")}
-      ${stat("逾期未产出", state.cooperations.filter((x) => x.status === "逾期未产出").length, "需要催发或终止")}
-      ${stat("API连接状态", state.settings.apiStatus, "未连接时使用本地数据")}
+      ${stat(`${range}建联数`, totalOutreach, "进入建联记录查看明细", "dashboardGo('outreach','outreachStatus','全部')")}
+      ${stat("待我方回复", replied, "需要 BD 处理", "dashboardGo('outreach','outreachStatus','待我方回复')")}
+      ${stat("合作中 KOL", activeCoops, owner === "全部" ? "全部负责人" : `负责人：${owner}`, "dashboardGo('cooperations','coopStatus','全部')")}
+      ${stat("寄样中", sampleOpen, "待审核/待发货/运输中", "dashboardGo('samples')")}
+      ${stat(`${range}预估 GMV`, money(gmv), "仅统计合作管理中的归因 GMV", "dashboardGo('cooperations','coopStatus','全部')")}
+      ${stat("已产出合作", output, "视频或直播数大于 0", "dashboardGo('cooperations','coopOutput','已产出')")}
+      ${stat("逾期未产出", dashboardCoops.filter((x) => x.status === "逾期未产出").length, "需要催发或终止", "dashboardGo('cooperations','coopStatus','逾期未产出')")}
+      ${stat("API连接状态", state.settings.apiStatus, "未连接时使用本地数据", "dashboardGo('admin')")}
     </div>
     <div class="grid grid-2" style="margin-top:16px">
       <div class="card">
         <h3>今日优先事项</h3>
         <div class="timeline">
-          ${state.cooperations.filter((x) => ["逾期未产出", "有订单未匹配内容", "待产出"].includes(x.status)).slice(0, 4).map((x) => `
+          ${riskCoops.slice(0, 4).map((x) => `
             <div class="message">
               <b>${creator(x.creatorId)?.username || "-"}</b> · ${product(x.productId)?.name || "-"} · ${badge(x.status)}
               <div class="muted">${escapeHtml(x.notes)}</div>
+              <div style="margin-top:8px"><button class="btn ghost" onclick="dashboardGo('cooperations','coopStatus','${escapeJs(x.status)}')">处理同类问题</button></div>
             </div>
           `).join("") || `<div class="empty">暂无需要处理的合作。</div>`}
         </div>
+      </div>
+      <div class="card">
+        <h3>内容状态分布</h3>
+        ${statusCounts.map((x) => trendBar(x.status, x.count, maxStatus, "点击筛选合作管理", `dashboardGo('cooperations','coopStatus','${escapeJs(x.status)}')`)).join("") || `<div class="empty">当前范围内暂无合作数据。</div>`}
+      </div>
+    </div>
+    <div class="grid grid-2" style="margin-top:16px">
+      <div class="card">
+        <h3>负责人概览</h3>
+        ${ownerRows.map((x) => trendBar(escapeHtml(x.name), x.gmv, maxOwnerGmv, `${x.rows.length} 个合作 · 已产出 ${x.produced} 个 · ${money(x.gmv)}`, `setFilter('dashboardOwner','${escapeJs(x.name)}')`)).join("") || `<div class="empty">暂无负责人数据。</div>`}
       </div>
       <div class="card">
         <h3>TikTok API 接入状态</h3>
@@ -1060,6 +1154,23 @@ function setFilter(key, value) {
   state.filters[key] = value;
   saveState();
   render();
+}
+
+function dashboardGo(page, filterKey = "", value = "") {
+  if (page === "outreach") {
+    state.filters.outreachSearch = "";
+    state.filters.outreachChannel = "全部";
+    state.filters.outreachStatus = filterKey === "outreachStatus" ? value : "全部";
+  }
+  if (page === "cooperations") {
+    if (filterKey === "coopStatus") state.filters.coopStatus = value;
+    else state.filters.coopStatus = "全部";
+    if (filterKey === "coopOutput") state.filters.coopOutput = value;
+    else state.filters.coopOutput = "全部";
+    state.filters.coopSearch = state.filters.dashboardOwner === "全部" ? "" : state.filters.dashboardOwner;
+    state.filters.coopTag = "全部";
+  }
+  navigateHash(page);
 }
 
 function showCreator(id) {
@@ -2259,6 +2370,7 @@ function escapeJs(value) {
 
 window.setPage = setPage;
 window.setFilter = setFilter;
+window.dashboardGo = dashboardGo;
 window.showCreator = showCreator;
 window.syncProducts = syncProducts;
 window.syncCreators = syncCreators;

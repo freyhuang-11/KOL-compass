@@ -167,6 +167,17 @@ button {
   padding: 16px;
 }
 
+.stat-card.clickable,
+.trend-row.clickable {
+  cursor: pointer;
+}
+
+.stat-card.clickable:hover,
+.trend-row.clickable:hover {
+  border-color: var(--primary);
+  box-shadow: 0 1px 0 rgba(37, 99, 235, 0.08);
+}
+
 .stat-label {
   color: var(--muted);
   font-size: 12px;
@@ -182,6 +193,34 @@ button {
   color: var(--subtle);
   font-size: 12px;
   margin-top: 6px;
+}
+
+.trend-row {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-top: 10px;
+}
+
+.trend-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.trend-track {
+  height: 8px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  overflow: hidden;
+}
+
+.trend-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--primary);
 }
 
 .toolbar {
