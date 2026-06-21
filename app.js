@@ -54,6 +54,8 @@ const seed = {
     outreachSearch: "",
     outreachStatus: "全部",
     outreachChannel: "全部",
+    sampleSearch: "",
+    sampleStatus: "全部",
     coopSearch: "",
     coopOutput: "全部",
     coopStatus: "全部",
@@ -790,9 +792,38 @@ function renderBlacklist() {
 }
 
 function renderSamples() {
+  const statuses = Array.from(new Set(state.samples.map((s) => s.status).filter(Boolean)));
+  const rows = state.samples.filter((s) => {
+    const c = creator(s.creatorId);
+    const p = product(s.productId);
+    const kw = state.filters.sampleSearch.trim().toLowerCase();
+    const kwOk = !kw || [c?.username, c?.nickname, p?.name, s.status, s.tracking].join(" ").toLowerCase().includes(kw);
+    const statusOk = state.filters.sampleStatus === "全部" || s.status === state.filters.sampleStatus;
+    return kwOk && statusOk;
+  });
+  const openCount = state.samples.filter((s) => !["已签收", "已拒绝"].includes(s.status)).length;
+  const signedCount = state.samples.filter((s) => s.status === "已签收").length;
+  const rejectedCount = state.samples.filter((s) => s.status === "已拒绝").length;
   return `
     ${pageHead("寄样管理", "同步或手工维护样品申请、审核、发货和签收状态。", `<button class="btn primary" onclick="openSampleModal()">新增寄样</button>`)}
-    ${table(["达人", "产品", "状态", "物流单号", "更新时间", "操作"], state.samples.map((s) => [
+    <div class="grid grid-4">
+      ${stat("寄样总数", state.samples.length, "本地样品台账")}
+      ${stat("处理中", openCount, "待审核/待发货/已发货")}
+      ${stat("已签收", signedCount, "可转合作")}
+      ${stat("已拒绝", rejectedCount, "不再推进")}
+    </div>
+    <div class="toolbar">
+      <div class="filters">
+        <input class="input" placeholder="搜索达人、产品、物流单号..." value="${escapeHtml(state.filters.sampleSearch)}" oninput="setFilter('sampleSearch', this.value)" />
+        <select class="select" onchange="setFilter('sampleStatus', this.value)">
+          ${["全部", ...statuses].map((x) => `<option ${state.filters.sampleStatus === x ? "selected" : ""}>${escapeHtml(x)}</option>`).join("")}
+        </select>
+      </div>
+      <div class="filters">
+        <span class="muted">当前显示 ${rows.length} 条</span>
+      </div>
+    </div>
+    ${table(["达人", "产品", "状态", "物流单号", "更新时间", "操作"], rows.map((s) => [
       personCell(creator(s.creatorId)),
       product(s.productId)?.name || "-",
       badge(s.status),
