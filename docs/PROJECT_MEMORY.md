@@ -1,6 +1,6 @@
 # KOL Compass 项目记忆
 
-更新时间：2026-06-21 23:14 CST
+更新时间：2026-06-21 23:20 CST
 
 ## 当前工作目录
 
@@ -40,6 +40,8 @@ node smoke-test.js
 
 - `node --check app.js` 通过。
 - `node smoke-test.js` 全部通过。
+- 平台管理端截图 `smoke-admin.png` 已重新生成并目视检查通过，功能开关可见且可切换。
+- 订阅计费截图 `smoke-billing.png` 已生成并目视检查通过，Stripe 关闭状态可见。
 - 系统消息截图 `smoke-messages.png` 已生成并目视检查通过。
 - 产品管理截图 `smoke-products.png` 已生成并目视检查通过。
 - 平台管理端截图 `smoke-admin.png` 已重新生成并目视检查通过。
@@ -58,6 +60,10 @@ node smoke-test.js
 - 建联记录已支持按达人/产品/消息关键词、沟通状态、渠道筛选。
 - 合作管理已支持按达人/产品/负责人/备注搜索，并支持全部/已产出/未产出筛选。
 - 平台管理端已支持保存 TikTok API 本地配置：client_key、OAuth Redirect URL、scope、最近检查时间；client_secret 明确不保存到前端。
+- 平台管理端功能开关已从静态展示变成真实状态：TikTok 私信、Email、WhatsApp、消息翻译、Stripe 支付可切换。
+- 建联和回复渠道会读取功能开关；关闭 Email/WhatsApp 后，新建联和回复不会再显示对应渠道，保存时也会二次校验。
+- 订阅计费页会读取 Stripe 支付开关，关闭时明确展示 Stripe 不可用。
+- 产品管理不允许手动新增商品，避免本地商品和 TikTok Shop 真实商品源冲突。
 - KOL 池和合作管理已支持 CSV 导入。
 - KOL 池已支持勾选达人、一键建联、选择产品/模板/渠道、定时发送记录和附加邀请链接。
 - 达人联系方式已支持在编辑弹窗录入 Email / WhatsApp。

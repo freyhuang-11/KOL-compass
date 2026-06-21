@@ -125,6 +125,9 @@ node smoke-test.js
 - KOL池支持勾选达人、一键建联、选择产品/模板/渠道、定时发送记录和附加邀请链接
 - KOL池支持关键词、达人类型、类目、地区、粉丝量级、回复率区间筛选
 - 产品管理支持产品搜索、类目筛选、状态筛选和合作模式筛选
+- 产品管理不允许手动新增商品，避免伪造 TikTok Shop 商品源
+- 平台管理端功能开关会约束建联和回复渠道，关闭 Email/WhatsApp 后不再作为新操作渠道
+- 订阅页读取 Stripe 支付开关，关闭时明确展示不可用状态
 - 系统消息包含同步日志，展示 API/同步状态、原因和时间
 - KOL详情和达人编辑弹窗支持录入 Email / WhatsApp
 - 建联记录和KOL详情沟通记录支持直接回复
@@ -153,6 +156,7 @@ node smoke-test.js
 - `smoke-samples.png`
 - `smoke-templates.png`
 - `smoke-admin.png`
+- `smoke-billing.png`
 - `smoke-messages.png`
 
 ## 当前限制

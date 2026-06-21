@@ -60,6 +60,13 @@ const seed = {
     tiktokRedirectUrl: "http://localhost:8015/api/tiktok/callback",
     tiktokScopes: "product,affiliate,messaging,order",
     tiktokLastAuthCheck: "尚未检查",
+    featureSwitches: {
+      tiktokMessaging: true,
+      emailMessaging: true,
+      whatsappMessaging: false,
+      translation: true,
+      stripePayment: false,
+    },
   },
   products: [
     { id: 1, name: "无线蓝牙耳机 Pro Max", category: "电子配件", price: "$49.90", commission: "15%", mode: "公开合作", status: "在售" },
@@ -174,6 +181,7 @@ function normalizeState(next) {
   const merged = { ...structuredClone(seed), ...next };
   merged.filters = { ...seed.filters, ...(next.filters || {}) };
   merged.settings = { ...seed.settings, ...(next.settings || {}) };
+  merged.settings.featureSwitches = { ...seed.settings.featureSwitches, ...((next.settings || {}).featureSwitches || {}) };
   if (!Array.isArray(merged.bulkCreatorIds)) merged.bulkCreatorIds = [];
   if (!Array.isArray(merged.syncLogs)) merged.syncLogs = [];
   return merged;
@@ -419,7 +427,7 @@ function renderProducts() {
       </div>
       <div class="filters">
         <span class="muted">上次同步：${state.settings.lastProductSync}</span>
-        <button class="btn" onclick="addProduct()">手动新增测试商品</button>
+        <button class="btn" onclick="addProduct()">商品来源说明</button>
       </div>
     </div>
     <div class="notice" style="margin-bottom:12px">真实商品、佣金率和合作模式应来自 TikTok Shop Partner API；当前未授权时仅使用本地数据，不伪造同步成功。</div>
@@ -681,8 +689,10 @@ function renderTeam() {
 }
 
 function renderBilling() {
+  const stripeEnabled = Boolean(state.settings.featureSwitches.stripePayment);
   return `
     ${pageHead("订阅计费", "查看套餐、配额和账单。支付通道由平台管理端开关控制。")}
+    <div class="notice" style="margin-bottom:16px">当前可用支付通道：支付宝、微信支付${stripeEnabled ? "、Stripe" : "。Stripe 支付已由平台管理端关闭"}。</div>
     <div class="grid grid-4">
       ${["免费版|$0|100 建联/月", "基础版|$29|1,000 建联/月", "专业版|$99|5,000 建联/月", "企业版|$299|不限量"].map((raw) => {
         const [name, price, quota] = raw.split("|");
@@ -693,17 +703,33 @@ function renderBilling() {
 }
 
 function renderAdmin() {
+  const switches = [
+    ["tiktokMessaging", "TikTok私信", "核心建联入口，通常保持启用"],
+    ["emailMessaging", "Email消息", "控制 Email 建联和回复渠道"],
+    ["whatsappMessaging", "WhatsApp消息", "控制 WhatsApp 建联和回复渠道"],
+    ["translation", "消息翻译", "控制翻译功能入口"],
+    ["stripePayment", "Stripe支付", "控制订阅页 Stripe 支付入口"],
+  ];
   return `
     ${pageHead("平台管理端", "功能开关、API 接入状态、商家统计和入驻审批。")}
     <div class="grid grid-2">
       <div class="card">
         <h3>功能开关</h3>
-        ${["TikTok私信", "Email消息", "WhatsApp消息", "消息翻译", "Stripe支付"].map((x, i) => `
+        ${switches.map(([key, name, desc]) => {
+          const enabled = Boolean(state.settings.featureSwitches[key]);
+          return `
           <div class="toolbar" style="margin:8px 0">
-            <span>${x}</span>
-            ${badge(i === 4 ? "停用" : "启用")}
+            <div>
+              <b>${name}</b>
+              <div class="muted">${desc}</div>
+            </div>
+            <div>
+              ${badge(enabled ? "启用" : "停用")}
+              <button class="btn ghost" onclick="toggleFeatureSwitch('${key}')">${enabled ? "关闭" : "开启"}</button>
+            </div>
           </div>
-        `).join("")}
+        `;
+        }).join("")}
       </div>
       <div class="card">
         <h3>TikTok Partner API 接入流程</h3>
@@ -874,6 +900,46 @@ function addSyncLog(module, status, reason) {
   state.syncLogs = state.syncLogs.slice(0, 50);
 }
 
+function featureEnabled(key) {
+  return Boolean(state.settings.featureSwitches[key]);
+}
+
+function channelFeatureKey(channel) {
+  if (channel === "Email") return "emailMessaging";
+  if (channel === "WhatsApp") return "whatsappMessaging";
+  return "tiktokMessaging";
+}
+
+function channelEnabled(channel) {
+  return featureEnabled(channelFeatureKey(channel));
+}
+
+function channelOptionsForCreators(targets, currentChannel = "") {
+  const list = [];
+  const add = (value, text = value) => list.push([value, text]);
+  if (channelEnabled("TikTok私信")) add("TikTok私信");
+  if (channelEnabled("Email") && targets.every((c) => c?.email)) add("Email");
+  if (channelEnabled("WhatsApp") && targets.every((c) => c?.whatsapp)) add("WhatsApp");
+  if (!list.length && currentChannel && channelEnabled(currentChannel)) add(currentChannel);
+  return list;
+}
+
+function validateChannelForCreators(channel, targets) {
+  if (!channelEnabled(channel)) {
+    alert(`${channel} 已被平台管理端关闭，不能用于新建联或回复。`);
+    return false;
+  }
+  if (channel === "Email" && !targets.every((c) => c?.email)) {
+    alert("选择 Email 前，需要先为所有目标达人录入 Email。");
+    return false;
+  }
+  if (channel === "WhatsApp" && !targets.every((c) => c?.whatsapp)) {
+    alert("选择 WhatsApp 前，需要先为所有目标达人录入 WhatsApp。");
+    return false;
+  }
+  return true;
+}
+
 function syncProducts() {
   state.settings.lastProductSync = nowText();
   const reason = "本地模式下仅更新时间；真实商品数据需完成 TikTok Partner API 授权。";
@@ -935,12 +1001,24 @@ function markApiAuthBlocked() {
   render();
 }
 
-function addProduct() {
-  const name = prompt("产品名称");
-  if (!name) return;
-  state.products.push({ id: Date.now(), name, category: "未分类", price: "-", commission: "10%", mode: "公开合作", status: "在售" });
+function toggleFeatureSwitch(key) {
+  const names = {
+    tiktokMessaging: "TikTok私信",
+    emailMessaging: "Email消息",
+    whatsappMessaging: "WhatsApp消息",
+    translation: "消息翻译",
+    stripePayment: "Stripe支付",
+  };
+  if (!Object.prototype.hasOwnProperty.call(state.settings.featureSwitches, key)) return;
+  state.settings.featureSwitches[key] = !state.settings.featureSwitches[key];
+  const status = state.settings.featureSwitches[key] ? "启用" : "停用";
+  pushMessage("功能开关", `${names[key] || key} 已${status}。`);
   saveState();
   render();
+}
+
+function addProduct() {
+  alert("产品数据应来自 TikTok Shop Partner API。本地版本不允许手动新增，避免和真实店铺商品冲突。");
 }
 
 function dateAfter(days) {
@@ -1001,12 +1079,7 @@ function advanceOutreach(id, status) {
 
 function replyChannelOptions(row) {
   const c = creator(row.creatorId);
-  const channels = new Map();
-  channels.set(row.channel || "TikTok私信", row.channel || "TikTok私信");
-  channels.set("TikTok私信", "TikTok私信");
-  if (c?.email) channels.set("Email", "Email");
-  if (c?.whatsapp) channels.set("WhatsApp", "WhatsApp");
-  return Array.from(channels.entries());
+  return channelOptionsForCreators([c], row.channel);
 }
 
 function openReplyModal(id) {
@@ -1015,10 +1088,13 @@ function openReplyModal(id) {
   const c = creator(row.creatorId);
   const p = product(row.productId) || state.products[0];
   const defaultTemplate = state.templates[1]?.content || "Hi {KOL名称}，感谢回复，我们会继续推进 {产品名称} 的合作。";
+  const channelOptions = replyChannelOptions(row);
+  if (!channelOptions.length) return alert("当前没有可用回复渠道，请先到平台管理端开启 TikTok 私信、Email 或 WhatsApp。");
+  const defaultChannel = channelOptions.some(([v]) => v === row.channel) ? row.channel : channelOptions[0][0];
   openModal("回复达人", `
-    <div class="notice">正在回复 @${escapeHtml(c?.username || "-")}。如达人已提供 Email 或 WhatsApp，可先在 KOL 详情中录入联系方式后切换渠道。</div>
+    <div class="notice">正在回复 @${escapeHtml(c?.username || "-")}。Email / WhatsApp 必须同时满足“平台开关已开启”和“达人已录入联系方式”才会显示。</div>
     <div class="form-grid" style="margin-top:12px">
-      ${selectField("replyChannel", "回复渠道", replyChannelOptions(row), row.channel || "TikTok私信")}
+      ${selectField("replyChannel", "回复渠道", channelOptions, defaultChannel)}
       ${selectField("replyTemplateId", "消息模板", [["0", "不使用模板"], ...state.templates.map((x) => [x.id, x.name])], state.templates[1]?.id || "0")}
     </div>
     <div class="form-field" style="margin-top:12px"><label>回复内容</label><textarea id="replyMessage" class="textarea">${escapeHtml(renderTemplate(defaultTemplate, c || {}, p))}</textarea></div>
@@ -1034,7 +1110,9 @@ function saveReply(id) {
   const template = state.templates.find((x) => x.id === templateId);
   const rawMessage = document.getElementById("replyMessage").value.trim() || template?.content || "";
   const message = renderTemplate(rawMessage, c || {}, p);
-  row.channel = document.getElementById("replyChannel").value;
+  const channel = document.getElementById("replyChannel").value;
+  if (!validateChannelForCreators(channel, [c])) return;
+  row.channel = channel;
   row.status = "待回复";
   row.updatedAt = nowText();
   row.lastMessage = `[${row.updatedAt}] 我方回复：${message}`;
@@ -1225,16 +1303,14 @@ function openOutreachModal(creatorId = 0) {
     alert("请先选择至少一位可建联达人");
     return;
   }
-  const first = targets[0];
-  const channelOptions = [["TikTok私信", "TikTok私信"]];
-  if (targets.every((c) => c.email)) channelOptions.push(["Email", "Email"]);
-  if (targets.every((c) => c.whatsapp)) channelOptions.push(["WhatsApp", "WhatsApp"]);
+  const channelOptions = channelOptionsForCreators(targets);
+  if (!channelOptions.length) return alert("当前没有可用发送渠道，请先到平台管理端开启 TikTok 私信、Email 或 WhatsApp。");
   const defaultTemplate = state.templates[0]?.content || "Hi {KOL名称}，我们想邀请你合作 {产品名称}。";
   openModal("发起建联", `
-    <div class="notice">本次将联系 ${targets.length} 位达人：${targets.slice(0, 4).map((c) => `@${escapeHtml(c.username)}`).join("、")}${targets.length > 4 ? " 等" : ""}。未录入 Email/WhatsApp 的达人仅显示 TikTok 私信渠道。</div>
+    <div class="notice">本次将联系 ${targets.length} 位达人：${targets.slice(0, 4).map((c) => `@${escapeHtml(c.username)}`).join("、")}${targets.length > 4 ? " 等" : ""}。Email / WhatsApp 必须同时满足“平台开关已开启”和“所有目标达人已录入联系方式”才会显示。</div>
     <div class="form-grid" style="margin-top:12px">
       ${selectField("outreachProductId", "建联产品", state.products.map((x) => [x.id, `${x.name} · ${x.commission}`]), state.products[0]?.id)}
-      ${selectField("outreachChannel", "发送渠道", channelOptions, "TikTok私信")}
+      ${selectField("outreachChannel", "发送渠道", channelOptions, channelOptions[0][0])}
       ${selectField("outreachTemplateId", "消息模板", [["0", "不使用模板"], ...state.templates.map((x) => [x.id, x.name])], state.templates[0]?.id || "0")}
       ${selectField("outreachSendMode", "发送方式", [["立即发送", "立即发送"], ["定时发送", "定时发送"]], "立即发送")}
       ${field("outreachScheduleAt", "定时发送时间", "2026-06-22 09:30", "")}
@@ -1262,6 +1338,8 @@ function saveOutreach(idList) {
   const scheduleAt = document.getElementById("outreachScheduleAt").value.trim();
   const invite = document.getElementById("outreachInvite").value === "是";
   const message = document.getElementById("outreachMessage").value.trim() || template?.content || "";
+  const targets = ids.map((id) => creator(id)).filter(Boolean).filter((c) => c.status !== "黑名单");
+  if (!validateChannelForCreators(channel, targets)) return;
   let created = 0;
   ids.forEach((id, index) => {
     const c = creator(id);
@@ -1748,6 +1826,7 @@ window.syncCoopData = syncCoopData;
 window.simulateConnect = simulateConnect;
 window.saveApiSettings = saveApiSettings;
 window.markApiAuthBlocked = markApiAuthBlocked;
+window.toggleFeatureSwitch = toggleFeatureSwitch;
 window.addProduct = addProduct;
 window.openCreatorModal = openCreatorModal;
 window.saveCreator = saveCreator;

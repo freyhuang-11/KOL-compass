@@ -31,7 +31,7 @@
 - `stop-5175.bat`
 - `smoke-test.js`
 
-最近一次心跳检查：2026-06-21 23:14 CST，当前分支已连接 GitHub 远端，`node --check app.js` 与 `node smoke-test.js` 通过。本轮新增系统消息同步日志，用于展示 API/同步状态、失败原因和时间。
+最近一次心跳检查：2026-06-21 23:20 CST，当前分支已连接 GitHub 远端，`node --check app.js` 与 `node smoke-test.js` 通过。本轮新增平台功能开关真实约束：Email/WhatsApp 开关会影响建联和回复渠道，Stripe 开关会影响订阅页提示；产品管理不允许手动新增伪造商品。
 
 启动：
 
@@ -87,6 +87,7 @@ P0：
    - 支持关键词搜索
    - 支持类目、状态、合作模式筛选
    - 未授权 TikTok Partner API 时只展示本地数据和明确提示，不伪造同步成功
+   - 不允许手动新增商品，避免和 TikTok Shop 真实商品源冲突
 3. 补齐各页面的新增/编辑/删除闭环，不只是展示。
 4. 把“合作管理”作为内容追踪主工作台继续增强：
    - 达人/产品/负责人/备注搜索
@@ -113,6 +114,10 @@ P0：
    - 当前使用 localStorage
    - 后续如果需要后端，新增本项目自己的后端端口，例如 `8015`
    - 不接入 `D:\tiktok-creator-tool` 的后端
+8. 保持平台功能开关真实生效：
+   - Email / WhatsApp 关闭后，新建联和回复渠道不展示对应入口
+   - 保存建联/回复时必须二次校验渠道开关和达人联系方式
+   - Stripe 关闭后，订阅页必须明确展示 Stripe 不可用
 
 P1：
 
@@ -169,4 +174,5 @@ GitHub 提交流程：
 "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --headless=new --disable-gpu --no-first-run --window-size=1440,1000 --screenshot="smoke-cooperations.png" "http://127.0.0.1:5175/#cooperations"
 "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --headless=new --disable-gpu --no-first-run --window-size=1440,1000 --screenshot="smoke-kol-detail.png" "http://127.0.0.1:5175/#kol/creator/1"
 "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --headless=new --disable-gpu --no-first-run --window-size=1440,1000 --screenshot="smoke-messages.png" "http://127.0.0.1:5175/#messages"
+"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --headless=new --disable-gpu --no-first-run --window-size=1440,1000 --screenshot="smoke-billing.png" "http://127.0.0.1:5175/#billing"
 ```
