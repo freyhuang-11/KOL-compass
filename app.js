@@ -27,6 +27,7 @@ const pages = [
 const pageKeys = new Set(pages.flatMap(([, items]) => items.map(([key]) => key)));
 const fixedTags = ["高ROI", "可复投", "需催发", "内容优质", "低效合作"];
 const outputStatuses = ["全部", "待产出", "已发视频", "已直播", "视频+直播", "逾期未产出", "有订单未匹配内容", "合作结束"];
+const planQuotas = { "免费版": 100, "基础版": 1000, "专业版": 5000, "企业版": Infinity };
 
 const seed = {
   page: "dashboard",
@@ -43,6 +44,7 @@ const seed = {
     kolRegion: "全部",
     kolFollowers: "全部",
     kolReplyRate: "全部",
+    kolInterest: "可建联",
     outreachSearch: "",
     outreachStatus: "全部",
     outreachChannel: "全部",
@@ -60,6 +62,7 @@ const seed = {
     tiktokRedirectUrl: "http://localhost:8015/api/tiktok/callback",
     tiktokScopes: "product,affiliate,messaging,order",
     tiktokLastAuthCheck: "尚未检查",
+    planName: "专业版",
     featureSwitches: {
       tiktokMessaging: true,
       emailMessaging: true,
@@ -244,6 +247,65 @@ function money(v) {
 
 function pct(v) {
   return Number.isFinite(v) ? `${v.toFixed(1)}%` : "-";
+}
+
+function todayString() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function monthKey(value = new Date()) {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return new Date().toISOString().slice(0, 7);
+  return parsed.toISOString().slice(0, 7);
+}
+
+function outreachQuota() {
+  return planQuotas[state.settings.planName] ?? planQuotas["专业版"];
+}
+
+function monthlyOutreachUsed() {
+  const current = monthKey();
+  return state.outreach.filter((x) => monthKey(x.updatedAt || new Date()) === current && x.status !== "发送失败").length;
+}
+
+function quotaRemaining() {
+  const quota = outreachQuota();
+  if (!Number.isFinite(quota)) return Infinity;
+  return Math.max(0, quota - monthlyOutreachUsed());
+}
+
+function quotaLabel() {
+  const quota = outreachQuota();
+  return Number.isFinite(quota) ? `${monthlyOutreachUsed()} / ${quota}` : `${monthlyOutreachUsed()} / 不限`;
+}
+
+function lastOutreachForCreator(creatorId) {
+  return state.outreach
+    .filter((x) => x.creatorId === creatorId)
+    .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))[0];
+}
+
+function hoursSince(value) {
+  const time = new Date(value).getTime();
+  if (!Number.isFinite(time)) return Infinity;
+  return (Date.now() - time) / 36e5;
+}
+
+function isNotInterestedBlocked(c) {
+  return c?.status === "不感兴趣" && (!c.notInterestedUntil || c.notInterestedUntil >= todayString());
+}
+
+function isOutreachCoolingDown(c) {
+  const last = lastOutreachForCreator(c?.id);
+  return last && hoursSince(last.updatedAt) < 24 && last.status !== "已关闭";
+}
+
+function creatorOutreachBlockReason(c) {
+  if (!c) return "达人不存在";
+  if (c.status === "黑名单") return "黑名单";
+  if (isNotInterestedBlocked(c)) return `不感兴趣至 ${c.notInterestedUntil}`;
+  if (isOutreachCoolingDown(c)) return "24小时内已建联";
+  return "";
 }
 
 function creatorFollowerTierOk(followers, tier) {
@@ -469,10 +531,12 @@ function renderKolPool() {
     const followersOk = creatorFollowerTierOk(c.followers, state.filters.kolFollowers);
     const replyRateOk = creatorReplyRateOk(c.replyRate, state.filters.kolReplyRate);
     const kwOk = !kw || [c.username, c.nickname, c.category, c.region, c.tags.join(",")].join(" ").toLowerCase().includes(kw);
-    return typeOk && categoryOk && regionOk && followersOk && replyRateOk && kwOk && c.status !== "黑名单";
+    const interestOk = state.filters.kolInterest === "显示不感兴趣" ? c.status !== "黑名单" : c.status !== "黑名单" && !isNotInterestedBlocked(c);
+    return typeOk && categoryOk && regionOk && followersOk && replyRateOk && kwOk && interestOk;
   });
   return `
     ${pageHead("KOL池", "筛选达人并发起建联。KOL 详情只看基础信息与沟通入口，不展示合作产出指标。", `<button class="btn primary" onclick="openCreatorModal()">新增达人</button>`)}
+    <div class="notice" style="margin-bottom:12px">当前套餐：${escapeHtml(state.settings.planName)}，本月建联配额已用 ${quotaLabel()}。同一达人 24 小时内只能建联一次；标记不感兴趣后 30 天内不可建联。</div>
     <div class="toolbar">
       <div class="filters">
         <input class="input" placeholder="搜索达人、用户名、标签..." value="${escapeHtml(state.filters.kolSearch)}" oninput="setFilter('kolSearch', this.value)" />
@@ -491,6 +555,9 @@ function renderKolPool() {
         <select class="select" onchange="setFilter('kolReplyRate', this.value)">
           ${["全部", ">=60%", "40%-60%", "<40%"].map((x) => `<option ${state.filters.kolReplyRate === x ? "selected" : ""}>${x}</option>`).join("")}
         </select>
+        <select class="select" onchange="setFilter('kolInterest', this.value)">
+          ${["可建联", "显示不感兴趣"].map((x) => `<option ${state.filters.kolInterest === x ? "selected" : ""}>${x}</option>`).join("")}
+        </select>
       </div>
       <div class="filters">
         <button class="btn primary" onclick="openOutreachModal()">一键建联(${state.bulkCreatorIds.length})</button>
@@ -498,17 +565,20 @@ function renderKolPool() {
         <button class="btn" onclick="syncCreators()">同步达人数据</button>
       </div>
     </div>
-    ${table(["选择", "达人", "类型", "类目/地区", "粉丝", "GMV", "回复率", "标签", "操作"], rows.map((c) => [
-      `<input type="checkbox" ${state.bulkCreatorIds.includes(c.id) ? "checked" : ""} onchange="toggleCreatorSelection(${c.id}, this.checked)" aria-label="选择 @${escapeHtml(c.username)}" />`,
+    ${table(["选择", "达人", "类型", "类目/地区", "粉丝", "GMV", "回复率", "状态/标签", "操作"], rows.map((c) => {
+      const blockReason = creatorOutreachBlockReason(c);
+      return [
+      blockReason ? `<span class="muted">${escapeHtml(blockReason)}</span>` : `<input type="checkbox" ${state.bulkCreatorIds.includes(c.id) ? "checked" : ""} onchange="toggleCreatorSelection(${c.id}, this.checked)" aria-label="选择 @${escapeHtml(c.username)}" />`,
       personCell(c),
       c.type,
       `${c.category}<br><span class="muted">${c.region}</span>`,
       c.followers.toLocaleString(),
       c.gmv,
       c.replyRate,
-      c.tags.map((t) => `<span class="tag">${escapeHtml(t)}</span>`).join(""),
-      `<button class="btn" onclick="openOutreachModal(${c.id})">建联</button> <button class="btn ghost" onclick="showCreator(${c.id})">详情</button> <button class="btn ghost" onclick="openCreatorModal(${c.id})">编辑</button> <button class="btn ghost" onclick="blacklistCreator(${c.id})">拉黑</button>`,
-    ]))}
+      `${c.status === "不感兴趣" ? badge("不感兴趣") : ""} ${c.tags.map((t) => `<span class="tag">${escapeHtml(t)}</span>`).join("")}`,
+      `${blockReason ? "" : `<button class="btn" onclick="openOutreachModal(${c.id})">建联</button>`} <button class="btn ghost" onclick="showCreator(${c.id})">详情</button> <button class="btn ghost" onclick="openCreatorModal(${c.id})">编辑</button> ${c.status === "不感兴趣" ? `<button class="btn ghost" onclick="clearNotInterested(${c.id})">恢复建联</button>` : `<button class="btn ghost" onclick="markNotInterested(${c.id})">不感兴趣</button>`} <button class="btn ghost" onclick="blacklistCreator(${c.id})">拉黑</button>`,
+    ];
+    }))}
   `;
 }
 
@@ -716,10 +786,16 @@ function renderBilling() {
   return `
     ${pageHead("订阅计费", "查看套餐、配额和账单。支付通道由平台管理端开关控制。")}
     <div class="notice" style="margin-bottom:16px">当前可用支付通道：支付宝、微信支付${stripeEnabled ? "、Stripe" : "。Stripe 支付已由平台管理端关闭"}。</div>
+    <div class="grid grid-3" style="margin-bottom:16px">
+      ${stat("当前套餐", state.settings.planName, "本地演示可切换")}
+      ${stat("本月建联配额", quotaLabel(), "按建联记录计算")}
+      ${stat("剩余额度", Number.isFinite(quotaRemaining()) ? quotaRemaining() : "不限", "额度不足会拦截建联")}
+    </div>
     <div class="grid grid-4">
       ${["免费版|$0|100 建联/月", "基础版|$29|1,000 建联/月", "专业版|$99|5,000 建联/月", "企业版|$299|不限量"].map((raw) => {
         const [name, price, quota] = raw.split("|");
-        return `<div class="card"><h3>${name}</h3><div class="stat-value">${price}</div><p>${quota}</p><button class="btn ${name === "专业版" ? "primary" : ""}">${name === "专业版" ? "当前推荐" : "选择套餐"}</button></div>`;
+        const active = state.settings.planName === name;
+        return `<div class="card"><h3>${name}</h3><div class="stat-value">${price}</div><p>${quota}</p><button class="btn ${active ? "primary" : ""}" onclick="selectPlan('${name}')">${active ? "当前套餐" : "选择套餐"}</button></div>`;
       }).join("")}
     </div>
   `;
@@ -1040,6 +1116,14 @@ function toggleFeatureSwitch(key) {
   render();
 }
 
+function selectPlan(name) {
+  if (!Object.prototype.hasOwnProperty.call(planQuotas, name)) return;
+  state.settings.planName = name;
+  pushMessage("订阅套餐", `当前套餐已切换为 ${name}，本月建联配额：${Number.isFinite(outreachQuota()) ? outreachQuota() : "不限"}。`);
+  saveState();
+  render();
+}
+
 function addProduct() {
   alert("产品数据应来自 TikTok Shop Partner API。本地版本不允许手动新增，避免和真实店铺商品冲突。");
 }
@@ -1071,6 +1155,7 @@ function outreachActions(o) {
   if (o.status !== "已关闭") {
     parts.push(`<button class="btn ghost" onclick="advanceOutreach(${o.id}, '已关闭')">关闭</button>`);
   }
+  parts.push(`<button class="btn ghost" onclick="markNotInterested(${o.creatorId})">不感兴趣</button>`);
   parts.push(`<button class="btn ghost" onclick="deleteOutreach(${o.id})">删除</button>`);
   return parts.join(" ");
 }
@@ -1306,11 +1391,51 @@ function blacklistCreator(id) {
   if (reason == null) return;
   c.status = "黑名单";
   c.notes = reason;
+  state.bulkCreatorIds = (state.bulkCreatorIds || []).filter((x) => x !== id);
+  saveState();
+  render();
+}
+
+function markNotInterested(id) {
+  const c = creator(id);
+  if (!c) return;
+  const reason = prompt("不感兴趣原因", c.notInterestedReason || "达人已拒绝");
+  if (reason == null) return;
+  c.status = "不感兴趣";
+  c.notInterestedReason = reason;
+  c.notInterestedUntil = dateAfter(30);
+  state.bulkCreatorIds = (state.bulkCreatorIds || []).filter((x) => x !== id);
+  state.outreach.forEach((row) => {
+    if (row.creatorId === id && row.status !== "已转合作") {
+      row.status = "已关闭";
+      row.updatedAt = nowText();
+      row.lastMessage = `[${row.updatedAt}] 已标记不感兴趣，30 天内不可再次建联。原因：${reason}`;
+    }
+  });
+  pushMessage("不感兴趣", `@${c.username} 已标记不感兴趣，${c.notInterestedUntil} 前不可再次建联。`);
+  saveState();
+  render();
+}
+
+function clearNotInterested(id) {
+  const c = creator(id);
+  if (!c) return;
+  c.status = "待联系";
+  c.notInterestedReason = "";
+  c.notInterestedUntil = "";
+  pushMessage("不感兴趣解除", `@${c.username} 已恢复为可建联。`);
   saveState();
   render();
 }
 
 function toggleCreatorSelection(id, checked) {
+  const c = creator(id);
+  const reason = creatorOutreachBlockReason(c);
+  if (checked && reason) {
+    alert(`该达人暂不可建联：${reason}`);
+    render();
+    return;
+  }
   const next = new Set(state.bulkCreatorIds || []);
   if (checked) next.add(id);
   else next.delete(id);
@@ -1321,9 +1446,13 @@ function toggleCreatorSelection(id, checked) {
 
 function openOutreachModal(creatorId = 0) {
   const selectedIds = creatorId ? [creatorId] : (state.bulkCreatorIds || []);
-  const targets = selectedIds.map((id) => creator(id)).filter(Boolean).filter((c) => c.status !== "黑名单");
+  const targets = selectedIds.map((id) => creator(id)).filter(Boolean).filter((c) => !creatorOutreachBlockReason(c));
   if (!targets.length) {
-    alert("请先选择至少一位可建联达人");
+    alert("请先选择至少一位可建联达人。黑名单、不感兴趣和 24 小时内已建联达人会被拦截。");
+    return;
+  }
+  if (Number.isFinite(quotaRemaining()) && quotaRemaining() < targets.length) {
+    alert(`本月建联配额不足：剩余 ${quotaRemaining()}，本次选择 ${targets.length}。请升级套餐或减少选择数量。`);
     return;
   }
   const channelOptions = channelOptionsForCreators(targets);
@@ -1361,7 +1490,19 @@ function saveOutreach(idList) {
   const scheduleAt = document.getElementById("outreachScheduleAt").value.trim();
   const invite = document.getElementById("outreachInvite").value === "是";
   const message = document.getElementById("outreachMessage").value.trim() || template?.content || "";
-  const targets = ids.map((id) => creator(id)).filter(Boolean).filter((c) => c.status !== "黑名单");
+  const blocked = ids.map((id) => creator(id)).filter(Boolean).map((c) => [c, creatorOutreachBlockReason(c)]).filter(([, reason]) => reason);
+  if (blocked.length) {
+    alert(`以下达人暂不可建联：${blocked.map(([c, reason]) => `@${c.username}（${reason}）`).join("、")}`);
+    return;
+  }
+  const targets = ids.map((id) => creator(id)).filter(Boolean);
+  if (Number.isFinite(quotaRemaining()) && quotaRemaining() < targets.length) {
+    alert(`本月建联配额不足：剩余 ${quotaRemaining()}，本次需要 ${targets.length}。请升级套餐或减少选择数量。`);
+    state.page = "billing";
+    location.hash = "#billing";
+    render();
+    return;
+  }
   if (!validateChannelForCreators(channel, targets)) return;
   let created = 0;
   ids.forEach((id, index) => {
@@ -1956,9 +2097,12 @@ window.simulateConnect = simulateConnect;
 window.saveApiSettings = saveApiSettings;
 window.markApiAuthBlocked = markApiAuthBlocked;
 window.toggleFeatureSwitch = toggleFeatureSwitch;
+window.selectPlan = selectPlan;
 window.addProduct = addProduct;
 window.openCreatorModal = openCreatorModal;
 window.saveCreator = saveCreator;
+window.markNotInterested = markNotInterested;
+window.clearNotInterested = clearNotInterested;
 window.toggleCreatorSelection = toggleCreatorSelection;
 window.openOutreachModal = openOutreachModal;
 window.saveOutreach = saveOutreach;
