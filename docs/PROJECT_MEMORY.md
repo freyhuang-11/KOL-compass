@@ -1,6 +1,6 @@
 # KOL Compass 项目记忆
 
-更新时间：2026-06-22 20:12 CST
+更新时间：2026-06-22 20:18 CST
 
 ## 当前工作目录
 
@@ -66,6 +66,7 @@ node smoke-test.js
 - 2026-06-22 19:55 CST：已按用户要求清除所有内置演示数据。`seed` 中的产品、达人、建联、寄样、合作、模板、自动回复、系统消息、同步日志、团队、商家入驻、账单和操作日志全部为空；新增一次性迁移清理旧浏览器 localStorage 中的演示数据，只保留带 `sourceId` 的真实 TikTok 商品和平台达人。CSV 模板只保留表头，不再带 `sample_creator` 示例行。后续如需引导教程页，再单独在教程上下文加载演示数据。
 - 2026-06-22 20:05 CST：达人库字段口径已按用户反馈修正。客户可见达人类型只保留 `短视频达人`、`直播达人`、`短视频+直播达人` 三种；`联盟达人` 不再作为类型展示，旧值会按均播/直播UV指标迁移为内容形态。`MCN达人` 只作为业务标签展示。`TikTok API`、`联盟达人`、`均播 ...`、`直播UV ...` 都不允许作为客户可见标签。均播和直播UV改为独立表格字段，来源为 TikTok 的 `avg_ec_video_view_count/avg_video_view_count` 和 `avg_ec_live_uv/avg_live_uv`，没有返回时显示 `-`。已重启 8015 后端并低频触发一次平台达人导入，当前 `/api/platform/creators` 返回 60 个真实达人，验收计数为 `badTags=0`、`badTypes=0`、`withMetrics=52`。
 - 2026-06-22 20:12 CST：达人库 GMV 口径已修正。旧演示数据清理版本升级到 `demoDataClearedVersion=2`，确保浏览器中残留的 `@beauty_emma`、`$125K/月` 等演示达人被再次清除。达人库不再显示 `近30天GMV`、`$10K-$50K` 等美元区间筛选，改为 `TikTok GMV` 的 `有GMV/无GMV` 固定筛选；表头改为 `TikTok GMV（接口币种）`。后端和前端都会清除 `/月` 后缀。已重启 8015 并验收 `/api/platform/creators`：`monthlySuffix=0`；当前 60 个达人里 TikTok 返回 `USD` 的 23 个、本地币种/本地格式的 37 个。系统只展示 TikTok 返回的币种，不自行把 USD 换算成本地币，避免伪造数据。
+- 2026-06-22 20:18 CST：KOL 详情页头像已与达人库列表同步，详情页使用同一个 `avatarUrl` 渲染真实头像；无头像时才显示首字母占位。冒烟测试新增 `KOL detail reuses creator avatar image`，防止详情页退回静态占位图。已验证 `enreview2` 后端 `avatarUrlPresent=True`，详情页标签清洗后不再显示 `TikTok API/均播`。
 - `node --check app.js` 通过。
 - `node smoke-test.js` 全部通过。
 - 控制台截图 `smoke-dashboard.png` 已重新生成并目视检查通过，时间范围筛选、负责人筛选、指标下钻、内容状态分布和负责人概览可见。

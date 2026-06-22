@@ -809,6 +809,19 @@ tr:last-child td {
     radial-gradient(circle at 50% 30%, #ffd6c7 0 14%, transparent 15%),
     linear-gradient(145deg, #ef476f 0%, #7c3aed 48%, #0ea5e9 100%);
   box-shadow: 0 12px 24px rgba(31, 63, 170, 0.18);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 32px;
+  font-weight: 800;
+  overflow: hidden;
+}
+
+.creator-portrait img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .creator-profile {

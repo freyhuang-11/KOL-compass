@@ -445,6 +445,14 @@ function creatorVisibleTags(c) {
   return normalizeCreatorTags(c?.tags || []).map((t) => `<span class="tag">${escapeHtml(t)}</span>`).join("");
 }
 
+function creatorPortrait(c, className = "creator-portrait") {
+  if (!c) return `<span class="${className}">?</span>`;
+  const initial = escapeHtml(String(c.username || c.nickname || "?").slice(0, 1).toUpperCase());
+  return c.avatarUrl
+    ? `<span class="${className}"><img src="${escapeHtml(c.avatarUrl)}" alt="${escapeHtml(c.username || c.nickname || "达人头像")}" /></span>`
+    : `<span class="${className}">${initial}</span>`;
+}
+
 function creatorContactOk(c, filter) {
   const hasEmail = Boolean(c?.email);
   const hasWa = Boolean(c?.whatsapp);
@@ -1432,7 +1440,7 @@ function renderCreatorDetail() {
     <div class="detail-shell">
       <aside class="profile-panel">
         <div class="card creator-profile">
-          <div class="creator-portrait"></div>
+          ${creatorPortrait(c)}
           <h3 style="margin:0">${escapeHtml(c.nickname || c.username)}</h3>
           <div class="link">@${escapeHtml(c.username)}</div>
           <div style="margin-top:10px">${creatorVisibleTags(c)}</div>

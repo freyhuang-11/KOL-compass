@@ -142,6 +142,7 @@ async function main() {
   const foundForbidden = forbiddenInDetail.filter((word) => detail.includes(word));
   assert("KOL detail excludes output/performance terms", foundForbidden.length === 0, foundForbidden.join(", "));
   assert("KOL detail maps cooperation status to lifecycle stage", app.includes("detailCoopStage") && !detail.includes("badge(x.status)"));
+  assert("KOL detail reuses creator avatar image", detail.includes("creatorPortrait(c)") && app.includes("function creatorPortrait") && read("app.css").includes(".creator-portrait img"));
 
   try {
     const html = await get("http://127.0.0.1:5175/");
