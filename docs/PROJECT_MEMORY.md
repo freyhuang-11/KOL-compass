@@ -1,6 +1,6 @@
 # KOL Compass 项目记忆
 
-更新时间：2026-06-22 18:03 CST
+更新时间：2026-06-22 18:16 CST
 
 ## 当前工作目录
 
@@ -59,6 +59,7 @@ node smoke-test.js
 - 2026-06-22 17:40 CST：TikTok Affiliate Seller 达人搜索接口恢复响应，本地接口曾成功返回真实达人。已修正 `normalizeCreators`：`creator_open_id` 映射到 `sourceId`，`selection_region=VN` 显示为越南，`gmv.amount/currency` 显示为可读 GMV，`avatar.url` 显示为达人头像，均播/直播 UV 写入标签。连续请求该接口仍可能触发 429，后续测试应低频执行。
 - 2026-06-22 17:50 CST：侧边栏导航已从字符占位图标改为统一的内联 SVG 图标组件，包含控制台、产品、KOL、建联、自动回复、模板、黑名单、寄样、合作、消息、团队、订阅和平台管理；冒烟测试新增断言，禁止回退到符号图标。
 - 2026-06-22 18:03 CST：客户主流程已明确为“第一步绑定店铺/同步商品 -> 第二步进入达人库筛选达人”。原 `KOL池` 导航和页面标题改为 `达人库`；产品管理页新增“下一步：筛选达人”和“进入达人库”入口；达人库顶部新增店铺来源、真实达人数量、本地/演示达人数量、上次同步和 `从TikTok导入达人` 主按钮。真实达人来源仍是 TikTok Affiliate Seller Marketplace Creator Search，不伪造数据；CSV 入口单独命名为 `导入CSV达人`。
+- 2026-06-22 18:16 CST：达人库导入逻辑已改为按所有已授权 TikTok Shop 店铺市场分页导入，系统会逐个 `shop_cipher` 调用 `/api/tiktok/creators/search`，使用 `page_token` 继续翻页并写入 `sourceShopCipher/sourceShopRegion`。达人库展示不再让客户手选国家，改为按当前绑定店铺市场自动过滤；店铺切到哪个国家，只展示该国家达人。
 - `node --check app.js` 通过。
 - `node smoke-test.js` 全部通过。
 - 控制台截图 `smoke-dashboard.png` 已重新生成并目视检查通过，时间范围筛选、负责人筛选、指标下钻、内容状态分布和负责人概览可见。

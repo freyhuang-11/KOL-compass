@@ -31,6 +31,29 @@ const outputStatuses = ["全部", "待产出", "已发视频", "已直播", "视
 const creatorTypeOptions = ["短视频达人", "直播达人", "短视频/直播达人", "联盟达人"];
 const tiktokCategoryOptions = ["美妆个护", "女装与内衣", "男装与运动", "鞋包配饰", "手机数码", "家居日用", "食品饮料", "母婴用品", "健康保健", "宠物用品", "汽车摩托", "图书文具", "玩具爱好", "户外运动"];
 const marketOptions = ["新加坡", "越南", "马来西亚", "泰国", "菲律宾", "印尼", "美国", "英国", "沙特", "墨西哥"];
+const marketRegionLabels = {
+  SG: "新加坡",
+  SGP: "新加坡",
+  VN: "越南",
+  VNM: "越南",
+  MY: "马来西亚",
+  MYS: "马来西亚",
+  TH: "泰国",
+  THA: "泰国",
+  PH: "菲律宾",
+  PHL: "菲律宾",
+  ID: "印尼",
+  IDN: "印尼",
+  US: "美国",
+  USA: "美国",
+  UK: "英国",
+  GB: "英国",
+  GBR: "英国",
+  SA: "沙特",
+  SAU: "沙特",
+  MX: "墨西哥",
+  MEX: "墨西哥",
+};
 const followerTierOptions = ["<10K", "10K-100K", "100K-1M", ">1M"];
 const replyRateOptions = [">=60%", "40%-60%", "<40%"];
 const gmvRangeOptions = ["<$10K", "$10K-$50K", "$50K-$100K", "$100K-$500K", ">$500K"];
@@ -745,22 +768,23 @@ function renderProducts() {
 function renderKolPool() {
   const shops = state.settings.tiktokShops || [];
   const selectedShop = shops.find((shop) => shopCipher(shop) === state.settings.selectedTikTokShopCipher) || shops[0];
+  const currentMarket = selectedShop ? selectedShopMarket(selectedShop) : "";
   const realCreators = state.creators.filter((c) => c.sourceId);
-  const localCreators = state.creators.filter((c) => !c.sourceId);
+  const marketCreators = currentMarket ? state.creators.filter((c) => normalizeMarketRegion(c.region) === currentMarket || c.sourceShopCipher === shopCipher(selectedShop)) : state.creators;
+  const realMarketCreators = marketCreators.filter((c) => c.sourceId);
+  const localCreators = marketCreators.filter((c) => !c.sourceId);
   const categories = fixedOptions(tiktokCategoryOptions, state.creators.map((c) => c.category));
-  const regions = fixedOptions(marketOptions, state.creators.map((c) => c.region));
-  const rows = state.creators.filter((c) => {
+  const rows = marketCreators.filter((c) => {
     const kw = state.filters.kolSearch.trim().toLowerCase();
     const typeOk = multiFilterOk(state.filters.kolTypes, c.type);
     const categoryOk = multiFilterOk(state.filters.kolCategories, c.category);
-    const regionOk = multiFilterOk(state.filters.kolRegions, c.region);
     const followersOk = creatorFollowerTierOk(c.followers, state.filters.kolFollowers);
     const replyRateOk = creatorReplyRateOk(c.replyRate, state.filters.kolReplyRate);
     const gmvOk = creatorGmvRangeOk(c.gmv, state.filters.kolGmv);
     const contactOk = creatorContactOk(c, state.filters.kolContact);
     const kwOk = !kw || [c.username, c.nickname, c.category, c.region, c.tags.join(",")].join(" ").toLowerCase().includes(kw);
     const interestOk = state.filters.kolInterest === "显示不感兴趣" ? c.status !== "黑名单" : c.status !== "黑名单" && !isNotInterestedBlocked(c);
-    return typeOk && categoryOk && regionOk && followersOk && replyRateOk && gmvOk && contactOk && kwOk && interestOk;
+    return typeOk && categoryOk && followersOk && replyRateOk && gmvOk && contactOk && kwOk && interestOk;
   });
   const availableRows = rows.filter((c) => !creatorOutreachBlockReason(c));
   const blockedRows = rows.filter((c) => creatorOutreachBlockReason(c));
@@ -770,16 +794,17 @@ function renderKolPool() {
   }).length;
   const visibleAvailableIds = `[${availableRows.map((c) => c.id).join(",")}]`;
   return `
-    ${pageHead("达人库", "第二步：从 TikTok Marketplace 导入达人，按类目、地区、粉丝、GMV 和联系方式筛选后发起建联。", `<button class="btn primary" onclick="syncCreators()">从TikTok导入达人</button> <button class="btn" onclick="openCreatorModal()">手动补充达人</button>`)}
+    ${pageHead("达人库", "第二步：从 TikTok Marketplace 导入达人，系统按当前绑定店铺市场自动展示对应国家达人。", `<button class="btn primary" onclick="syncCreators()">从TikTok导入达人</button> <button class="btn" onclick="openCreatorModal()">手动补充达人</button>`)}
     <section class="store-panel">
       <div>
         <div class="section-kicker">达人库来源</div>
         <h3>${escapeHtml(selectedShop ? shopLabel(selectedShop) : "请先绑定 TikTok Shop 店铺")}</h3>
-        <p>${selectedShop ? "当前达人库会从该店铺授权下的 TikTok Affiliate Marketplace 搜索达人；导入后的真实达人会进入下方筛选表。" : "客户第一步必须先完成店铺绑定，否则无法从 TikTok API 获取可邀约达人。"}</p>
+        <p>${selectedShop ? `当前店铺市场：${escapeHtml(currentMarket || "未识别")}。系统只展示该市场达人，不再让客户手动选择国家；导入时会按已授权店铺逐个市场写入达人库。` : "客户第一步必须先完成店铺绑定，否则无法从 TikTok API 获取可邀约达人。"}</p>
         <div class="store-meta">
-          <span>真实达人：${realCreators.length}</span>
+          <span>当前市场真实达人：${realMarketCreators.length}</span>
+          <span>全部真实达人：${realCreators.length}</span>
           <span>本地/演示达人：${localCreators.length}</span>
-          <span>上次同步：${escapeHtml(state.settings.lastCreatorSync || "尚未同步")}</span>
+          <span>上次导入：${escapeHtml(state.settings.lastCreatorSync || "尚未导入")}</span>
         </div>
       </div>
       <div class="store-actions">
@@ -798,7 +823,7 @@ function renderKolPool() {
         <button class="btn" onclick="setPage('products')">返回产品管理</button>
       </div>
     </section>
-    ${selectedShop && !realCreators.length ? `<div class="notice" style="margin-bottom:12px">当前还没有从 TikTok API 导入的真实达人；下方如果看到达人，是本地演示/CSV 数据。请点击“从TikTok导入达人”，成功后才能开始按真实达人筛选和建联。</div>` : ""}
+    ${selectedShop && !realMarketCreators.length ? `<div class="notice" style="margin-bottom:12px">当前店铺市场还没有从 TikTok API 导入的真实达人；下方如果看到达人，是该市场本地演示/CSV 数据。请点击“从TikTok导入达人”，系统会按已授权店铺市场批量导入。</div>` : ""}
     <div class="notice" style="margin-bottom:12px">当前套餐：${escapeHtml(state.settings.planName)}，本月建联配额已用 ${quotaLabel()}。同一达人 24 小时内只能建联一次；标记不感兴趣后 30 天内不可建联。</div>
     <div class="grid grid-4" style="margin-bottom:16px">
       ${stat("当前筛选", rows.length, "符合筛选条件的达人")}
@@ -823,7 +848,7 @@ function renderKolPool() {
         </div>
         ${multiFilterChips("kolTypes", "达人类型", fixedOptions(creatorTypeOptions, state.creators.map((c) => c.type)))}
         ${multiFilterChips("kolCategories", "TikTok 类目", categories)}
-        ${multiFilterChips("kolRegions", "市场地区", regions)}
+        <div class="filter-chip-row"><span>当前店铺市场</span><button class="chip active" type="button">${escapeHtml(currentMarket || "绑定店铺后自动识别")}</button></div>
       </div>
       <div class="filters">
         <button class="btn" onclick="selectVisibleCreators(${visibleAvailableIds})">选择当前可建联</button>
@@ -1645,9 +1670,20 @@ function shopRegion(shop) {
   return shop?.region || shop?.market || shop?.country || shop?.shop_region || "-";
 }
 
+function normalizeMarketRegion(value) {
+  const raw = String(value || "").trim();
+  if (!raw || raw === "-") return "";
+  const upper = raw.toUpperCase();
+  return marketRegionLabels[upper] || raw;
+}
+
+function selectedShopMarket(shop) {
+  return normalizeMarketRegion(shopRegion(shop));
+}
+
 function shopLabel(shop) {
   const name = shop?.shop_name || shop?.name || shop?.seller_name || shop?.shop_id || "未命名店铺";
-  const region = shopRegion(shop);
+  const region = selectedShopMarket(shop) || shopRegion(shop);
   return region && region !== "-" ? `${name} · ${region}` : String(name);
 }
 
@@ -1810,31 +1846,112 @@ async function syncProducts(options = {}) {
   }
 }
 
+function creatorNextPageToken(data) {
+  const upstream = data?.upstream || {};
+  const payload = upstream.data || upstream;
+  return payload.next_page_token
+    || payload.nextPageToken
+    || payload.next_page
+    || payload.pagination?.next_page_token
+    || payload.pagination?.nextPageToken
+    || "";
+}
+
+function creatorImportKeys(row) {
+  const keys = [];
+  const shopKey = row.sourceShopCipher || "";
+  const identity = row.sourceId || row.username || "";
+  if (shopKey && identity) keys.push(`${shopKey}:${identity}`);
+  if (!shopKey && row.sourceId) keys.push(row.sourceId);
+  if (!shopKey && row.username) keys.push(row.username);
+  return keys;
+}
+
+function creatorLegacyImportKeys(row) {
+  return [row.sourceId, row.username].filter(Boolean);
+}
+
+function upsertImportedCreators(creators, shop) {
+  const shopKey = shopCipher(shop);
+  const shopName = shopLabel(shop);
+  const shopMarket = selectedShopMarket(shop);
+  const existing = new Map();
+  for (const row of state.creators) {
+    for (const key of creatorImportKeys(row)) existing.set(key, row);
+  }
+  let changed = 0;
+  for (const creator of creators || []) {
+    const region = normalizeMarketRegion(creator.region) || shopMarket || creator.region;
+    const payload = {
+      ...creator,
+      region,
+      sourceShopCipher: shopKey,
+      sourceShopName: shopName,
+      sourceShopRegion: shopMarket,
+    };
+    const keys = creatorImportKeys(payload);
+    const current = keys.map((key) => existing.get(key)).find(Boolean)
+      || creatorLegacyImportKeys(payload).map((key) => existing.get(key)).find((row) => row && !row.sourceShopCipher);
+    if (current) {
+      Object.assign(current, payload);
+    } else {
+      const next = { ...payload, id: nextId(state.creators) };
+      state.creators.push(next);
+      for (const key of keys) existing.set(key, next);
+    }
+    changed += 1;
+  }
+  return changed;
+}
+
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function syncCreators() {
   state.settings.lastCreatorSync = nowText();
   try {
     const shops = state.settings.tiktokShops || [];
     const selected = shops.find((shop) => shopCipher(shop) === state.settings.selectedTikTokShopCipher) || shops[0];
-    if (selected) selectTikTokShop(shopCipher(selected));
-    const data = await apiRequest("/api/tiktok/creators/search", {
-      method: "POST",
-      body: JSON.stringify({
-        shop_cipher: state.settings.tiktokShopCipher || "",
-        keyword: state.filters.kolSearch || "",
-        page_size: 12,
-      }),
-    });
-    if (Array.isArray(data.creators) && data.creators.length) {
-      const existingBySource = new Map(state.creators.map((creator) => [creator.sourceId || creator.username, creator]));
-      for (const creator of data.creators) {
-        const key = creator.sourceId || creator.username;
-        if (existingBySource.has(key)) Object.assign(existingBySource.get(key), creator);
-        else state.creators.push({ ...creator, id: nextId(state.creators) });
+    const targetShops = shops.length ? shops : selected ? [selected] : [];
+    if (!targetShops.length) throw new Error("请先绑定 TikTok Shop 店铺，再从 TikTok 导入达人。");
+
+    let importedCount = 0;
+    let successMarkets = 0;
+    const failures = [];
+    for (const shop of targetShops) {
+      const cipher = shopCipher(shop);
+      if (!cipher) continue;
+      let pageToken = "";
+      let page = 0;
+      let marketImported = 0;
+      try {
+        do {
+          const data = await apiRequest("/api/tiktok/creators/search", {
+            method: "POST",
+            body: JSON.stringify({
+              shop_cipher: cipher,
+              keyword: state.filters.kolSearch || "",
+              page_size: 20,
+              page_token: pageToken,
+            }),
+          });
+          const creators = Array.isArray(data.creators) ? data.creators : [];
+          marketImported += upsertImportedCreators(creators, shop);
+          pageToken = creatorNextPageToken(data);
+          page += 1;
+          if (pageToken) await wait(700);
+        } while (pageToken && page < 50);
+        importedCount += marketImported;
+        successMarkets += 1;
+      } catch (error) {
+        failures.push(`${shopLabel(shop)}：${error.message || "导入失败"}`);
       }
     }
+    if (!successMarkets) throw new Error(failures.join("；") || "TikTok 达人导入失败。");
     state.settings.apiStatus = "达人已导入";
-    addSyncLog("达人导入", "成功", `已从 TikTok Shop API 导入 ${data.creators?.length || 0} 个达人。`);
-    pushMessage("达人导入", `TikTok Shop 达人导入完成：${data.creators?.length || 0} 个。`);
+    addSyncLog("达人导入", failures.length ? "部分成功" : "成功", `已按 ${successMarkets} 个授权店铺市场从 TikTok 导入/更新 ${importedCount} 个达人。${failures.length ? `失败：${failures.join("；")}` : ""}`);
+    pushMessage("达人导入", `TikTok Shop 达人导入完成：${importedCount} 个；覆盖 ${successMarkets} 个授权店铺市场。`);
     saveState();
     render();
   } catch (error) {
