@@ -59,7 +59,7 @@ async function main() {
   assert("port boundary documented", read("README.md").includes("5175") && read("README.md").includes("5173"));
 
   const requiredPages = [
-    "控制台", "产品管理", "KOL池", "建联记录", "自动回复", "消息模板", "KOL黑名单",
+    "控制台", "产品管理", "达人库", "建联记录", "自动回复", "消息模板", "KOL黑名单",
     "寄样管理", "合作管理", "系统消息", "账号与团队", "订阅计费", "平台管理端",
   ];
   for (const pageName of requiredPages) {
@@ -73,7 +73,8 @@ async function main() {
   assert("navigation uses SVG icons instead of symbol placeholders", ["navIconPaths", "function svgIcon", "class=\"nav-icon\"", ".nav-icon"].every((text) => app.includes(text) || read("app.css").includes(text)) && !["▦", "▣", "◎", "✉", "↻", "▤", "⊘", "□", "◆", "☷", "⚙"].some((text) => app.includes(text)));
   assert("cooperation search and output filters supported", ["coopSearch", "coopOutput"].every((name) => app.includes(name)) && app.includes("搜索达人、产品、负责人、备注"));
   assert("cooperation sales review summary supported", ["visibleGmv", "visibleOrders", "visibleSpend", "visibleRoi"].every((name) => app.includes(name)) && ["当前视图GMV", "当前订单", "佣金+投流", "当前ROI"].every((text) => app.includes(text)));
-  assert("product search is limited to TikTok-style name/id filters", ["productSearch", "productSearchField", "商品名", "商品ID", "productList"].every((name) => app.includes(name)) && !["productCategory", "productStatus", "productMode"].some((name) => app.includes(name)) && app.includes("绑定店铺后自动读取商品"));
+  assert("product search is limited to TikTok-style name/id filters", ["productSearch", "productSearchField", "商品名", "商品ID", "productList"].every((name) => app.includes(name)) && !["productCategory", "productStatus", "productMode"].some((name) => app.includes(name)) && app.includes("第一步绑定店铺并读取商品"));
+  assert("store binding leads to creator library as step two", ["第一步绑定店铺并读取商品", "下一步：筛选达人", "进入达人库", "同步达人库", "达人库来源", "真实达人"].every((text) => app.includes(text)));
   assert("product detail is read-only with business drilldowns", ["openProductModal", "productUsage", "goProductCoops", "goProductOutreach"].every((name) => app.includes(`function ${name}`)) && app.includes("当前只读展示，不支持本地手动新增或改写真实商品源"));
   assert("product detail keeps performance metrics in cooperations", app.includes("视频、直播、GMV、订单、佣金支出和 ROI 仍只在合作管理查看"));
   assert("cooperation has content tracking status filters", app.includes("逾期未产出") && app.includes("有订单未匹配内容"));

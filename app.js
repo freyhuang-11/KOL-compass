@@ -5,7 +5,7 @@ const pages = [
   ["运营", [
     ["dashboard", "控制台"],
     ["products", "产品管理"],
-    ["kol", "KOL池"],
+    ["kol", "达人库"],
     ["outreach", "建联记录"],
   ]],
   ["配置", [
@@ -690,12 +690,12 @@ function renderProducts() {
   });
   const activeCount = rows.filter((p) => ["可选", "在售"].includes(p.status)).length;
   return `
-    ${pageHead("产品管理", "绑定店铺后自动读取商品；建联和定向邀约时直接从这里选择商品。")}
+    ${pageHead("产品管理", "第一步绑定店铺并读取商品；第二步进入达人库筛选达人并发起建联。", `<button class="btn primary" onclick="setPage('kol')">下一步：筛选达人</button>`)}
     <section class="store-panel">
       <div>
         <div class="section-kicker">TikTok Shop 授权</div>
         <h3>${escapeHtml(selectedShop ? shopLabel(selectedShop) : "尚未绑定店铺")}</h3>
-        <p>${shops.length ? `已授权 ${shops.length} 个店铺，当前商品源会自动用于建联、寄样和合作流程。` : "完成店铺授权后，系统会自动同步店铺、商品和后续可用的达人接口。"}</p>
+        <p>${shops.length ? `已授权 ${shops.length} 个店铺，当前商品源会自动用于建联、寄样和合作流程。下一步进入达人库同步并筛选 TikTok 达人。` : "完成店铺授权后，系统会自动同步店铺、商品，并开放达人库同步入口。"}</p>
         <div class="store-meta">
           <span>后端：${escapeHtml(state.settings.tiktokBackendStatus || "未检查")}</span>
           <span>上次同步：${escapeHtml(state.settings.lastProductSync)}</span>
@@ -709,9 +709,14 @@ function renderProducts() {
               return `<option value="${escapeHtml(cipher)}" ${cipher === state.settings.selectedTikTokShopCipher ? "selected" : ""}>${escapeHtml(shopLabel(shop))}</option>`;
             }).join("")}
           </select>
-        ` : ""}
-        <button class="btn" onclick="setPage('admin')">管理授权</button>
-        <button class="btn primary" onclick="syncProducts()">重新同步商品</button>
+          <button class="btn" onclick="setPage('admin')">管理授权</button>
+          <button class="btn primary" onclick="syncProducts()">重新同步商品</button>
+          <button class="btn" onclick="setPage('kol')">进入达人库</button>
+        ` : `
+          <button class="btn primary" onclick="startTikTokAuth()">绑定店铺</button>
+          <button class="btn" onclick="checkTikTokShops()">读取已授权店铺</button>
+          <button class="btn" onclick="setPage('admin')">API配置</button>
+        `}
       </div>
     </section>
     <div class="grid grid-4" style="margin-bottom:16px">
@@ -738,6 +743,10 @@ function renderProducts() {
 }
 
 function renderKolPool() {
+  const shops = state.settings.tiktokShops || [];
+  const selectedShop = shops.find((shop) => shopCipher(shop) === state.settings.selectedTikTokShopCipher) || shops[0];
+  const realCreators = state.creators.filter((c) => c.sourceId);
+  const localCreators = state.creators.filter((c) => !c.sourceId);
   const categories = fixedOptions(tiktokCategoryOptions, state.creators.map((c) => c.category));
   const regions = fixedOptions(marketOptions, state.creators.map((c) => c.region));
   const rows = state.creators.filter((c) => {
@@ -761,7 +770,35 @@ function renderKolPool() {
   }).length;
   const visibleAvailableIds = `[${availableRows.map((c) => c.id).join(",")}]`;
   return `
-    ${pageHead("KOL池", "筛选达人并发起建联。KOL 详情只看基础信息与沟通入口，不展示合作产出指标。", `<button class="btn primary" onclick="openCreatorModal()">新增达人</button>`)}
+    ${pageHead("达人库", "第二步：从 TikTok Marketplace 同步达人，按类目、地区、粉丝、GMV 和联系方式筛选后发起建联。", `<button class="btn primary" onclick="syncCreators()">同步达人库</button> <button class="btn" onclick="openCreatorModal()">手动补充达人</button>`)}
+    <section class="store-panel">
+      <div>
+        <div class="section-kicker">达人库来源</div>
+        <h3>${escapeHtml(selectedShop ? shopLabel(selectedShop) : "请先绑定 TikTok Shop 店铺")}</h3>
+        <p>${selectedShop ? "当前达人库会从该店铺授权下的 TikTok Affiliate Marketplace 搜索达人；同步后的真实达人会进入下方筛选表。" : "客户第一步必须先完成店铺绑定，否则无法从 TikTok API 获取可邀约达人。"}</p>
+        <div class="store-meta">
+          <span>真实达人：${realCreators.length}</span>
+          <span>本地/演示达人：${localCreators.length}</span>
+          <span>上次同步：${escapeHtml(state.settings.lastCreatorSync || "尚未同步")}</span>
+        </div>
+      </div>
+      <div class="store-actions">
+        ${shops.length ? `
+          <select class="select" onchange="selectTikTokShop(this.value)">
+            ${shops.map((shop) => {
+              const cipher = shopCipher(shop);
+              return `<option value="${escapeHtml(cipher)}" ${cipher === state.settings.selectedTikTokShopCipher ? "selected" : ""}>${escapeHtml(shopLabel(shop))}</option>`;
+            }).join("")}
+          </select>
+          <button class="btn primary" onclick="syncCreators()">同步达人库</button>
+        ` : `
+          <button class="btn primary" onclick="startTikTokAuth()">绑定店铺</button>
+          <button class="btn" onclick="checkTikTokShops()">读取已授权店铺</button>
+        `}
+        <button class="btn" onclick="setPage('products')">返回产品管理</button>
+      </div>
+    </section>
+    ${selectedShop && !realCreators.length ? `<div class="notice" style="margin-bottom:12px">当前还没有 TikTok API 同步进来的真实达人；下方如果看到达人，是本地演示/导入数据。请点击“同步达人库”，成功后才能开始按真实达人筛选和建联。</div>` : ""}
     <div class="notice" style="margin-bottom:12px">当前套餐：${escapeHtml(state.settings.planName)}，本月建联配额已用 ${quotaLabel()}。同一达人 24 小时内只能建联一次；标记不感兴趣后 30 天内不可建联。</div>
     <div class="grid grid-4" style="margin-bottom:16px">
       ${stat("当前筛选", rows.length, "符合筛选条件的达人")}
@@ -1348,7 +1385,7 @@ function renderCreatorDetail() {
   const records = state.outreach.filter((x) => x.creatorId === c.id);
   const coops = state.cooperations.filter((x) => x.creatorId === c.id);
   return `
-    ${pageHead("KOL详情", "管理并沉淀达人基础资料与沟通记录；合作履约数据请进入合作管理查看。", `<button class="btn" onclick="setPage('kol')">返回KOL池</button> <button class="btn primary" onclick="openOutreachModal(${c.id})">发起建联</button>`)}
+    ${pageHead("KOL详情", "管理并沉淀达人基础资料与沟通记录；合作履约数据请进入合作管理查看。", `<button class="btn" onclick="setPage('kol')">返回达人库</button> <button class="btn primary" onclick="openOutreachModal(${c.id})">发起建联</button>`)}
     <div class="detail-shell">
       <aside class="profile-panel">
         <div class="card creator-profile">
