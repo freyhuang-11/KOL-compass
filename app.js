@@ -770,12 +770,12 @@ function renderKolPool() {
   }).length;
   const visibleAvailableIds = `[${availableRows.map((c) => c.id).join(",")}]`;
   return `
-    ${pageHead("达人库", "第二步：从 TikTok Marketplace 同步达人，按类目、地区、粉丝、GMV 和联系方式筛选后发起建联。", `<button class="btn primary" onclick="syncCreators()">同步达人库</button> <button class="btn" onclick="openCreatorModal()">手动补充达人</button>`)}
+    ${pageHead("达人库", "第二步：从 TikTok Marketplace 导入达人，按类目、地区、粉丝、GMV 和联系方式筛选后发起建联。", `<button class="btn primary" onclick="syncCreators()">从TikTok导入达人</button> <button class="btn" onclick="openCreatorModal()">手动补充达人</button>`)}
     <section class="store-panel">
       <div>
         <div class="section-kicker">达人库来源</div>
         <h3>${escapeHtml(selectedShop ? shopLabel(selectedShop) : "请先绑定 TikTok Shop 店铺")}</h3>
-        <p>${selectedShop ? "当前达人库会从该店铺授权下的 TikTok Affiliate Marketplace 搜索达人；同步后的真实达人会进入下方筛选表。" : "客户第一步必须先完成店铺绑定，否则无法从 TikTok API 获取可邀约达人。"}</p>
+        <p>${selectedShop ? "当前达人库会从该店铺授权下的 TikTok Affiliate Marketplace 搜索达人；导入后的真实达人会进入下方筛选表。" : "客户第一步必须先完成店铺绑定，否则无法从 TikTok API 获取可邀约达人。"}</p>
         <div class="store-meta">
           <span>真实达人：${realCreators.length}</span>
           <span>本地/演示达人：${localCreators.length}</span>
@@ -790,7 +790,7 @@ function renderKolPool() {
               return `<option value="${escapeHtml(cipher)}" ${cipher === state.settings.selectedTikTokShopCipher ? "selected" : ""}>${escapeHtml(shopLabel(shop))}</option>`;
             }).join("")}
           </select>
-          <button class="btn primary" onclick="syncCreators()">同步达人库</button>
+          <button class="btn primary" onclick="syncCreators()">从TikTok导入达人</button>
         ` : `
           <button class="btn primary" onclick="startTikTokAuth()">绑定店铺</button>
           <button class="btn" onclick="checkTikTokShops()">读取已授权店铺</button>
@@ -798,7 +798,7 @@ function renderKolPool() {
         <button class="btn" onclick="setPage('products')">返回产品管理</button>
       </div>
     </section>
-    ${selectedShop && !realCreators.length ? `<div class="notice" style="margin-bottom:12px">当前还没有 TikTok API 同步进来的真实达人；下方如果看到达人，是本地演示/导入数据。请点击“同步达人库”，成功后才能开始按真实达人筛选和建联。</div>` : ""}
+    ${selectedShop && !realCreators.length ? `<div class="notice" style="margin-bottom:12px">当前还没有从 TikTok API 导入的真实达人；下方如果看到达人，是本地演示/CSV 数据。请点击“从TikTok导入达人”，成功后才能开始按真实达人筛选和建联。</div>` : ""}
     <div class="notice" style="margin-bottom:12px">当前套餐：${escapeHtml(state.settings.planName)}，本月建联配额已用 ${quotaLabel()}。同一达人 24 小时内只能建联一次；标记不感兴趣后 30 天内不可建联。</div>
     <div class="grid grid-4" style="margin-bottom:16px">
       ${stat("当前筛选", rows.length, "符合筛选条件的达人")}
@@ -830,8 +830,8 @@ function renderKolPool() {
         <button class="btn ghost" onclick="clearBulkSelection()">清空选择</button>
         <button class="btn primary" onclick="openOutreachModal()">一键建联(${state.bulkCreatorIds.length})</button>
         <button class="btn" onclick="downloadCreatorsCsvTemplate()">下载KOL模板</button>
-        <button class="btn" onclick="importCreatorsCsv()">导入KOL CSV</button>
-        <button class="btn" onclick="syncCreators()">同步达人数据</button>
+        <button class="btn" onclick="importCreatorsCsv()">导入CSV达人</button>
+        <button class="btn" onclick="syncCreators()">从TikTok导入达人</button>
       </div>
     </div>
     ${table(["选择", "达人", "类型", "类目/地区", "粉丝", "GMV", "回复率", "状态/标签", "操作"], rows.map((c) => {
@@ -1832,18 +1832,18 @@ async function syncCreators() {
         else state.creators.push({ ...creator, id: nextId(state.creators) });
       }
     }
-    state.settings.apiStatus = "达人已同步";
-    addSyncLog("达人同步", "成功", `已从 TikTok Shop API 同步 ${data.creators?.length || 0} 个达人。`);
-    pushMessage("达人同步", `TikTok Shop 达人同步完成：${data.creators?.length || 0} 个。`);
+    state.settings.apiStatus = "达人已导入";
+    addSyncLog("达人导入", "成功", `已从 TikTok Shop API 导入 ${data.creators?.length || 0} 个达人。`);
+    pushMessage("达人导入", `TikTok Shop 达人导入完成：${data.creators?.length || 0} 个。`);
     saveState();
     render();
   } catch (error) {
-    const reason = error.message || "达人同步失败。";
-    addSyncLog("达人同步", "失败", reason);
-    pushMessage("达人同步失败", reason);
+    const reason = error.message || "达人导入失败。";
+    addSyncLog("达人导入", "失败", reason);
+    pushMessage("达人导入失败", reason);
     saveState();
     render();
-    showApiHandoffSteps("达人同步", reason);
+    showApiHandoffSteps("达人导入", reason);
   }
 }
 
