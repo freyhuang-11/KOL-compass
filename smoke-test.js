@@ -65,6 +65,7 @@ async function main() {
   for (const pageName of requiredPages) {
     assert(`page present: ${pageName}`, app.includes(pageName));
   }
+  assert("demo seed data is cleared", ["products", "creators", "outreach", "samples", "cooperations", "templates", "autoReplies", "systemMessages", "syncLogs", "team", "merchantApplications", "billingRecords", "operationLogs"].every((name) => app.includes(`${name}: []`)) && ["重置演示数据", "sample_creator", "示例达人"].every((text) => !app.includes(text)));
 
   assert("cooperation has produced/unproduced metrics", app.includes("已产出达人") && app.includes("未产出达人"));
   assert("dashboard filters and drilldowns supported", ["dashboardRange", "dashboardOwner", "dashboardGo", "内容状态分布", "负责人概览"].every((name) => app.includes(name)));

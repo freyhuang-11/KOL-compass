@@ -1,6 +1,6 @@
 # KOL Compass 项目记忆
 
-更新时间：2026-06-22 19:40 CST
+更新时间：2026-06-22 19:55 CST
 
 ## 当前工作目录
 
@@ -63,6 +63,7 @@ node smoke-test.js
 - 2026-06-22 18:48 CST：达人库边界已修正为“平台已有达人库 + 客户按店铺市场筛选”。客户绑定店铺不会触发客户侧自动抓取达人，进入达人库或切换店铺也不会自动抓取；`syncCreators` 不再暴露到 `window`。达人基础资料由平台内部导入/维护，客户侧只能筛选、查看、建联、拉黑/不感兴趣。只有客户选择 Email 建联且达人缺少邮箱时，系统才创建 `联系方式补充` 任务，状态进入 `联系方式补充中`，补充完成前不发送 Email。
 - 2026-06-22 19:18 CST：已补齐真正的平台达人库数据源。后端新增 `.data/platform-creators.json` 持久化文件、`GET /api/platform/creators` 读取接口和 `POST /api/platform/creators/import-tiktok` 平台内部导入接口；前端启动时只读取平台达人库，不在客户侧调用 TikTok 抓取。平台管理端新增“更新平台达人库”按钮，默认按多页导入。已用当前授权 VN sandbox 店铺从 TikTok API 写入 40 个真实达人到本地平台库；TikTok 在继续分页时返回 downstream 限流，需要后续做节流分页任务继续全量回填。类目已接 `/product/202309/categories` 映射，客户侧不再展示 `类目ID ...`，已将当前 VN 返回的常见类目中文化为“时尚配饰 / 美妆个护 / 家居日用 / 母婴用品”等固定筛选项。
 - 2026-06-22 19:40 CST：平台达人库自动任务已补齐。后端启动后会按 `SG -> MY -> TH -> VN -> PH` 优先级运行定时任务，任务状态保存到 `.data/platform-creator-job.json`，每个授权店铺市场保存 `nextPageToken` 游标，遇到 TikTok 限流会记录 `lastError` 并在后续定时任务继续。新增 `GET /api/platform/creators/job` 查看状态和 `POST /api/platform/creators/job/run` 手动触发。当前 TikTok 授权列表只返回 VN sandbox 店铺，所以 SG/MY/TH/PH 会等对应真实店铺授权后再抓；刚手动触发任务时 TikTok 仍返回 downstream 限流，平台库保持 40 个 VN 真实达人。达人库前端已自动清理旧的无效类目/类型筛选，避免 localStorage 残留的旧 `类目ID` 筛选把 40 个达人过滤成 0。
+- 2026-06-22 19:55 CST：已按用户要求清除所有内置演示数据。`seed` 中的产品、达人、建联、寄样、合作、模板、自动回复、系统消息、同步日志、团队、商家入驻、账单和操作日志全部为空；新增一次性迁移清理旧浏览器 localStorage 中的演示数据，只保留带 `sourceId` 的真实 TikTok 商品和平台达人。CSV 模板只保留表头，不再带 `sample_creator` 示例行。后续如需引导教程页，再单独在教程上下文加载演示数据。
 - `node --check app.js` 通过。
 - `node smoke-test.js` 全部通过。
 - 控制台截图 `smoke-dashboard.png` 已重新生成并目视检查通过，时间范围筛选、负责人筛选、指标下钻、内容状态分布和负责人概览可见。

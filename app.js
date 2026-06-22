@@ -122,113 +122,21 @@ const seed = {
       translation: true,
       stripePayment: false,
     },
+    demoDataClearedVersion: 1,
   },
-  products: [
-    { id: 1, name: "无线蓝牙耳机 Pro Max", category: "电子配件", price: "$49.90", commission: "15%", mode: "公开合作", status: "在售" },
-    { id: 2, name: "瑜伽弹力紧身裤", category: "运动服饰", price: "$32.00", commission: "20%", mode: "定向合作", status: "在售" },
-    { id: 3, name: "有机抹茶粉 100g", category: "食品饮料", price: "$18.80", commission: "25%", mode: "公开合作", status: "在售" },
-  ],
-  creators: [
-    { id: 1, username: "beauty_emma", nickname: "Emma Beauty", type: "短视频达人", category: "美妆", region: "美国", followers: 2300000, gmv: "$125K/月", replyRate: "68%", tags: ["美妆达人", "英语"], status: "待联系", email: "", whatsapp: "", notes: "偏好测评型内容，适合新品首发。" },
-    { id: 2, username: "tech_review_jack", nickname: "Jack Reviews", type: "短视频/直播达人", category: "3C数码", region: "英国", followers: 850000, gmv: "$48K/月", replyRate: "42%", tags: ["3C", "英语"], status: "已回复", email: "jack@example.com", whatsapp: "", notes: "已对耳机产品感兴趣，建议优先推进样品。" },
-    { id: 3, username: "fashion_nina", nickname: "Nina Style", type: "直播达人", category: "服饰", region: "印尼", followers: 1500000, gmv: "$210K/月", replyRate: "55%", tags: ["服饰", "印尼语"], status: "已合作", email: "nina@example.com", whatsapp: "+62812345678", notes: "直播转化强，适合复投。" },
-    { id: 4, username: "home_lisa", nickname: "Lisa Home", type: "短视频达人", category: "家居", region: "新加坡", followers: 240000, gmv: "$18K/月", replyRate: "36%", tags: ["家居"], status: "黑名单", email: "", whatsapp: "", notes: "历史合作低效，暂不重复触达。" },
-  ],
-  outreach: [
-    { id: 1, creatorId: 2, productId: 1, channel: "Email", status: "待回复", lastMessage: "已发送耳机合作邀请，等待达人确认样品地址。", updatedAt: "2026-06-20 16:30" },
-    { id: 2, creatorId: 3, productId: 2, channel: "WhatsApp", status: "待我方回复", lastMessage: "达人已确认下周直播档期，需要佣金确认。", updatedAt: "2026-06-21 10:12" },
-  ],
-  samples: [
-    { id: 1, creatorId: 2, productId: 1, status: "待发货", tracking: "", updatedAt: "2026-06-21" },
-    { id: 2, creatorId: 3, productId: 2, status: "已签收", tracking: "SG123456789", updatedAt: "2026-06-19" },
-  ],
-  cooperations: [
-    {
-      id: 1,
-      creatorId: 3,
-      productId: 2,
-      type: "直播",
-      status: "已直播",
-      dueDate: "2026-06-25",
-      videos: 0,
-      lives: 2,
-      orders: 186,
-      gmv: 8200,
-      commission: 1640,
-      adSpend: 300,
-      contentUrl: "https://www.tiktok.com/",
-      tags: ["高ROI", "可复投"],
-      owner: "Mia",
-      notes: "直播间互动好，建议复投同类服饰产品。",
-    },
-    {
-      id: 2,
-      creatorId: 2,
-      productId: 1,
-      type: "短视频",
-      status: "待产出",
-      dueDate: "2026-06-28",
-      videos: 0,
-      lives: 0,
-      orders: 0,
-      gmv: 0,
-      commission: 0,
-      adSpend: 0,
-      contentUrl: "",
-      tags: ["需催发"],
-      owner: "Sam",
-      notes: "样品待寄出，产出截止日未到。",
-    },
-    {
-      id: 3,
-      creatorId: 1,
-      productId: 3,
-      type: "短视频+直播",
-      status: "有订单未匹配内容",
-      dueDate: "2026-06-18",
-      videos: 0,
-      lives: 0,
-      orders: 14,
-      gmv: 530,
-      commission: 132,
-      adSpend: 0,
-      contentUrl: "",
-      tags: ["需核对"],
-      owner: "Luna",
-      notes: "API 有联盟订单，但未匹配到视频/直播内容，需要人工归因。",
-    },
-  ],
-  templates: [
-    { id: 1, name: "首次建联 - 短视频", channel: "TikTok私信", content: "Hi {KOL名称}，我们正在寻找适合 {产品名称} 的创作者，想邀请你参与合作。" },
-    { id: 2, name: "样品寄送确认", channel: "Email", content: "请确认收货地址，我们会在 48 小时内寄出样品。" },
-  ],
-  autoReplies: [
-    { id: 1, name: "感兴趣回复", matchType: "包含关键词", keywords: "interested,yes,details,感兴趣", creatorType: "全部", region: "全部", minFollowers: 0, priority: 10, replyContent: "感谢你的回复，我们可以提供样品和联盟佣金，下面是合作说明。", enabled: true },
-    { id: 2, name: "价格咨询", matchType: "包含关键词", keywords: "rate,price,paid,报价", creatorType: "全部", region: "全部", minFollowers: 0, priority: 20, replyContent: "当前合作以联盟佣金为主，具体佣金以产品卡片为准，也可以讨论固定费用。", enabled: true },
-  ],
-  systemMessages: [
-    { id: 1, type: "合作提醒", text: "@tech_review_jack 距离产出截止日还有 7 天。", at: "2026-06-21 09:00", read: false },
-    { id: 2, type: "API状态", text: "TikTok Partner API 尚未连接，当前使用本地数据模式。", at: "2026-06-21 09:05", read: false },
-  ],
-  syncLogs: [
-    { id: 1, module: "API状态", status: "未连接", reason: "TikTok Partner API 尚未授权，当前使用本地数据模式。", at: "2026-06-21 09:05" },
-  ],
-  team: [
-    { id: 1, name: "Sam", role: "超级管理员", email: "sam@example.com", stores: "全部店铺", status: "启用" },
-    { id: 2, name: "Mia", role: "BD专员", email: "mia@example.com", stores: "美国店,英国店", status: "启用" },
-  ],
-  merchantApplications: [
-    { id: 1, merchant: "GlowLab US", store: "美国店", contact: "ops@glowlab.example", plan: "专业版", apiStatus: "待授权", status: "待审批", appliedAt: "2026-06-20 11:30", notes: "已提交 Partner App 信息，等待 scope 审批。" },
-    { id: 2, merchant: "FitWave SG", store: "新加坡店", contact: "bd@fitwave.example", plan: "基础版", apiStatus: "配置不完整", status: "资料补充", appliedAt: "2026-06-19 15:10", notes: "缺少 OAuth Redirect URL 和 Affiliate 权限截图。" },
-    { id: 3, merchant: "Nina Fashion", store: "印尼店", contact: "nina@example.com", plan: "专业版", apiStatus: "待同步", status: "已通过", appliedAt: "2026-06-18 09:45", notes: "可进入本地试用，真实 API 同步仍需 OAuth。" },
-  ],
-  billingRecords: [
-    { id: 1, plan: "专业版", amount: "$99", channel: "支付宝", status: "已支付", invoiceNo: "LOCAL-202606-001", period: "2026-06", createdAt: "2026-06-01 09:00", note: "本地演示账单，不代表真实扣款。" },
-    { id: 2, plan: "基础版", amount: "$29", channel: "微信支付", status: "已支付", invoiceNo: "LOCAL-202605-001", period: "2026-05", createdAt: "2026-05-01 09:00", note: "历史演示账单。" },
-  ],
-  operationLogs: [
-    { id: 1, operator: "System", action: "初始化", target: "KOL Compass", detail: "创建本地演示数据。", ip: "127.0.0.1", at: "2026-06-21 09:00" },
-  ],
+  products: [],
+  creators: [],
+  outreach: [],
+  samples: [],
+  cooperations: [],
+  templates: [],
+  autoReplies: [],
+  systemMessages: [],
+  syncLogs: [],
+  team: [],
+  merchantApplications: [],
+  billingRecords: [],
+  operationLogs: [],
 };
 
 let state = normalizeState(loadState());
@@ -249,6 +157,8 @@ function normalizeState(next) {
   merged.filters = { ...seed.filters, ...(next.filters || {}) };
   merged.settings = { ...seed.settings, ...(next.settings || {}) };
   merged.settings.featureSwitches = { ...seed.settings.featureSwitches, ...((next.settings || {}).featureSwitches || {}) };
+  if ((next.settings || {}).demoDataClearedVersion !== 1) purgeDemoData(merged);
+  merged.settings.demoDataClearedVersion = 1;
   if (Array.isArray(merged.autoReplies)) merged.autoReplies = merged.autoReplies.map(normalizeAutoReply);
   if (Array.isArray(merged.team)) merged.team = merged.team.map(normalizeTeamMember);
   if (!Array.isArray(merged.merchantApplications)) merged.merchantApplications = [];
@@ -257,6 +167,26 @@ function normalizeState(next) {
   if (!Array.isArray(merged.syncLogs)) merged.syncLogs = [];
   if (!Array.isArray(merged.operationLogs)) merged.operationLogs = [];
   return merged;
+}
+
+function purgeDemoData(next) {
+  next.products = (next.products || []).filter((row) => row.sourceId);
+  next.creators = (next.creators || []).filter((row) => row.sourceId || row.librarySource === "platform");
+  const productIds = new Set(next.products.map((row) => row.id));
+  const creatorIds = new Set(next.creators.map((row) => row.id));
+  next.outreach = (next.outreach || []).filter((row) => creatorIds.has(row.creatorId) && productIds.has(row.productId));
+  next.samples = (next.samples || []).filter((row) => creatorIds.has(row.creatorId) && productIds.has(row.productId));
+  next.cooperations = (next.cooperations || []).filter((row) => creatorIds.has(row.creatorId) && productIds.has(row.productId));
+  next.templates = [];
+  next.autoReplies = [];
+  next.systemMessages = [];
+  next.syncLogs = [];
+  next.team = [];
+  next.merchantApplications = [];
+  next.billingRecords = [];
+  next.operationLogs = [];
+  next.bulkCreatorIds = [];
+  next.selectedCreatorId = null;
 }
 
 function normalizeAutoReply(rule) {
@@ -580,7 +510,7 @@ function appLayout(content) {
             ${badge(state.settings.apiStatus)}
             <button class="btn" onclick="exportState()">导出数据</button>
             <button class="btn" onclick="importState()">导入数据</button>
-            <button class="btn" onclick="resetDemo()">重置演示数据</button>
+            <button class="btn" onclick="resetDemo()">清空本地数据</button>
           </div>
         </div>
         <div class="content">${content}</div>
@@ -836,7 +766,7 @@ function renderKolPool() {
         <div class="store-meta">
           <span>当前市场真实达人：${realMarketCreators.length}</span>
           <span>全部真实达人：${realCreators.length}</span>
-          <span>本地/演示达人：${localCreators.length}</span>
+          <span>平台补充达人：${localCreators.length}</span>
           <span>资料来源：平台达人库</span>
         </div>
       </div>
@@ -855,7 +785,7 @@ function renderKolPool() {
         <button class="btn" onclick="setPage('products')">返回产品管理</button>
       </div>
     </section>
-    ${selectedShop && !realMarketCreators.length ? `<div class="notice" style="margin-bottom:12px">当前店铺市场暂时没有平台真实达人数据。下方如果看到达人，是该市场本地演示/平台补充数据；客户侧不提供导入或新增达人入口。</div>` : ""}
+    ${selectedShop && !realMarketCreators.length ? `<div class="notice" style="margin-bottom:12px">当前店铺市场暂时没有平台真实达人数据。下方如果看到达人，是平台补充数据；客户侧不提供导入或新增达人入口。</div>` : ""}
     <div class="notice" style="margin-bottom:12px">当前套餐：${escapeHtml(state.settings.planName)}，本月建联配额已用 ${quotaLabel()}。同一达人 24 小时内只能建联一次；标记不感兴趣后 30 天内不可建联。</div>
     <div class="grid grid-4" style="margin-bottom:16px">
       ${stat("当前筛选", rows.length, "符合筛选条件的达人")}
@@ -1294,7 +1224,7 @@ function renderBilling() {
     ${pageHead("订阅计费", "查看套餐、配额和账单。支付通道由平台管理端开关控制。")}
     <div class="notice" style="margin-bottom:16px">当前可用支付通道：支付宝、微信支付${stripeEnabled ? "、Stripe" : "。Stripe 支付已由平台管理端关闭"}。</div>
     <div class="grid grid-4" style="margin-bottom:16px">
-      ${stat("当前套餐", state.settings.planName, "本地演示可切换")}
+      ${stat("当前套餐", state.settings.planName, "本地配置")}
       ${stat("本月建联配额", quotaLabel(), "按建联记录计算")}
       ${stat("剩余额度", Number.isFinite(quotaRemaining()) ? quotaRemaining() : "不限", "额度不足会拦截建联")}
       ${stat("账单记录", records.length, `${paid} 已支付 / ${pending} 待处理`)}
@@ -2221,7 +2151,7 @@ function openProductModal(id) {
   const row = product(id);
   if (!row) return alert("产品不存在。");
   const usage = productUsage(row.id);
-  const source = state.settings.tiktokConnected ? "待 OAuth 授权后由 TikTok Partner API 同步" : "本地演示缓存，未连接真实 TikTok API";
+  const source = state.settings.tiktokConnected ? "待 OAuth 授权后由 TikTok Partner API 同步" : "未连接真实 TikTok API，暂无真实商品源";
   openModal("商品详情", `
     <div class="notice">商品、价格、佣金和合作模式应来自 TikTok Shop Partner API；当前只读展示，不支持本地手动新增或改写真实商品源。</div>
     <div class="grid grid-2" style="margin-top:12px">
@@ -3245,20 +3175,13 @@ function csvLine(values) {
 
 function downloadCreatorsCsvTemplate() {
   const headers = ["username", "nickname", "type", "category", "region", "followers", "gmv", "replyRate", "tags", "email", "whatsapp", "notes"];
-  const rows = [
-    headers,
-    ["sample_creator", "示例达人", "短视频达人", "美妆", "美国", "120000", "$12K/月", "55%", "美妆达人,英语", "creator@example.com", "+12025550123", "适合新品测评"],
-  ];
+  const rows = [headers];
   downloadTextFile("kol-creators-template.csv", `\uFEFF${rows.map(csvLine).join("\n")}\n`, "text/csv;charset=utf-8");
 }
 
 function downloadCoopsCsvTemplate() {
   const headers = ["username", "product", "type", "status", "dueDate", "videos", "lives", "orders", "gmv", "commission", "adSpend", "contentUrl", "tags", "owner", "notes"];
-  const productName = state.products[0]?.name || "示例产品";
-  const rows = [
-    headers,
-    ["sample_creator", productName, "短视频", "待产出", todayString(), "0", "0", "0", "0", "0", "0", "", "需催发", "Sam", "样品已签收，等待内容"],
-  ];
+  const rows = [headers];
   downloadTextFile("kol-cooperations-template.csv", `\uFEFF${rows.map(csvLine).join("\n")}\n`, "text/csv;charset=utf-8");
 }
 
@@ -3460,7 +3383,7 @@ function importCoopsCsv() {
 }
 
 function resetDemo() {
-  if (!confirm("确认重置本地演示数据？")) return;
+  if (!confirm("确认清空本地数据？真实 TikTok 授权和后端平台达人库不会删除。")) return;
   localStorage.removeItem(STORAGE_KEY);
   state = loadState();
   render();
