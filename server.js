@@ -67,11 +67,55 @@ function writeJson(filePath, value) {
 
 function readPlatformCreators() {
   const rows = readJson(CREATOR_FILE, []);
-  return Array.isArray(rows) ? rows : [];
+  return Array.isArray(rows) ? rows.map(normalizeStoredCreator) : [];
 }
 
 function writePlatformCreators(rows) {
-  writeJson(CREATOR_FILE, Array.isArray(rows) ? rows : []);
+  writeJson(CREATOR_FILE, Array.isArray(rows) ? rows.map(normalizeStoredCreator) : []);
+}
+
+function metricNumber(value) {
+  const number = Number(String(value || "").replaceAll(",", ""));
+  return Number.isFinite(number) && number > 0 ? number : 0;
+}
+
+function metricFromTags(tags, label) {
+  const values = Array.isArray(tags) ? tags : [];
+  const row = values.find((tag) => String(tag || "").trim().startsWith(label));
+  if (!row) return 0;
+  const match = String(row).replaceAll(",", "").match(/(\d+(?:\.\d+)?)/);
+  return match ? metricNumber(match[1]) : 0;
+}
+
+function normalizeCreatorType(type, metrics = {}) {
+  if (type === "短视频+直播达人" || type === "短视频/直播达人") return "短视频+直播达人";
+  if (type === "直播达人") return "直播达人";
+  if (type === "短视频达人") return "短视频达人";
+  const hasVideo = metricNumber(metrics.avgVideoViews) > 0;
+  const hasLive = metricNumber(metrics.avgLiveUv) > 0;
+  if (hasVideo && hasLive) return "短视频+直播达人";
+  if (hasLive) return "直播达人";
+  return "短视频达人";
+}
+
+function normalizeCreatorTags(tags) {
+  const blocked = new Set(["TikTok API", "平台达人库", "联盟达人"]);
+  const values = (Array.isArray(tags) ? tags : [])
+    .map((tag) => String(tag || "").trim())
+    .filter((tag) => tag && !blocked.has(tag) && !/^均播\s*/.test(tag) && !/^直播UV\s*/i.test(tag));
+  return Array.from(new Set(values));
+}
+
+function normalizeStoredCreator(row = {}) {
+  const avgVideoViews = metricNumber(row.avgVideoViews ?? row.avgVideoViewCount ?? row.averageVideoViews) || metricFromTags(row.tags, "均播");
+  const avgLiveUv = metricNumber(row.avgLiveUv ?? row.avgLiveUvCount ?? row.averageLiveUv) || metricFromTags(row.tags, "直播UV");
+  return {
+    ...row,
+    type: normalizeCreatorType(row.type, { avgVideoViews, avgLiveUv }),
+    avgVideoViews,
+    avgLiveUv,
+    tags: normalizeCreatorTags(row.tags),
+  };
 }
 
 function readCategoryMap() {
@@ -380,6 +424,22 @@ function normalizeProducts(upstream) {
   });
 }
 
+function detectCreatorType(profile, metrics = {}) {
+  return normalizeCreatorType(profile.creator_type || profile.content_type || profile.type, metrics);
+}
+
+function isMcnCreator(profile) {
+  const text = [
+    profile.creator_type,
+    profile.account_type,
+    profile.organization_type,
+    profile.agency_name,
+    profile.mcn_name,
+    profile.partner_type,
+  ].filter(Boolean).join(" ").toLowerCase();
+  return Boolean(profile.is_mcn || profile.is_mcn_creator || profile.mcn_id || profile.agency_id || /\bmcn\b|agency|network/.test(text));
+}
+
 function normalizeProductStatus(status) {
   const normalized = String(status || "").toUpperCase();
   if (["ACTIVATE", "ACTIVE", "ONLINE", "SELLING", "LIVE"].includes(normalized)) return "可选";
@@ -405,21 +465,22 @@ function normalizeCreators(upstream, categoryMap = readCategoryMap()) {
     const avatarUrl = profile.avatar?.url || profile.avatar_url || profile.profile_image?.url || "";
     const avgVideoViews = Number(profile.avg_ec_video_view_count || profile.avg_video_view_count || 0);
     const avgLiveUv = Number(profile.avg_ec_live_uv || profile.avg_live_uv || 0);
-    const tags = ["TikTok API"];
-    if (avgVideoViews > 0) tags.push(`均播 ${avgVideoViews.toLocaleString()}`);
-    if (avgLiveUv > 0) tags.push(`直播UV ${avgLiveUv.toLocaleString()}`);
+    const tags = [];
+    if (isMcnCreator(profile)) tags.push("MCN达人");
     return {
       id: Number(String(sourceId || Date.now() + index).replace(/\D/g, "").slice(-9)) || Date.now() + index,
       sourceId,
       username: String(username).replace(/^@/, ""),
       nickname,
-      type: "联盟达人",
+      type: detectCreatorType(profile, { avgVideoViews, avgLiveUv }),
       category,
       region,
       followers,
       gmv,
       replyRate: String(replyRate),
       avatarUrl,
+      avgVideoViews,
+      avgLiveUv,
       categoryIds,
       categoryLabels,
       tags,
@@ -579,7 +640,7 @@ function upsertPlatformCreators(incoming, shop = null) {
 
   for (const creator of incoming || []) {
     const region = normalizeCreatorRegion(creator.region || sourceShopRegion);
-    const payload = {
+    const payload = normalizeStoredCreator({
       ...creator,
       region,
       sourceShopCipher: creator.sourceShopCipher || sourceShopCipher,
@@ -587,7 +648,7 @@ function upsertPlatformCreators(incoming, shop = null) {
       sourceShopRegion: creator.sourceShopRegion || sourceShopRegion || region,
       librarySource: "platform",
       updatedAt: new Date().toISOString(),
-    };
+    });
     const current = platformCreatorKeys(payload).map((key) => existing.get(key)).find(Boolean);
     if (current) {
       Object.assign(current, {

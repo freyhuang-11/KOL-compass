@@ -720,6 +720,14 @@ tr:last-child td {
   margin: 2px;
 }
 
+.metric-stack {
+  display: grid;
+  gap: 3px;
+  color: var(--subtle);
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
 .badge.success {
   color: #166534;
   background: #dcfce7;

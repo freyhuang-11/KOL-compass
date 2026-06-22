@@ -29,7 +29,7 @@ const pages = [
 const pageKeys = new Set(pages.flatMap(([, items]) => items.map(([key]) => key)));
 const fixedTags = ["高ROI", "可复投", "需催发", "内容优质", "低效合作"];
 const outputStatuses = ["全部", "待产出", "已发视频", "已直播", "视频+直播", "逾期未产出", "有订单未匹配内容", "合作结束"];
-const creatorTypeOptions = ["短视频达人", "直播达人", "短视频/直播达人", "联盟达人"];
+const creatorTypeOptions = ["短视频达人", "直播达人", "短视频+直播达人"];
 const tiktokCategoryOptions = ["美妆个护", "女装与内衣", "男装与运动", "鞋包配饰", "手机数码", "家居日用", "食品饮料", "母婴用品", "健康保健", "宠物用品", "汽车摩托", "图书文具", "玩具爱好", "户外运动"];
 const marketOptions = ["新加坡", "越南", "马来西亚", "泰国", "菲律宾", "印尼", "美国", "英国", "沙特", "墨西哥"];
 const marketRegionLabels = {
@@ -166,7 +166,20 @@ function normalizeState(next) {
   if (!Array.isArray(merged.bulkCreatorIds)) merged.bulkCreatorIds = [];
   if (!Array.isArray(merged.syncLogs)) merged.syncLogs = [];
   if (!Array.isArray(merged.operationLogs)) merged.operationLogs = [];
+  if (Array.isArray(merged.creators)) merged.creators = merged.creators.map(normalizeCreatorRecord);
   return merged;
+}
+
+function normalizeCreatorRecord(row = {}) {
+  const avgVideoViews = metricNumber(row.avgVideoViews ?? row.avgVideoViewCount ?? row.averageVideoViews) || metricFromTags(row.tags, "均播");
+  const avgLiveUv = metricNumber(row.avgLiveUv ?? row.avgLiveUvCount ?? row.averageLiveUv) || metricFromTags(row.tags, "直播UV");
+  return {
+    ...row,
+    type: normalizeCreatorType(row.type, { avgVideoViews, avgLiveUv }),
+    avgVideoViews,
+    avgLiveUv,
+    tags: normalizeCreatorTags(row.tags, { avgVideoViews, avgLiveUv }),
+  };
 }
 
 function purgeDemoData(next) {
@@ -195,7 +208,7 @@ function normalizeAutoReply(rule) {
     name: rule.name || "未命名规则",
     matchType: rule.matchType || "包含关键词",
     keywords: rule.keywords || String(rule.condition || "").replace(/^包含\s*/, ""),
-    creatorType: rule.creatorType || "全部",
+    creatorType: rule.creatorType === "全部" ? "全部" : normalizeCreatorType(rule.creatorType || "全部"),
     region: rule.region || "全部",
     minFollowers: Number(rule.minFollowers || 0),
     priority: Number(rule.priority || 50),
@@ -386,6 +399,47 @@ function creatorGmvRangeOk(gmv, range) {
   if (range === "$100K-$500K") return value >= 100000 && value < 500000;
   if (range === ">$500K") return value >= 500000;
   return true;
+}
+
+function metricNumber(value) {
+  const number = Number(String(value || "").replaceAll(",", ""));
+  return Number.isFinite(number) && number > 0 ? number : 0;
+}
+
+function metricFromTags(tags, label) {
+  const values = Array.isArray(tags) ? tags : [];
+  const row = values.find((tag) => String(tag || "").trim().startsWith(label));
+  if (!row) return 0;
+  const match = String(row).replaceAll(",", "").match(/(\d+(?:\.\d+)?)/);
+  return match ? metricNumber(match[1]) : 0;
+}
+
+function normalizeCreatorType(type, metrics = {}) {
+  if (type === "短视频+直播达人" || type === "短视频/直播达人") return "短视频+直播达人";
+  if (type === "直播达人") return "直播达人";
+  if (type === "短视频达人") return "短视频达人";
+  const hasVideo = metricNumber(metrics.avgVideoViews) > 0;
+  const hasLive = metricNumber(metrics.avgLiveUv) > 0;
+  if (hasVideo && hasLive) return "短视频+直播达人";
+  if (hasLive) return "直播达人";
+  return "短视频达人";
+}
+
+function normalizeCreatorTags(tags, metrics = {}) {
+  const blocked = new Set(["TikTok API", "平台达人库", "联盟达人"]);
+  const values = (Array.isArray(tags) ? tags : [])
+    .map((tag) => String(tag || "").trim())
+    .filter((tag) => tag && !blocked.has(tag) && !/^均播\s*/.test(tag) && !/^直播UV\s*/i.test(tag));
+  return Array.from(new Set(values));
+}
+
+function creatorMetricValue(c, key) {
+  const value = metricNumber(c?.[key]);
+  return value ? value.toLocaleString() : "-";
+}
+
+function creatorVisibleTags(c) {
+  return normalizeCreatorTags(c?.tags || []).map((t) => `<span class="tag">${escapeHtml(t)}</span>`).join("");
 }
 
 function creatorContactOk(c, filter) {
@@ -732,7 +786,7 @@ function renderKolPool() {
   const marketCreators = currentMarket ? state.creators.filter((c) => normalizeMarketRegion(c.region) === currentMarket || c.sourceShopCipher === shopCipher(selectedShop)) : state.creators;
   const realMarketCreators = marketCreators.filter((c) => c.sourceId);
   const localCreators = marketCreators.filter((c) => !c.sourceId);
-  const typeOptions = fixedOptions(creatorTypeOptions, state.creators.map((c) => c.type));
+  const typeOptions = creatorTypeOptions;
   const categories = fixedOptions(tiktokCategoryOptions, state.creators.flatMap((c) => creatorCategoryValues(c)));
   state.filters.kolTypes = filterValues(state.filters.kolTypes).filter((x) => typeOptions.includes(x));
   state.filters.kolCategories = filterValues(state.filters.kolCategories).filter((x) => categories.includes(x));
@@ -744,7 +798,7 @@ function renderKolPool() {
     const replyRateOk = creatorReplyRateOk(c.replyRate, state.filters.kolReplyRate);
     const gmvOk = creatorGmvRangeOk(c.gmv, state.filters.kolGmv);
     const contactOk = creatorContactOk(c, state.filters.kolContact);
-    const kwOk = !kw || [c.username, c.nickname, c.category, c.region, c.tags.join(",")].join(" ").toLowerCase().includes(kw);
+    const kwOk = !kw || [c.username, c.nickname, c.category, c.region, normalizeCreatorTags(c.tags).join(",")].join(" ").toLowerCase().includes(kw);
     const interestOk = state.filters.kolInterest === "显示不感兴趣" ? c.status !== "黑名单" : c.status !== "黑名单" && !isNotInterestedBlocked(c);
     return typeOk && categoryOk && followersOk && replyRateOk && gmvOk && contactOk && kwOk && interestOk;
   });
@@ -818,17 +872,18 @@ function renderKolPool() {
         <button class="btn primary" onclick="openOutreachModal()">一键建联(${state.bulkCreatorIds.length})</button>
       </div>
     </div>
-    ${rows.length ? table(["选择", "达人", "类型", "类目/地区", "粉丝", "GMV", "回复率", "状态/标签", "操作"], rows.map((c) => {
+    ${rows.length ? table(["选择", "达人", "类型", "类目/地区", "粉丝", "GMV", "均播/直播UV", "回复率", "状态/标签", "操作"], rows.map((c) => {
       const blockReason = creatorOutreachBlockReason(c);
       return [
       blockReason ? `<span class="muted">${escapeHtml(blockReason)}</span>` : `<input type="checkbox" ${state.bulkCreatorIds.includes(c.id) ? "checked" : ""} onchange="toggleCreatorSelection(${c.id}, this.checked)" aria-label="选择 @${escapeHtml(c.username)}" />`,
       personCell(c),
-      c.type,
+      normalizeCreatorType(c.type, c),
       `${creatorCategoryValues(c).map(escapeHtml).join(" / ")}<br><span class="muted">${escapeHtml(c.region)}</span>`,
       c.followers.toLocaleString(),
       c.gmv,
+      `<div class="metric-stack"><span>均播 ${creatorMetricValue(c, "avgVideoViews")}</span><span>直播UV ${creatorMetricValue(c, "avgLiveUv")}</span></div>`,
       c.replyRate,
-      `${c.status === "不感兴趣" ? badge("不感兴趣") : ""} ${c.tags.map((t) => `<span class="tag">${escapeHtml(t)}</span>`).join("")}`,
+      `${c.status === "不感兴趣" ? badge("不感兴趣") : ""} ${creatorVisibleTags(c)}`,
       `${blockReason ? "" : `<button class="btn" onclick="openOutreachModal(${c.id})">建联</button>`} <button class="btn ghost" onclick="showCreator(${c.id})">详情</button> ${c.status === "不感兴趣" ? `<button class="btn ghost" onclick="clearNotInterested(${c.id})">恢复建联</button>` : `<button class="btn ghost" onclick="markNotInterested(${c.id})">不感兴趣</button>`} <button class="btn ghost" onclick="blacklistCreator(${c.id})">拉黑</button>`,
     ];
     })) : `<div class="empty-state">当前市场有 ${realMarketCreators.length} 个平台达人，但被筛选条件过滤为空。<button class="btn" onclick="resetKolFilters()">清空筛选</button></div>`}
@@ -1377,7 +1432,7 @@ function renderCreatorDetail() {
           <div class="creator-portrait"></div>
           <h3 style="margin:0">${escapeHtml(c.nickname || c.username)}</h3>
           <div class="link">@${escapeHtml(c.username)}</div>
-          <div style="margin-top:10px">${c.tags.map((t) => `<span class="tag">${escapeHtml(t)}</span>`).join("")}</div>
+          <div style="margin-top:10px">${creatorVisibleTags(c)}</div>
           <div class="metric-pair">
             <div class="mini-metric"><b>${c.followers.toLocaleString()}</b><span class="muted">粉丝</span></div>
             <div class="mini-metric"><b>${escapeHtml(c.replyRate || "-")}</b><span class="muted">回复率</span></div>
@@ -1839,13 +1894,13 @@ function upsertImportedCreators(creators, shop) {
   let changed = 0;
   for (const creator of creators || []) {
     const region = normalizeMarketRegion(creator.region) || shopMarket || creator.region;
-    const payload = {
+    const payload = normalizeCreatorRecord({
       ...creator,
       region,
       sourceShopCipher: shopKey,
       sourceShopName: shopName,
       sourceShopRegion: shopMarket,
-    };
+    });
     const keys = creatorImportKeys(payload);
     const current = keys.map((key) => existing.get(key)).find(Boolean)
       || creatorLegacyImportKeys(payload).map((key) => existing.get(key)).find((row) => row && !row.sourceShopCipher);
@@ -1929,11 +1984,11 @@ function upsertPlatformCreatorLibrary(creators) {
   }
   let changed = 0;
   for (const creator of creators || []) {
-    const payload = {
+    const payload = normalizeCreatorRecord({
       ...creator,
       region: normalizeMarketRegion(creator.region) || creator.region,
       librarySource: "platform",
-    };
+    });
     const current = creatorImportKeys(payload).map((key) => existing.get(key)).find(Boolean)
       || creatorLegacyImportKeys(payload).map((key) => existing.get(key)).find(Boolean);
     if (current) {
@@ -2460,7 +2515,7 @@ function openCreatorModal(id = 0) {
   const row = id ? creator(id) : null;
   const categoryOptions = fixedOptions(tiktokCategoryOptions, state.creators.map((c) => c.category)).map((x) => [x, x]);
   const regionOptions = fixedOptions(marketOptions, state.creators.map((c) => c.region)).map((x) => [x, x]);
-  const typeOptions = fixedOptions(creatorTypeOptions, state.creators.map((c) => c.type)).map((x) => [x, x]);
+  const typeOptions = creatorTypeOptions.map((x) => [x, x]);
   openModal(row ? "编辑达人" : "新增达人", `
     <div class="form-grid">
       ${field("username", "TikTok用户名", "beauty_new", row?.username || "")}
@@ -2490,13 +2545,13 @@ function saveCreator(id = 0) {
     id: id || Date.now(),
     username: get("username").replace(/^@/, ""),
     nickname: get("nickname"),
-    type: get("type") || "短视频达人",
+    type: normalizeCreatorType(get("type") || "短视频达人"),
     category: get("category") || "未分类",
     region: get("region") || "-",
     followers: Number(get("followers") || 0),
     gmv: get("gmv") || "-",
     replyRate: get("replyRate") || "-",
-    tags: document.getElementById("creatorTags").value.split(",").map((x) => x.trim()).filter(Boolean),
+    tags: normalizeCreatorTags(document.getElementById("creatorTags").value.split(",").map((x) => x.trim()).filter(Boolean)),
     status: id ? (creator(id)?.status || "待联系") : "待联系",
     email: get("email"),
     whatsapp: get("whatsapp"),
@@ -2933,7 +2988,7 @@ function autoReplyConditionText(rule) {
 
 function openAutoReplyModal(id = 0) {
   const row = id ? state.autoReplies.find((x) => x.id === id) : null;
-  const creatorTypes = ["全部", ...fixedOptions(creatorTypeOptions, state.creators.map((x) => x.type))];
+  const creatorTypes = ["全部", ...creatorTypeOptions];
   const regions = ["全部", ...fixedOptions(marketOptions, state.creators.map((x) => x.region))];
   openModal(row ? "编辑自动回复规则" : "新增自动回复规则", `
     <div class="notice">自动回复只会在真实接入消息回调/轮询后发送；当前本地测试用于验证规则是否命中，不会向达人发送外部消息。</div>
@@ -3309,13 +3364,13 @@ function importCreatorsCsv() {
         id: existing?.id || Date.now() + imported,
         username,
         nickname: rowValue(row, headers, ["nickname", "昵称", "达人昵称"], existing?.nickname || ""),
-        type: rowValue(row, headers, ["type", "creator_type", "达人类型"], existing?.type || "短视频达人"),
+        type: normalizeCreatorType(rowValue(row, headers, ["type", "creator_type", "达人类型"], existing?.type || "短视频达人")),
         category: rowValue(row, headers, ["category", "类目"], existing?.category || "未分类"),
         region: rowValue(row, headers, ["region", "地区", "国家"], existing?.region || ""),
         followers: Number(String(rowValue(row, headers, ["followers", "粉丝", "粉丝数"], existing?.followers || 0)).replaceAll(",", "")) || 0,
         gmv: rowValue(row, headers, ["gmv", "近30天GMV"], existing?.gmv || ""),
         replyRate: rowValue(row, headers, ["replyRate", "reply_rate", "回复率"], existing?.replyRate || ""),
-        tags: rowValue(row, headers, ["tags", "标签"], (existing?.tags || []).join(",")).split(/[，,]/).map((x) => x.trim()).filter(Boolean),
+        tags: normalizeCreatorTags(rowValue(row, headers, ["tags", "标签"], (existing?.tags || []).join(",")).split(/[，,]/).map((x) => x.trim()).filter(Boolean)),
         status: existing?.status || "待联系",
         email: rowValue(row, headers, ["email", "邮箱"], existing?.email || ""),
         whatsapp: rowValue(row, headers, ["whatsapp", "WhatsApp", "wa"], existing?.whatsapp || ""),
