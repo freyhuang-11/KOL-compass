@@ -80,8 +80,9 @@ async function main() {
   assert("cooperation operational actions supported", ["urgeOutput", "resolveUnmatched", "finishCoop", "deleteCoop"].every((name) => app.includes(`function ${name}`)));
   assert("creator edit and blacklist supported", app.includes("openCreatorModal(${c.id})") && app.includes("function blacklistCreator"));
   assert("blacklist search and audit trail supported", ["blacklistSearch", "blacklistReason", "blacklistedAt", "blacklistRestoredAt"].every((name) => app.includes(name)) && app.includes("搜索达人、类目、地区、原因"));
+  assert("creator fixed fields use fixed options", ["selectField(\"type\"", "selectField(\"category\"", "selectField(\"region\"", "creatorTypeOptions", "tiktokCategoryOptions", "marketOptions"].every((text) => app.includes(text)));
   assert("creator contact fields editable", app.includes('field("email", "Email"') && app.includes('field("whatsapp", "WhatsApp"') && app.includes('email: get("email")'));
-  assert("KOL pool multi-dimensional filters supported", ["kolCategory", "kolRegion", "kolFollowers", "kolReplyRate", "creatorFollowerTierOk", "creatorReplyRateOk"].every((name) => app.includes(name)));
+  assert("KOL pool fixed multi-select filters supported", ["kolTypes", "kolCategories", "kolRegions", "kolFollowers", "kolReplyRate", "kolGmv", "kolContact", "multiFilterChips", "creatorGmvRangeOk", "creatorContactOk"].every((name) => app.includes(name)));
   assert("KOL pool batch outreach supported", ["toggleCreatorSelection", "openOutreachModal", "saveOutreach", "renderTemplate"].every((name) => app.includes(`function ${name}`)) && app.includes("一键建联"));
   assert("KOL pool selection summary supported", ["当前筛选", "可建联达人", "暂不可建联", "已选择", "选择当前可建联", "清空选择"].every((text) => app.includes(text)) && ["selectVisibleCreators", "clearBulkSelection"].every((name) => app.includes(`function ${name}`)));
   assert("outreach quota and safety rules enforced", ["planQuotas", "quotaRemaining", "creatorOutreachBlockReason", "markNotInterested", "clearNotInterested", "selectPlan"].every((name) => app.includes(name)) && app.includes("24小时内已建联") && app.includes("不感兴趣至"));
@@ -107,6 +108,7 @@ async function main() {
   assert("store-first product UI and picker supported", ["store-panel", "productList", "productPicker", "product-thumb", "重新同步商品", "选择建联商品"].every((text) => app.includes(text) || read("app.css").includes(text)));
   assert("shop authorization auto-syncs products", app.includes("if (firstShop) await syncProducts({ silent: true })"));
   assert("TikTok API settings can be saved locally", ["tiktokClientKey", "tiktokRedirectUrl", "tiktokScopes", "saveApiSettings", "markApiAuthBlocked"].every((name) => app.includes(name)) && app.includes("client_secret 不应保存在前端"));
+  assert("fixed option forms avoid free text for scopes and store access", ["multiCheckField(\"apiScopes\"", "tiktokScopeOptions", "multiCheckField(\"teamStores\"", "getCheckedValues(\"teamStores\")"].every((text) => app.includes(text)));
   assert("TikTok API blockers show user handoff steps", ["showApiHandoffSteps", "查看人工处理流程", "Partner Center 已登录", "scope 已开通或审批通过", "client_secret 只放后端环境变量"].every((text) => app.includes(text)));
   assert("sync logs are visible and recorded", ["syncLogs", "addSyncLog"].every((name) => app.includes(name)) && app.includes("同步日志"));
   assert("system message center supports read state and filters", ["messageType", "messageRead", "markMessageRead", "markAllMessagesRead", "deleteMessage", "pruneSystemMessages"].every((name) => app.includes(name)) && app.includes("本地保留最近 90 天"));

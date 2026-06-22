@@ -253,6 +253,103 @@ button {
   align-items: center;
 }
 
+.filter-toolbar {
+  align-items: stretch;
+  gap: 14px;
+}
+
+.kol-filter-panel {
+  flex: 1 1 720px;
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.filter-search-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: end;
+}
+
+.kol-search-input {
+  min-width: 260px;
+}
+
+.filter-select {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.filter-select .select {
+  min-width: 138px;
+  color: var(--text);
+  font-weight: 500;
+}
+
+.filter-group {
+  display: grid;
+  gap: 7px;
+}
+
+.filter-label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.chip-row {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.filter-chip {
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--subtle);
+  border-radius: 999px;
+  min-height: 30px;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.filter-chip.active {
+  border-color: #b9c8ff;
+  background: #eef3ff;
+  color: var(--primary-strong);
+}
+
+.check-grid {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-height: 40px;
+  align-items: center;
+}
+
+.check-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 7px 10px;
+  background: #fff;
+  color: var(--subtle);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.check-option input {
+  width: 14px;
+  height: 14px;
+}
+
 .input,
 .select,
 .textarea {

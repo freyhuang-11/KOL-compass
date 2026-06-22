@@ -28,6 +28,14 @@ const pages = [
 const pageKeys = new Set(pages.flatMap(([, items]) => items.map(([key]) => key)));
 const fixedTags = ["高ROI", "可复投", "需催发", "内容优质", "低效合作"];
 const outputStatuses = ["全部", "待产出", "已发视频", "已直播", "视频+直播", "逾期未产出", "有订单未匹配内容", "合作结束"];
+const creatorTypeOptions = ["短视频达人", "直播达人", "短视频/直播达人", "联盟达人"];
+const tiktokCategoryOptions = ["美妆个护", "女装与内衣", "男装与运动", "鞋包配饰", "手机数码", "家居日用", "食品饮料", "母婴用品", "健康保健", "宠物用品", "汽车摩托", "图书文具", "玩具爱好", "户外运动"];
+const marketOptions = ["新加坡", "越南", "马来西亚", "泰国", "菲律宾", "印尼", "美国", "英国", "沙特", "墨西哥"];
+const followerTierOptions = ["<10K", "10K-100K", "100K-1M", ">1M"];
+const replyRateOptions = [">=60%", "40%-60%", "<40%"];
+const gmvRangeOptions = ["<$10K", "$10K-$50K", "$50K-$100K", "$100K-$500K", ">$500K"];
+const contactOptions = ["有Email", "有WhatsApp", "有Email或WhatsApp", "无联系方式"];
+const tiktokScopeOptions = [["product", "商品"], ["affiliate", "联盟/达人"], ["messaging", "消息"], ["order", "订单"]];
 const planQuotas = { "免费版": 100, "基础版": 1000, "专业版": 5000, "企业版": Infinity };
 const rolePermissions = {
   "超级管理员": "全局数据、团队管理、订阅管理、全部业务操作",
@@ -44,11 +52,13 @@ const seed = {
     productSearch: "",
     productSearchField: "商品名",
     kolSearch: "",
-    kolType: "全部",
-    kolCategory: "全部",
-    kolRegion: "全部",
+    kolTypes: [],
+    kolCategories: [],
+    kolRegions: [],
     kolFollowers: "全部",
     kolReplyRate: "全部",
+    kolGmv: "全部",
+    kolContact: "全部",
     kolInterest: "可建联",
     blacklistSearch: "",
     outreachSearch: "",
@@ -402,6 +412,47 @@ function creatorReplyRateOk(replyRate, tier) {
   return true;
 }
 
+function creatorGmvNumber(value) {
+  const text = String(value || "").toUpperCase().replaceAll(",", "");
+  const match = text.match(/(\d+(?:\.\d+)?)/);
+  if (!match) return 0;
+  const amount = Number(match[1]);
+  if (text.includes("M")) return amount * 1000000;
+  if (text.includes("K")) return amount * 1000;
+  return amount;
+}
+
+function creatorGmvRangeOk(gmv, range) {
+  const value = creatorGmvNumber(gmv);
+  if (range === "<$10K") return value < 10000;
+  if (range === "$10K-$50K") return value >= 10000 && value < 50000;
+  if (range === "$50K-$100K") return value >= 50000 && value < 100000;
+  if (range === "$100K-$500K") return value >= 100000 && value < 500000;
+  if (range === ">$500K") return value >= 500000;
+  return true;
+}
+
+function creatorContactOk(c, filter) {
+  const hasEmail = Boolean(c?.email);
+  const hasWa = Boolean(c?.whatsapp);
+  if (filter === "有Email") return hasEmail;
+  if (filter === "有WhatsApp") return hasWa;
+  if (filter === "有Email或WhatsApp") return hasEmail || hasWa;
+  if (filter === "无联系方式") return !hasEmail && !hasWa;
+  return true;
+}
+
+function filterValues(value) {
+  if (Array.isArray(value)) return value.filter((x) => x && x !== "全部");
+  if (!value || value === "全部") return [];
+  return [value];
+}
+
+function multiFilterOk(selected, value) {
+  const values = filterValues(selected);
+  return !values.length || values.includes(value);
+}
+
 function roi(row) {
   const spend = Number(row.commission || 0) + Number(row.adSpend || 0);
   if (!spend) return null;
@@ -674,18 +725,20 @@ function renderProducts() {
 }
 
 function renderKolPool() {
-  const categories = Array.from(new Set(state.creators.map((c) => c.category).filter(Boolean)));
-  const regions = Array.from(new Set(state.creators.map((c) => c.region).filter(Boolean)));
+  const categories = fixedOptions(tiktokCategoryOptions, state.creators.map((c) => c.category));
+  const regions = fixedOptions(marketOptions, state.creators.map((c) => c.region));
   const rows = state.creators.filter((c) => {
     const kw = state.filters.kolSearch.trim().toLowerCase();
-    const typeOk = state.filters.kolType === "全部" || c.type === state.filters.kolType;
-    const categoryOk = state.filters.kolCategory === "全部" || c.category === state.filters.kolCategory;
-    const regionOk = state.filters.kolRegion === "全部" || c.region === state.filters.kolRegion;
+    const typeOk = multiFilterOk(state.filters.kolTypes, c.type);
+    const categoryOk = multiFilterOk(state.filters.kolCategories, c.category);
+    const regionOk = multiFilterOk(state.filters.kolRegions, c.region);
     const followersOk = creatorFollowerTierOk(c.followers, state.filters.kolFollowers);
     const replyRateOk = creatorReplyRateOk(c.replyRate, state.filters.kolReplyRate);
+    const gmvOk = creatorGmvRangeOk(c.gmv, state.filters.kolGmv);
+    const contactOk = creatorContactOk(c, state.filters.kolContact);
     const kwOk = !kw || [c.username, c.nickname, c.category, c.region, c.tags.join(",")].join(" ").toLowerCase().includes(kw);
     const interestOk = state.filters.kolInterest === "显示不感兴趣" ? c.status !== "黑名单" : c.status !== "黑名单" && !isNotInterestedBlocked(c);
-    return typeOk && categoryOk && regionOk && followersOk && replyRateOk && kwOk && interestOk;
+    return typeOk && categoryOk && regionOk && followersOk && replyRateOk && gmvOk && contactOk && kwOk && interestOk;
   });
   const availableRows = rows.filter((c) => !creatorOutreachBlockReason(c));
   const blockedRows = rows.filter((c) => creatorOutreachBlockReason(c));
@@ -703,27 +756,24 @@ function renderKolPool() {
       ${stat("暂不可建联", blockedRows.length, "查看表格首列的拦截原因")}
       ${stat("已选择", selectedAvailableCount, "将进入一键建联")}
     </div>
-    <div class="toolbar">
-      <div class="filters">
-        <input class="input" placeholder="搜索达人、用户名、标签..." value="${escapeHtml(state.filters.kolSearch)}" oninput="setFilter('kolSearch', this.value)" />
-        <select class="select" onchange="setFilter('kolType', this.value)">
-          ${["全部", "短视频达人", "直播达人", "短视频/直播达人"].map((x) => `<option ${state.filters.kolType === x ? "selected" : ""}>${x}</option>`).join("")}
-        </select>
-        <select class="select" onchange="setFilter('kolCategory', this.value)">
-          ${["全部", ...categories].map((x) => `<option ${state.filters.kolCategory === x ? "selected" : ""}>${escapeHtml(x)}</option>`).join("")}
-        </select>
-        <select class="select" onchange="setFilter('kolRegion', this.value)">
-          ${["全部", ...regions].map((x) => `<option ${state.filters.kolRegion === x ? "selected" : ""}>${escapeHtml(x)}</option>`).join("")}
-        </select>
-        <select class="select" onchange="setFilter('kolFollowers', this.value)">
-          ${["全部", "<10K", "10K-100K", "100K-1M", ">1M"].map((x) => `<option ${state.filters.kolFollowers === x ? "selected" : ""}>${x}</option>`).join("")}
-        </select>
-        <select class="select" onchange="setFilter('kolReplyRate', this.value)">
-          ${["全部", ">=60%", "40%-60%", "<40%"].map((x) => `<option ${state.filters.kolReplyRate === x ? "selected" : ""}>${x}</option>`).join("")}
-        </select>
-        <select class="select" onchange="setFilter('kolInterest', this.value)">
-          ${["可建联", "显示不感兴趣"].map((x) => `<option ${state.filters.kolInterest === x ? "selected" : ""}>${x}</option>`).join("")}
-        </select>
+    <div class="toolbar filter-toolbar">
+      <div class="kol-filter-panel">
+        <div class="filter-search-row">
+          <input class="input kol-search-input" placeholder="搜索达人、用户名、标签..." value="${escapeHtml(state.filters.kolSearch)}" oninput="setFilter('kolSearch', this.value)" />
+          ${singleFilterSelect("kolFollowers", "粉丝量级", followerTierOptions)}
+          ${singleFilterSelect("kolGmv", "近30天GMV", gmvRangeOptions)}
+          ${singleFilterSelect("kolReplyRate", "回复率", replyRateOptions)}
+          ${singleFilterSelect("kolContact", "联系方式", contactOptions)}
+          <label class="filter-select">
+            <span>建联状态</span>
+            <select class="select" onchange="setFilter('kolInterest', this.value)">
+              ${["可建联", "显示不感兴趣"].map((x) => `<option ${state.filters.kolInterest === x ? "selected" : ""}>${escapeHtml(x)}</option>`).join("")}
+            </select>
+          </label>
+        </div>
+        ${multiFilterChips("kolTypes", "达人类型", fixedOptions(creatorTypeOptions, state.creators.map((c) => c.type)))}
+        ${multiFilterChips("kolCategories", "TikTok 类目", categories)}
+        ${multiFilterChips("kolRegions", "市场地区", regions)}
       </div>
       <div class="filters">
         <button class="btn" onclick="selectVisibleCreators(${visibleAvailableIds})">选择当前可建联</button>
@@ -1226,7 +1276,7 @@ function renderAdmin() {
         <div class="form-grid">
           ${field("apiClientKey", "client_key", "Partner App client_key", state.settings.tiktokClientKey || "")}
           ${field("apiRedirectUrl", "OAuth Redirect URL", "http://localhost:8015/api/tiktok/callback", state.settings.tiktokRedirectUrl || "")}
-          ${field("apiScopes", "已申请 scope", "product,affiliate,messaging,order", state.settings.tiktokScopes || "")}
+          ${multiCheckField("apiScopes", "已申请 scope", tiktokScopeOptions, state.settings.tiktokScopes || "")}
           ${field("apiLastCheck", "最近检查", "尚未检查", state.settings.tiktokLastAuthCheck || "尚未检查")}
         </div>
         <div class="warning-box" style="margin-top:12px">client_secret 不应保存在前端 localStorage。真实接入时请放在本项目后端环境变量中；遇到 OAuth、验证码、scope 审批时需要人工在浏览器完成。</div>
@@ -1471,6 +1521,20 @@ function render() {
 
 function setFilter(key, value) {
   state.filters[key] = value;
+  saveState();
+  render();
+}
+
+function toggleMultiFilter(key, value) {
+  const current = filterValues(state.filters[key]);
+  const next = current.includes(value) ? current.filter((x) => x !== value) : [...current, value];
+  state.filters[key] = next;
+  saveState();
+  render();
+}
+
+function clearMultiFilter(key) {
+  state.filters[key] = [];
   saveState();
   render();
 }
@@ -1754,7 +1818,7 @@ function simulateConnect() {
 function saveApiSettings() {
   const clientKey = document.getElementById("apiClientKey").value.trim();
   const redirectUrl = document.getElementById("apiRedirectUrl").value.trim();
-  const scopes = document.getElementById("apiScopes").value.trim();
+  const scopes = getCheckedValues("apiScopes").join(",");
   const lastCheck = nowText();
   state.settings.tiktokClientKey = clientKey;
   state.settings.tiktokRedirectUrl = redirectUrl;
@@ -2187,13 +2251,16 @@ function coopActions(c) {
 
 function openCreatorModal(id = 0) {
   const row = id ? creator(id) : null;
+  const categoryOptions = fixedOptions(tiktokCategoryOptions, state.creators.map((c) => c.category)).map((x) => [x, x]);
+  const regionOptions = fixedOptions(marketOptions, state.creators.map((c) => c.region)).map((x) => [x, x]);
+  const typeOptions = fixedOptions(creatorTypeOptions, state.creators.map((c) => c.type)).map((x) => [x, x]);
   openModal(row ? "编辑达人" : "新增达人", `
     <div class="form-grid">
       ${field("username", "TikTok用户名", "beauty_new", row?.username || "")}
       ${field("nickname", "昵称", "New Creator", row?.nickname || "")}
-      ${field("type", "达人类型", "短视频达人", row?.type || "")}
-      ${field("category", "类目", "美妆", row?.category || "")}
-      ${field("region", "地区", "美国", row?.region || "")}
+      ${selectField("type", "达人类型", typeOptions, row?.type || "短视频达人")}
+      ${selectField("category", "TikTok 类目", categoryOptions, row?.category || "美妆个护")}
+      ${selectField("region", "市场地区", regionOptions, row?.region || "新加坡")}
       ${field("followers", "粉丝数", "100000", row?.followers ?? "")}
       ${field("gmv", "近30天GMV", "$10K/月", row?.gmv || "")}
       ${field("replyRate", "回复率", "35%", row?.replyRate || "")}
@@ -2418,6 +2485,7 @@ function saveOutreach(idList) {
 
 function openCoopModal(id) {
   const row = id ? state.cooperations.find((x) => x.id === id) : null;
+  const ownerOptions = fixedOptions(state.team.map((x) => x.name), state.cooperations.map((x) => x.owner)).map((x) => [x, x]);
   openModal(row ? "编辑合作" : "新增合作", `
     <div class="form-grid">
       ${selectField("coopCreatorId", "达人", state.creators.filter((x) => x.status !== "黑名单").map((x) => [x.id, `@${x.username}`]), row?.creatorId)}
@@ -2425,7 +2493,7 @@ function openCoopModal(id) {
       ${selectField("coopType", "合作类型", [["短视频", "短视频"], ["直播", "直播"], ["短视频+直播", "短视频+直播"], ["挂车", "挂车"]], row?.type)}
       ${selectField("coopStatus", "内容状态", outputStatuses.filter((x) => x !== "全部").map((x) => [x, x]), row?.status)}
       ${field("coopDueDate", "产出截止日", "2026-06-30", row?.dueDate || "")}
-      ${field("coopOwner", "负责人", "Sam", row?.owner || "")}
+      ${selectField("coopOwner", "负责人", ownerOptions, row?.owner || state.team[0]?.name || "")}
       ${field("coopVideos", "视频数", "0", row?.videos ?? 0)}
       ${field("coopLives", "直播场次", "0", row?.lives ?? 0)}
       ${field("coopOrders", "订单数", "0", row?.orders ?? 0)}
@@ -2441,6 +2509,58 @@ function openCoopModal(id) {
 
 function selectField(id, label, options, value) {
   return `<div class="form-field"><label>${label}</label><select id="${id}" class="select">${options.map(([v, text]) => `<option value="${escapeHtml(v)}" ${String(value ?? "") === String(v) ? "selected" : ""}>${escapeHtml(text)}</option>`).join("")}</select></div>`;
+}
+
+function multiCheckField(id, label, options, selected = []) {
+  const values = Array.isArray(selected) ? selected : String(selected || "").split(/[，,]/).map((x) => x.trim()).filter(Boolean);
+  return `
+    <div class="form-field">
+      <label>${escapeHtml(label)}</label>
+      <div class="check-grid" id="${escapeHtml(id)}">
+        ${options.map(([value, text]) => `
+          <label class="check-option">
+            <input type="checkbox" value="${escapeHtml(value)}" ${values.includes(String(value)) || values.includes(String(text)) ? "checked" : ""} />
+            <span>${escapeHtml(text)}</span>
+          </label>
+        `).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function getCheckedValues(id) {
+  return Array.from(document.querySelectorAll(`#${CSS.escape(id)} input[type="checkbox"]:checked`)).map((input) => input.value);
+}
+
+function fixedOptions(baseOptions, currentValues = []) {
+  return Array.from(new Set([...baseOptions, ...currentValues.filter(Boolean)]));
+}
+
+function multiFilterChips(key, label, options) {
+  const selected = filterValues(state.filters[key]);
+  const allActive = selected.length === 0;
+  return `
+    <div class="filter-group">
+      <div class="filter-label">${escapeHtml(label)}</div>
+      <div class="chip-row">
+        <button class="filter-chip ${allActive ? "active" : ""}" onclick="clearMultiFilter('${escapeJs(key)}')">全部</button>
+        ${options.map((option) => `
+          <button class="filter-chip ${selected.includes(option) ? "active" : ""}" onclick="toggleMultiFilter('${escapeJs(key)}','${escapeJs(option)}')">${escapeHtml(option)}</button>
+        `).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function singleFilterSelect(key, label, options) {
+  return `
+    <label class="filter-select">
+      <span>${escapeHtml(label)}</span>
+      <select class="select" onchange="setFilter('${escapeJs(key)}', this.value)">
+        ${["全部", ...options].map((x) => `<option ${state.filters[key] === x ? "selected" : ""}>${escapeHtml(x)}</option>`).join("")}
+      </select>
+    </label>
+  `;
 }
 
 function saveCoop(id) {
@@ -2594,8 +2714,8 @@ function autoReplyConditionText(rule) {
 
 function openAutoReplyModal(id = 0) {
   const row = id ? state.autoReplies.find((x) => x.id === id) : null;
-  const creatorTypes = ["全部", ...Array.from(new Set(state.creators.map((x) => x.type).filter(Boolean)))];
-  const regions = ["全部", ...Array.from(new Set(state.creators.map((x) => x.region).filter(Boolean)))];
+  const creatorTypes = ["全部", ...fixedOptions(creatorTypeOptions, state.creators.map((x) => x.type))];
+  const regions = ["全部", ...fixedOptions(marketOptions, state.creators.map((x) => x.region))];
   openModal(row ? "编辑自动回复规则" : "新增自动回复规则", `
     <div class="notice">自动回复只会在真实接入消息回调/轮询后发送；当前本地测试用于验证规则是否命中，不会向达人发送外部消息。</div>
     <div class="form-grid" style="margin-top:12px">
@@ -2758,13 +2878,16 @@ function restoreCreator(id) {
 function openTeamMemberModal(id = 0) {
   const row = id ? state.team.find((x) => x.id === id) : null;
   const roleOptions = Object.keys(rolePermissions).map((role) => [role, role]);
+  const currentStores = state.team.flatMap((x) => String(x.stores || "").split(/[，,]/).map((item) => item.trim()).filter(Boolean));
+  const authorizedStores = (state.settings.tiktokShops || []).map((shop) => shopLabel(shop));
+  const storeOptions = fixedOptions(["全部店铺", ...authorizedStores], currentStores).map((x) => [x, x]);
   openModal(row ? "编辑团队成员" : "新增团队成员", `
     <div class="notice">本地版本记录团队配置和操作日志；真实邀请邮件、登录账号和权限拦截需要后端账号系统接入。</div>
     <div class="form-grid" style="margin-top:12px">
       ${field("teamName", "姓名", "Mia", row?.name || "")}
       ${field("teamEmail", "邮箱", "mia@example.com", row?.email || "")}
       ${selectField("teamRole", "角色", roleOptions, row?.role || "BD专员")}
-      ${field("teamStores", "可访问店铺", "美国店,英国店", row?.stores || "全部店铺")}
+      ${multiCheckField("teamStores", "可访问店铺", storeOptions, row?.stores || "全部店铺")}
       ${selectField("teamStatus", "状态", [["启用", "启用"], ["禁用", "禁用"]], row?.status || "启用")}
     </div>
   `, `<button class="btn primary" onclick="saveTeamMember(${row?.id || 0})">保存成员</button>`);
@@ -2780,7 +2903,7 @@ function saveTeamMember(id = 0) {
     name,
     email,
     role: get("teamRole"),
-    stores: get("teamStores") || "全部店铺",
+    stores: getCheckedValues("teamStores").join(",") || "全部店铺",
     status: get("teamStatus"),
   });
   if (id) state.team = state.team.map((x) => x.id === id ? payload : x);
@@ -3060,6 +3183,8 @@ function escapeJs(value) {
 
 window.setPage = setPage;
 window.setFilter = setFilter;
+window.toggleMultiFilter = toggleMultiFilter;
+window.clearMultiFilter = clearMultiFilter;
 window.dashboardGo = dashboardGo;
 window.showCreator = showCreator;
 window.syncProducts = syncProducts;

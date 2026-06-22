@@ -38,7 +38,7 @@ TikTok Shop API 后端使用：
 - `start-full.bat`
 - `smoke-test.js`
 
-最近一次连续推进检查：2026-06-22 16:30 CST，当前分支已连接 GitHub 远端；TikTok Shop sandbox OAuth 已跑通，已读取授权店铺 `SANDBOX_VN7651055422359521044` 并同步 1 个商品。产品同步已补充商品详情读取，实测可返回真实 `imageUrl`，`rawStatus=ACTIVATE` 会在前端归一显示为 `可选`。产品管理页按参考后台收敛为“商品名 / 商品ID”两个检索条件，不再保留类目、状态、合作模式三组筛选。达人搜索接口 `/api/tiktok/creators/search` 已接入；当前 sandbox 实测返回 `36009002 Too many requests for downstream`，属于 TikTok 下游限流，前端会展示真实错误，不伪造达人同步成功。`node --check app.js`、`node --check server.js`、`node smoke-test.js`、`git diff --check` 已通过，`smoke-products.png` 已按真实商品数据重截。
+最近一次连续推进检查：2026-06-22 17:20 CST，当前分支已连接 GitHub 远端；TikTok Shop sandbox OAuth 已跑通，已读取授权店铺 `SANDBOX_VN7651055422359521044` 并同步 1 个商品。产品同步已补充商品详情读取，实测可返回真实 `imageUrl`，`rawStatus=ACTIVATE` 会在前端归一显示为 `可选`。产品管理页按参考后台收敛为“商品名 / 商品ID”两个检索条件，不再保留类目、状态、合作模式三组筛选。KOL 池已补齐固定筛选：达人类型、TikTok 类目、市场地区为多选 chip；粉丝量级、近30天GMV、回复率、联系方式、建联状态为固定单选。新增/编辑达人不再手填达人类型、类目、地区；API scope 和团队成员可访问店铺也改为固定勾选。达人搜索接口 `/api/tiktok/creators/search` 已接入；当前 sandbox 实测返回 `36009002 Too many requests for downstream`，属于 TikTok 下游限流，前端会展示真实错误，不伪造达人同步成功。
 
 启动：
 
@@ -113,7 +113,10 @@ P0：
    - 有订单未匹配内容的处理动作
    - 催发、结束、删除等操作必须真实更新本地状态
 6. 保持 KOL 池批量建联闭环：
-   - 关键词、达人类型、类目、地区、粉丝量级、回复率区间筛选
+   - 关键词搜索
+   - 达人类型、TikTok 类目、市场地区固定多选
+   - 粉丝量级、近30天GMV、回复率、联系方式、建联状态固定单选
+   - 固定枚举字段不允许客户手填，新增/编辑达人时达人类型、类目、地区必须从固定选项选择
    - 勾选达人
    - 一键建联
    - 选择产品/模板/渠道
