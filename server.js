@@ -257,7 +257,28 @@ async function searchProducts(shopCipher, pageSize = 20, pageToken = "") {
   const params = { shop_cipher: shopCipher, page_size: Math.min(Number(pageSize) || 20, 100) };
   if (pageToken) params.page_token = pageToken;
   const body = { status: "ALL" };
-  return tiktokFetch("/product/202309/products/search", { method: "POST", params, body });
+  const upstream = await tiktokFetch("/product/202309/products/search", { method: "POST", params, body });
+  return enrichProductSearch(upstream, shopCipher);
+}
+
+async function getProduct(shopCipher, productId) {
+  return tiktokFetch(`/product/202309/products/${productId}`, { params: { shop_cipher: shopCipher } });
+}
+
+async function enrichProductSearch(upstream, shopCipher) {
+  const products = upstream.data?.products || [];
+  const detailed = await Promise.all(products.map(async (item) => {
+    const productId = item.id || item.product_id;
+    if (!productId) return item;
+    try {
+      const detail = await getProduct(shopCipher, productId);
+      const detailProduct = detail.data?.product || detail.data || {};
+      return { ...item, ...detailProduct, id: item.id || detailProduct.id || detailProduct.product_id };
+    } catch {
+      return item;
+    }
+  }));
+  return { ...upstream, data: { ...(upstream.data || {}), products: detailed } };
 }
 
 async function searchCreators(shopCipher, keyword = "", pageSize = 12, pageToken = "") {
@@ -285,7 +306,10 @@ function normalizeProducts(upstream) {
     const currency = item.price?.currency || skuPrice.currency || "";
     const price = priceValue && currency ? `${currency} ${priceValue}` : priceValue;
     const category = item.category_chains?.[0]?.local_name || item.category_name || item.category?.name || "TikTok Shop";
-    const imageUrl = item.main_images?.[0]?.urls?.[0] || item.main_images?.[0]?.url || item.images?.[0]?.url || item.cover_image?.url || "";
+    const imageUrl = item.main_images?.[0]?.urls?.[0] || item.main_images?.[0]?.url || item.images?.[0]?.urls?.[0] || item.images?.[0]?.url || item.product_images?.[0]?.urls?.[0] || item.cover_image?.url || "";
+    const rawStatus = item.status || item.audit_status || "SYNCED";
+    const normalizedStatus = normalizeProductStatus(rawStatus);
+    const stock = (item.skus || []).flatMap((sku) => sku.inventory || []).reduce((sum, row) => sum + (Number(row.quantity) || 0), 0);
     return {
       id: Number(String(item.id || item.product_id || Date.now() + index).replace(/\D/g, "").slice(-9)) || Date.now() + index,
       sourceId: item.id || item.product_id || "",
@@ -294,11 +318,20 @@ function normalizeProducts(upstream) {
       price: price ? String(price) : "-",
       commission: item.commission?.rate || item.open_collaboration?.commission_rate || "-",
       mode: item.open_collaboration ? "公开合作" : "店铺商品",
-      status: item.status || item.audit_status || "已同步",
+      status: normalizedStatus,
+      rawStatus,
+      stock,
       imageUrl,
       salesRegions: item.sales_regions || [],
     };
   });
+}
+
+function normalizeProductStatus(status) {
+  const normalized = String(status || "").toUpperCase();
+  if (["ACTIVATE", "ACTIVE", "ONLINE", "SELLING", "LIVE"].includes(normalized)) return "可选";
+  if (["DRAFT", "DEACTIVATED", "SUSPENDED", "FREEZE", "FROZEN", "DELETED", "FAILED"].includes(normalized)) return "不可选";
+  return status || "已同步";
 }
 
 function normalizeCreators(upstream) {

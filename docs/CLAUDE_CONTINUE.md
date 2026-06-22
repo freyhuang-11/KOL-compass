@@ -38,7 +38,7 @@ TikTok Shop API 后端使用：
 - `start-full.bat`
 - `smoke-test.js`
 
-最近一次连续推进检查：2026-06-22 15:30 CST，当前分支已连接 GitHub 远端；TikTok Shop sandbox OAuth 已跑通，已读取授权店铺 `SANDBOX_VN7651055422359521044` 并同步 1 个商品。已接入达人搜索接口 `/api/tiktok/creators/search`，对应 TikTok Open API `/affiliate_seller/202508/marketplace_creators/search`；当前 sandbox 实测返回 `36009002 Too many requests for downstream`，属于 TikTok 下游限流，前端会展示真实错误，不伪造达人同步成功。`node --check app.js`、`node --check server.js`、`node smoke-test.js`、`git diff --check` 已通过。
+最近一次连续推进检查：2026-06-22 16:30 CST，当前分支已连接 GitHub 远端；TikTok Shop sandbox OAuth 已跑通，已读取授权店铺 `SANDBOX_VN7651055422359521044` 并同步 1 个商品。产品同步已补充商品详情读取，实测可返回真实 `imageUrl`，`rawStatus=ACTIVATE` 会在前端归一显示为 `可选`。产品管理页按参考后台收敛为“商品名 / 商品ID”两个检索条件，不再保留类目、状态、合作模式三组筛选。达人搜索接口 `/api/tiktok/creators/search` 已接入；当前 sandbox 实测返回 `36009002 Too many requests for downstream`，属于 TikTok 下游限流，前端会展示真实错误，不伪造达人同步成功。`node --check app.js`、`node --check server.js`、`node smoke-test.js`、`git diff --check` 已通过，`smoke-products.png` 已按真实商品数据重截。
 
 启动：
 
@@ -97,8 +97,8 @@ P0：
    - 关键指标可下钻到建联记录、寄样管理、合作管理、系统消息和平台管理端
    - 内容状态分布和负责人概览可直接筛选
 3. 保持产品管理可用：
-   - 支持关键词搜索
-   - 支持类目、状态、合作模式筛选
+   - 支持商品名 / 商品ID 两种检索，不增加非必要筛选
+   - 商品图片、价格、库存和原始状态必须来自 TikTok Shop API；状态在列表中归一为 `可选` / `不可选`
    - 支持只读商品详情，显示商品源、价格、佣金、合作模式和使用位置
    - 支持从商品下钻相关建联和相关合作
    - 未授权 TikTok Partner API 时只展示本地数据和明确提示，不伪造同步成功

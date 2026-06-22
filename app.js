@@ -42,9 +42,7 @@ const seed = {
   bulkCreatorIds: [],
   filters: {
     productSearch: "",
-    productCategory: "全部",
-    productStatus: "全部",
-    productMode: "全部",
+    productSearchField: "商品名",
     kolSearch: "",
     kolType: "全部",
     kolCategory: "全部",
@@ -432,6 +430,8 @@ function badge(text) {
     "已签收": "success",
     "待发货": "warning",
     "在售": "success",
+    "可选": "success",
+    "不可选": "warning",
     "已下架": "neutral",
     "启用": "success",
     "黑名单": "danger",
@@ -616,22 +616,17 @@ function renderDashboard() {
 }
 
 function renderProducts() {
-  const categories = Array.from(new Set(state.products.map((p) => p.category).filter(Boolean)));
-  const statuses = Array.from(new Set(state.products.map((p) => p.status).filter(Boolean)));
-  const modes = Array.from(new Set(state.products.map((p) => p.mode).filter(Boolean)));
   const shops = state.settings.tiktokShops || [];
   const selectedShop = shops.find((shop) => shopCipher(shop) === state.settings.selectedTikTokShopCipher) || shops[0];
   const rows = state.products.filter((p) => {
     const kw = state.filters.productSearch.trim().toLowerCase();
-    const kwOk = !kw || [p.name, p.category, p.mode, p.status].join(" ").toLowerCase().includes(kw);
-    const categoryOk = state.filters.productCategory === "全部" || p.category === state.filters.productCategory;
-    const statusOk = state.filters.productStatus === "全部" || p.status === state.filters.productStatus;
-    const modeOk = state.filters.productMode === "全部" || p.mode === state.filters.productMode;
-    return kwOk && categoryOk && statusOk && modeOk;
+    if (!kw) return true;
+    if (state.filters.productSearchField === "商品ID") return String(p.sourceId || p.id || "").toLowerCase().includes(kw);
+    return String(p.name || "").toLowerCase().includes(kw);
   });
-  const activeCount = rows.filter((p) => String(p.status).toUpperCase() === "ACTIVATE" || p.status === "在售").length;
+  const activeCount = rows.filter((p) => ["可选", "在售"].includes(p.status)).length;
   return `
-    ${pageHead("产品管理", "绑定店铺后自动读取商品；建联和定向邀约时直接从这里选择商品。", `<button class="btn primary" onclick="syncProducts()">重新同步商品</button> <button class="btn" onclick="checkTikTokShops()">刷新店铺授权</button>`)}
+    ${pageHead("产品管理", "绑定店铺后自动读取商品；建联和定向邀约时直接从这里选择商品。")}
     <section class="store-panel">
       <div>
         <div class="section-kicker">TikTok Shop 授权</div>
@@ -652,28 +647,22 @@ function renderProducts() {
           </select>
         ` : ""}
         <button class="btn" onclick="setPage('admin')">管理授权</button>
-        <button class="btn primary" onclick="syncProducts()">同步商品</button>
+        <button class="btn primary" onclick="syncProducts()">重新同步商品</button>
       </div>
     </section>
     <div class="grid grid-4" style="margin-bottom:16px">
       ${stat("已授权店铺", shops.length, "来自 TikTok OAuth")}
       ${stat("当前商品", rows.length, "按当前筛选统计")}
-      ${stat("可售商品", activeCount, "状态为 ACTIVATE / 在售")}
+      ${stat("可售商品", activeCount, "状态为 可选 / 在售")}
       ${stat("商品源", selectedShop ? shopRegion(selectedShop) : "-", "当前同步市场")}
     </div>
     <div class="surface-panel">
     <div class="toolbar compact-toolbar">
       <div class="filters">
-        <input class="input" placeholder="搜索产品名称、类目、模式..." value="${escapeHtml(state.filters.productSearch)}" oninput="setFilter('productSearch', this.value)" />
-        <select class="select" onchange="setFilter('productCategory', this.value)">
-          ${["全部", ...categories].map((x) => `<option ${state.filters.productCategory === x ? "selected" : ""}>${escapeHtml(x)}</option>`).join("")}
+        <select class="select compact-select" onchange="setFilter('productSearchField', this.value)">
+          ${["商品名", "商品ID"].map((x) => `<option ${state.filters.productSearchField === x ? "selected" : ""}>${escapeHtml(x)}</option>`).join("")}
         </select>
-        <select class="select" onchange="setFilter('productStatus', this.value)">
-          ${["全部", ...statuses].map((x) => `<option ${state.filters.productStatus === x ? "selected" : ""}>${escapeHtml(x)}</option>`).join("")}
-        </select>
-        <select class="select" onchange="setFilter('productMode', this.value)">
-          ${["全部", ...modes].map((x) => `<option ${state.filters.productMode === x ? "selected" : ""}>${escapeHtml(x)}</option>`).join("")}
-        </select>
+        <input class="input product-search-input" placeholder="请输入" value="${escapeHtml(state.filters.productSearch)}" oninput="setFilter('productSearch', this.value)" />
       </div>
       <div class="filters">
         <button class="btn" onclick="addProduct()">商品来源说明</button>
@@ -1377,7 +1366,7 @@ function productList(rows) {
       <div class="object-head">
         <span>商品信息</span>
         <span>价格</span>
-        <span>佣金</span>
+        <span>库存</span>
         <span>状态</span>
         <span>操作</span>
       </div>
@@ -1385,17 +1374,13 @@ function productList(rows) {
         <div class="object-row">
           <div class="product-main">
             <div class="product-thumb">${productThumb(p)}</div>
-            <div>
-              <b>${escapeHtml(p.name)}</b>
+            <div class="product-info">
+              <b class="product-title">${escapeHtml(p.name)}</b>
               <div class="muted">${escapeHtml(p.sourceId || p.category || "-")}</div>
-              <div class="product-tags">
-                <span>${escapeHtml(p.category || "TikTok Shop")}</span>
-                <span>${escapeHtml(p.mode || "店铺商品")}</span>
-              </div>
             </div>
           </div>
           <div>${escapeHtml(p.price || "-")}</div>
-          <div>${escapeHtml(p.commission || "-")}</div>
+          <div>${Number.isFinite(Number(p.stock)) ? Number(p.stock) : "-"}</div>
           <div>${badge(p.status || "已同步")}</div>
           <div class="row-actions">
             <button class="btn" onclick="openProductModal(${p.id})">详情</button>
