@@ -31,7 +31,7 @@
 - `stop-5175.bat`
 - `smoke-test.js`
 
-最近一次连续推进检查：2026-06-22 11:45 CST，当前分支已连接 GitHub 远端，已新增 KOL CSV 与合作 CSV 模板下载入口，降低首次验收导入真实数据的门槛；`node --check app.js` 与 `node smoke-test.js` 已通过，下一步完成最终 diff 检查后小步提交推送。
+最近一次连续推进检查：2026-06-22 12:05 CST，当前分支已连接 GitHub 远端，已增强 TikTok API 授权阻塞体验：平台管理端可查看人工处理流程，商品/达人/内容订单同步未授权时会弹出 Partner Center、OAuth、scope、redirect URL、client_secret 处理步骤并写入同步日志；`node --check app.js` 与 `node smoke-test.js` 已通过，截图 `smoke-admin.png` 已重新生成并目视复核，下一步小步提交推送。
 
 启动：
 

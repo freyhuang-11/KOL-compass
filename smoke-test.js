@@ -90,6 +90,7 @@ async function main() {
   assert("hash routes supported", app.includes("routeFromHash") && app.includes("kol/creator/"));
   assert("TikTok API handoff exists", fs.existsSync("docs/TIKTOK_API_HANDOFF.md"));
   assert("TikTok API settings can be saved locally", ["tiktokClientKey", "tiktokRedirectUrl", "tiktokScopes", "saveApiSettings", "markApiAuthBlocked"].every((name) => app.includes(name)) && app.includes("client_secret 不应保存在前端"));
+  assert("TikTok API blockers show user handoff steps", ["showApiHandoffSteps", "查看人工处理流程", "Partner Center 已登录", "scope 已开通或审批通过", "client_secret 只放后端环境变量"].every((text) => app.includes(text)));
   assert("sync logs are visible and recorded", ["syncLogs", "addSyncLog"].every((name) => app.includes(name)) && app.includes("同步日志"));
   assert("system message center supports read state and filters", ["messageType", "messageRead", "markMessageRead", "markAllMessagesRead", "deleteMessage", "pruneSystemMessages"].every((name) => app.includes(name)) && app.includes("本地保留最近 90 天"));
   assert("platform feature switches govern channels", ["featureSwitches", "toggleFeatureSwitch", "channelOptionsForCreators", "validateChannelForCreators"].every((name) => app.includes(name)) && app.includes("Stripe 支付已由平台管理端关闭"));

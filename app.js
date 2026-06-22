@@ -1154,6 +1154,7 @@ function renderAdmin() {
         <div style="margin-top:12px">
           <button class="btn primary" onclick="saveApiSettings()">保存配置</button>
           <button class="btn" onclick="markApiAuthBlocked()">标记授权阻塞</button>
+          <button class="btn ghost" onclick="showApiHandoffSteps('API接入')">查看人工处理流程</button>
         </div>
       </div>
       <div class="card">
@@ -1379,6 +1380,7 @@ function syncProducts() {
   pushMessage("商品同步", `已触发商品同步。${reason}`);
   saveState();
   render();
+  showApiHandoffSteps("商品同步", reason);
 }
 
 function syncCreators() {
@@ -1388,6 +1390,7 @@ function syncCreators() {
   pushMessage("达人同步", `已触发达人同步。${reason}`);
   saveState();
   render();
+  showApiHandoffSteps("达人同步", reason);
 }
 
 function syncCoopData() {
@@ -1397,6 +1400,7 @@ function syncCoopData() {
   pushMessage("内容/订单同步", `已触发内容与联盟订单同步。${reason}`);
   saveState();
   render();
+  showApiHandoffSteps("内容/订单同步", reason);
 }
 
 function simulateConnect() {
@@ -1431,6 +1435,18 @@ function markApiAuthBlocked() {
   pushMessage("API授权阻塞", "TikTok API 接入需要人工处理 OAuth、验证码、scope 审批或 redirect URL 配置。");
   saveState();
   render();
+  showApiHandoffSteps("API授权阻塞", "需要人工处理 OAuth、验证码、scope 审批或 redirect URL 配置。");
+}
+
+function showApiHandoffSteps(module = "TikTok API", reason = "") {
+  const steps = [
+    "1. 确认 TikTok Shop Partner Center 已登录，且当前店铺有 Affiliate 权限。",
+    "2. 在 Partner App 中确认 Product、Affiliate、Messaging、Order scope 已开通或审批通过。",
+    "3. 配置 OAuth Redirect URL，后续后端建议使用 http://127.0.0.1:8015/api/tiktok/callback。",
+    "4. 将 client_key 填到平台管理端；client_secret 只放后端环境变量，不写入前端。",
+    "5. 若出现 OAuth 确认、验证码、人机校验、风控弹窗或 scope 缺失，请在浏览器完成后再回来同步。",
+  ];
+  alert(`${module} 暂不能自动完成。\n\n${reason ? `原因：${reason}\n\n` : ""}你现在需要：\n${steps.join("\n")}\n\n详细交接见 docs/TIKTOK_API_HANDOFF.md。`);
 }
 
 function merchantApplicationActions(row) {
@@ -2705,6 +2721,7 @@ window.deleteMessage = deleteMessage;
 window.simulateConnect = simulateConnect;
 window.saveApiSettings = saveApiSettings;
 window.markApiAuthBlocked = markApiAuthBlocked;
+window.showApiHandoffSteps = showApiHandoffSteps;
 window.approveMerchantApplication = approveMerchantApplication;
 window.rejectMerchantApplication = rejectMerchantApplication;
 window.resetMerchantApplication = resetMerchantApplication;
