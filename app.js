@@ -1,7 +1,5 @@
 const STORAGE_KEY = "kol-compass-state-v1";
 const API_BASE = "http://127.0.0.1:8015";
-let creatorAutoImportInFlight = false;
-const creatorAutoImportAttempted = new Set();
 
 const pages = [
   ["运营", [
@@ -318,7 +316,6 @@ function navigateHash(hash) {
 
 function setPage(page) {
   navigateHash(page);
-  if (page === "kol") setTimeout(() => autoImportCreatorsForCurrentMarket("进入达人库"), 0);
 }
 
 function money(v) {
@@ -797,17 +794,17 @@ function renderKolPool() {
   }).length;
   const visibleAvailableIds = `[${availableRows.map((c) => c.id).join(",")}]`;
   return `
-    ${pageHead("达人库", "第二步：系统默认从 TikTok Marketplace 抓取达人，并按当前绑定店铺市场自动展示对应国家达人。")}
+    ${pageHead("达人库", "第二步：从平台达人库筛选达人；系统按当前绑定店铺市场自动展示对应国家达人。")}
     <section class="store-panel">
       <div>
         <div class="section-kicker">达人库来源</div>
         <h3>${escapeHtml(selectedShop ? shopLabel(selectedShop) : "请先绑定 TikTok Shop 店铺")}</h3>
-        <p>${selectedShop ? `当前店铺市场：${escapeHtml(currentMarket || "未识别")}。系统只展示该市场达人，不再让客户手动选择国家；后台会按已授权店铺逐个市场抓取并写入达人库。` : "客户第一步必须先完成店铺绑定，否则无法从 TikTok API 获取可邀约达人。"}</p>
+        <p>${selectedShop ? `当前店铺市场：${escapeHtml(currentMarket || "未识别")}。系统只展示该市场达人，不再让客户手动选择国家；达人基础资料来自我们平台达人库。` : "客户第一步必须先完成店铺绑定，否则无法按店铺市场筛选达人。"}</p>
         <div class="store-meta">
           <span>当前市场真实达人：${realMarketCreators.length}</span>
           <span>全部真实达人：${realCreators.length}</span>
           <span>本地/演示达人：${localCreators.length}</span>
-          <span>上次抓取：${escapeHtml(state.settings.lastCreatorSync || "尚未抓取")}</span>
+          <span>资料来源：平台达人库</span>
         </div>
       </div>
       <div class="store-actions">
@@ -825,7 +822,7 @@ function renderKolPool() {
         <button class="btn" onclick="setPage('products')">返回产品管理</button>
       </div>
     </section>
-    ${selectedShop && !realMarketCreators.length ? `<div class="notice" style="margin-bottom:12px">当前店铺市场还没有 TikTok API 抓取到的真实达人；系统会在后台按已授权店铺市场自动抓取。下方如果看到达人，是该市场本地演示/平台补充数据。</div>` : ""}
+    ${selectedShop && !realMarketCreators.length ? `<div class="notice" style="margin-bottom:12px">当前店铺市场暂时没有平台真实达人数据。下方如果看到达人，是该市场本地演示/平台补充数据；客户侧不提供导入或新增达人入口。</div>` : ""}
     <div class="notice" style="margin-bottom:12px">当前套餐：${escapeHtml(state.settings.planName)}，本月建联配额已用 ${quotaLabel()}。同一达人 24 小时内只能建联一次；标记不感兴趣后 30 天内不可建联。</div>
     <div class="grid grid-4" style="margin-bottom:16px">
       ${stat("当前筛选", rows.length, "符合筛选条件的达人")}
@@ -1685,7 +1682,7 @@ function shopLabel(shop) {
   return region && region !== "-" ? `${name} · ${region}` : String(name);
 }
 
-function selectTikTokShop(cipher, options = {}) {
+function selectTikTokShop(cipher) {
   const shops = state.settings.tiktokShops || [];
   const selected = shops.find((shop) => shopCipher(shop) === cipher) || shops[0];
   if (!selected) return alert("当前没有可选择的 TikTok Shop 店铺。");
@@ -1695,14 +1692,13 @@ function selectTikTokShop(cipher, options = {}) {
   addSyncLog("店铺选择", "已切换", `当前同步店铺：${state.settings.tiktokShopName}`);
   saveState();
   render();
-  if (options.autoImport !== false) setTimeout(() => autoImportCreatorsForCurrentMarket("切换店铺"), 0);
 }
 
 function channelOptionsForCreators(targets, currentChannel = "") {
   const list = [];
   const add = (value, text = value) => list.push([value, text]);
   if (channelEnabled("TikTok私信")) add("TikTok私信");
-  if (channelEnabled("Email") && targets.every((c) => c?.email)) add("Email");
+  if (channelEnabled("Email")) add("Email");
   if (channelEnabled("WhatsApp") && targets.every((c) => c?.whatsapp)) add("WhatsApp");
   if (!list.length && currentChannel && channelEnabled(currentChannel)) add(currentChannel);
   return list;
@@ -1711,10 +1707,6 @@ function channelOptionsForCreators(targets, currentChannel = "") {
 function validateChannelForCreators(channel, targets) {
   if (!channelEnabled(channel)) {
     alert(`${channel} 已被平台管理端关闭，不能用于新建联或回复。`);
-    return false;
-  }
-  if (channel === "Email" && !targets.every((c) => c?.email)) {
-    alert("选择 Email 前，需要先为所有目标达人录入 Email。");
     return false;
   }
   if (channel === "WhatsApp" && !targets.every((c) => c?.whatsapp)) {
@@ -1806,7 +1798,6 @@ async function checkTikTokShops() {
     render();
     if (firstShop) {
       await syncProducts({ silent: true });
-      await syncCreators({ silent: true, reason: "店铺绑定后自动抓取达人" });
     }
   } catch (error) {
     const reason = error.message || "读取已授权店铺失败。";
@@ -1908,32 +1899,6 @@ function upsertImportedCreators(creators, shop) {
 
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function currentSelectedShop() {
-  const shops = state.settings.tiktokShops || [];
-  return shops.find((shop) => shopCipher(shop) === state.settings.selectedTikTokShopCipher) || shops[0] || null;
-}
-
-function hasRealCreatorsForShop(shop) {
-  if (!shop) return false;
-  const cipher = shopCipher(shop);
-  const market = selectedShopMarket(shop);
-  return state.creators.some((creator) => creator.sourceId && (creator.sourceShopCipher === cipher || normalizeMarketRegion(creator.region) === market));
-}
-
-async function autoImportCreatorsForCurrentMarket(reason = "自动抓取达人") {
-  const shop = currentSelectedShop();
-  if (!shop || hasRealCreatorsForShop(shop)) return;
-  const key = `${shopCipher(shop)}:${reason}`;
-  if (creatorAutoImportInFlight || creatorAutoImportAttempted.has(key)) return;
-  creatorAutoImportAttempted.add(key);
-  creatorAutoImportInFlight = true;
-  try {
-    await syncCreators({ silent: true, reason });
-  } finally {
-    creatorAutoImportInFlight = false;
-  }
 }
 
 async function syncCreators(options = {}) {
@@ -2601,7 +2566,7 @@ function openOutreachModal(creatorId = 0) {
   if (!channelOptions.length) return alert("当前没有可用发送渠道，请先到平台管理端开启 TikTok 私信、Email 或 WhatsApp。");
   const defaultTemplate = state.templates[0]?.content || "Hi {KOL名称}，我们想邀请你合作 {产品名称}。";
   openModal("发起建联", `
-    <div class="notice">本次将联系 ${targets.length} 位达人：${targets.slice(0, 4).map((c) => `@${escapeHtml(c.username)}`).join("、")}${targets.length > 4 ? " 等" : ""}。Email / WhatsApp 必须同时满足“平台开关已开启”和“所有目标达人已录入联系方式”才会显示。</div>
+    <div class="notice">本次将联系 ${targets.length} 位达人：${targets.slice(0, 4).map((c) => `@${escapeHtml(c.username)}`).join("、")}${targets.length > 4 ? " 等" : ""}。选择 Email 时，如果达人暂未有邮箱，系统会先创建联系方式补充任务，补充完成后再发送。</div>
     <div class="modal-section-title">选择建联商品</div>
     ${productPicker(state.products[0]?.id)}
     <div class="form-grid" style="margin-top:12px">
@@ -2621,6 +2586,16 @@ function renderTemplate(content, c, p) {
     .replaceAll("{达人名称}", c.nickname || c.username)
     .replaceAll("{产品名称}", p.name)
     .replaceAll("{联盟佣金率}", p.commission || "-");
+}
+
+function needsContactEnrichment(channel, c) {
+  return channel === "Email" && !c?.email;
+}
+
+function queueContactEnrichment(c, channel, productName) {
+  const text = `已为 @${c.username} 创建 ${channel} 联系方式补充任务；目标产品：${productName}。联系方式补充完成前不会发送 Email。`;
+  addSyncLog("联系方式补充", "待处理", text);
+  pushMessage("联系方式补充", text);
 }
 
 function saveOutreach(idList) {
@@ -2655,22 +2630,24 @@ function saveOutreach(idList) {
     if (!c || c.status === "黑名单") return;
     const rendered = renderTemplate(message, c, p);
     const scheduledText = sendMode === "定时发送" && scheduleAt ? `定时发送：${scheduleAt}` : "立即发送";
+    const pendingContact = needsContactEnrichment(channel, c);
+    if (pendingContact) queueContactEnrichment(c, channel, p.name);
     state.outreach.unshift({
       id: Date.now() + index,
       creatorId: c.id,
       productId: p.id,
       channel,
-      status: "待回复",
-      lastMessage: `${scheduledText} · ${rendered}`,
+      status: pendingContact ? "联系方式补充中" : "待回复",
+      lastMessage: pendingContact ? `待补充 Email 后发送 · ${rendered}` : `${scheduledText} · ${rendered}`,
       updatedAt: nowText(),
     });
-    c.status = "已发送";
+    c.status = pendingContact ? "联系方式补充中" : "已发送";
     if (invite) createCoopRecord(c.id, p.id, "建联时附加邀请链接");
     created += 1;
   });
   state.bulkCreatorIds = [];
   logOperation("建联发送", channel, `创建 ${created} 条建联记录；产品：${p.name}；方式：${sendMode}`);
-  pushMessage("批量建联", `已创建 ${created} 条建联记录，渠道：${channel}，产品：${p.name}。`);
+  pushMessage("批量建联", `已创建 ${created} 条建联记录，渠道：${channel}，产品：${p.name}。缺少 Email 的达人已进入联系方式补充。`);
   closeModal();
   saveState();
   state.page = "outreach";
@@ -3384,7 +3361,6 @@ window.clearMultiFilter = clearMultiFilter;
 window.dashboardGo = dashboardGo;
 window.showCreator = showCreator;
 window.syncProducts = syncProducts;
-window.syncCreators = syncCreators;
 window.syncCoopData = syncCoopData;
 window.checkTikTokBackend = checkTikTokBackend;
 window.startTikTokAuth = startTikTokAuth;
@@ -3450,4 +3426,3 @@ window.addEventListener("hashchange", () => {
 });
 
 render();
-if (state.page === "kol") setTimeout(() => autoImportCreatorsForCurrentMarket("打开达人库"), 0);
