@@ -1,5 +1,6 @@
 const STORAGE_KEY = "kol-compass-state-v1";
 const API_BASE = "http://127.0.0.1:8015";
+let platformCreatorLibraryLoaded = false;
 
 const pages = [
   ["运营", [
@@ -476,6 +477,18 @@ function multiFilterOk(selected, value) {
   return !values.length || values.includes(value);
 }
 
+function creatorCategoryValues(c) {
+  const values = Array.isArray(c?.categoryLabels) && c.categoryLabels.length ? c.categoryLabels : [c?.category];
+  return values.map((x) => String(x || "").trim()).filter(Boolean);
+}
+
+function creatorCategoryFilterOk(selected, c) {
+  const values = filterValues(selected);
+  if (!values.length) return true;
+  const creatorValues = creatorCategoryValues(c);
+  return values.some((item) => creatorValues.includes(item));
+}
+
 function roi(row) {
   const spend = Number(row.commission || 0) + Number(row.adSpend || 0);
   if (!spend) return null;
@@ -773,11 +786,11 @@ function renderKolPool() {
   const marketCreators = currentMarket ? state.creators.filter((c) => normalizeMarketRegion(c.region) === currentMarket || c.sourceShopCipher === shopCipher(selectedShop)) : state.creators;
   const realMarketCreators = marketCreators.filter((c) => c.sourceId);
   const localCreators = marketCreators.filter((c) => !c.sourceId);
-  const categories = fixedOptions(tiktokCategoryOptions, state.creators.map((c) => c.category));
+  const categories = fixedOptions(tiktokCategoryOptions, state.creators.flatMap((c) => creatorCategoryValues(c)));
   const rows = marketCreators.filter((c) => {
     const kw = state.filters.kolSearch.trim().toLowerCase();
     const typeOk = multiFilterOk(state.filters.kolTypes, c.type);
-    const categoryOk = multiFilterOk(state.filters.kolCategories, c.category);
+    const categoryOk = creatorCategoryFilterOk(state.filters.kolCategories, c);
     const followersOk = creatorFollowerTierOk(c.followers, state.filters.kolFollowers);
     const replyRateOk = creatorReplyRateOk(c.replyRate, state.filters.kolReplyRate);
     const gmvOk = creatorGmvRangeOk(c.gmv, state.filters.kolGmv);
@@ -861,7 +874,7 @@ function renderKolPool() {
       blockReason ? `<span class="muted">${escapeHtml(blockReason)}</span>` : `<input type="checkbox" ${state.bulkCreatorIds.includes(c.id) ? "checked" : ""} onchange="toggleCreatorSelection(${c.id}, this.checked)" aria-label="选择 @${escapeHtml(c.username)}" />`,
       personCell(c),
       c.type,
-      `${c.category}<br><span class="muted">${c.region}</span>`,
+      `${creatorCategoryValues(c).map(escapeHtml).join(" / ")}<br><span class="muted">${escapeHtml(c.region)}</span>`,
       c.followers.toLocaleString(),
       c.gmv,
       c.replyRate,
@@ -1356,6 +1369,7 @@ function renderAdmin() {
           <button class="btn primary" onclick="startTikTokAuth()">绑定店铺</button>
           <button class="btn" onclick="checkTikTokBackend()">检查后端</button>
           <button class="btn" onclick="checkTikTokShops()">读取已授权店铺</button>
+          <button class="btn" onclick="refreshPlatformCreatorLibrary()">更新平台达人库</button>
           <button class="btn" onclick="markApiAuthBlocked()">标记授权阻塞</button>
           <button class="btn ghost" onclick="showApiHandoffSteps('API接入')">查看人工处理流程</button>
         </div>
@@ -1955,6 +1969,88 @@ async function syncCreators(options = {}) {
     saveState();
     render();
     if (!silent) showApiHandoffSteps("达人抓取", reason);
+  }
+}
+
+function upsertPlatformCreatorLibrary(creators) {
+  const existing = new Map();
+  for (const row of state.creators) {
+    for (const key of creatorImportKeys(row)) existing.set(key, row);
+  }
+  let changed = 0;
+  for (const creator of creators || []) {
+    const payload = {
+      ...creator,
+      region: normalizeMarketRegion(creator.region) || creator.region,
+      librarySource: "platform",
+    };
+    const current = creatorImportKeys(payload).map((key) => existing.get(key)).find(Boolean)
+      || creatorLegacyImportKeys(payload).map((key) => existing.get(key)).find(Boolean);
+    if (current) {
+      Object.assign(current, {
+        ...payload,
+        id: current.id,
+        email: payload.email || current.email || "",
+        whatsapp: payload.whatsapp || current.whatsapp || "",
+        notes: current.notes && current.librarySource === "platform" ? current.notes : payload.notes,
+      });
+    } else {
+      const next = { ...payload, id: nextId(state.creators) };
+      state.creators.push(next);
+      for (const key of creatorImportKeys(next)) existing.set(key, next);
+    }
+    changed += 1;
+  }
+  return changed;
+}
+
+async function loadPlatformCreatorLibrary(options = {}) {
+  const silent = Boolean(options.silent);
+  try {
+    const data = await apiRequest("/api/platform/creators");
+    const creators = Array.isArray(data.creators) ? data.creators : [];
+    const changed = upsertPlatformCreatorLibrary(creators);
+    platformCreatorLibraryLoaded = true;
+    if (creators.length) {
+      addSyncLog("平台达人库", "已读取", `已从后端平台达人库读取 ${creators.length} 个达人。`);
+    }
+    saveState();
+    render();
+    return changed;
+  } catch (error) {
+    platformCreatorLibraryLoaded = true;
+    const reason = error.message || "读取平台达人库失败。";
+    addSyncLog("平台达人库", "读取失败", reason);
+    saveState();
+    render();
+    if (!silent) showApiHandoffSteps("平台达人库", reason);
+    return 0;
+  }
+}
+
+async function refreshPlatformCreatorLibrary() {
+  state.settings.lastCreatorSync = nowText();
+  try {
+    const data = await apiRequest("/api/platform/creators/import-tiktok", {
+      method: "POST",
+      body: JSON.stringify({ page_size: 20, max_pages: 10 }),
+    });
+    const creators = Array.isArray(data.creators) ? data.creators : [];
+    upsertPlatformCreatorLibrary(creators);
+    const failureText = Array.isArray(data.failures) && data.failures.length
+      ? `；失败：${data.failures.map((x) => `${x.shop || "店铺"} ${x.message || ""}`).join("；")}`
+      : "";
+    addSyncLog("平台达人库", data.failures?.length ? "部分成功" : "成功", `平台内部已从 TikTok 更新 ${data.imported || 0} 个达人，当前库总数 ${data.total || creators.length}。${failureText}`);
+    pushMessage("平台达人库", `平台达人库更新完成：当前 ${data.total || creators.length} 个达人。`);
+    saveState();
+    render();
+  } catch (error) {
+    const reason = error.message || "平台达人库更新失败。";
+    addSyncLog("平台达人库", "失败", reason);
+    pushMessage("平台达人库更新失败", reason);
+    saveState();
+    render();
+    showApiHandoffSteps("平台达人库", reason);
   }
 }
 
@@ -3362,6 +3458,7 @@ window.dashboardGo = dashboardGo;
 window.showCreator = showCreator;
 window.syncProducts = syncProducts;
 window.syncCoopData = syncCoopData;
+window.refreshPlatformCreatorLibrary = refreshPlatformCreatorLibrary;
 window.checkTikTokBackend = checkTikTokBackend;
 window.startTikTokAuth = startTikTokAuth;
 window.checkTikTokShops = checkTikTokShops;
@@ -3426,3 +3523,4 @@ window.addEventListener("hashchange", () => {
 });
 
 render();
+setTimeout(() => loadPlatformCreatorLibrary({ silent: true }), 0);

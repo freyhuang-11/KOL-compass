@@ -17,6 +17,8 @@ const REDIRECT_URI = process.env.TIKTOK_SHOP_REDIRECT_URI || "http://127.0.0.1:8
 const DATA_DIR = path.join(__dirname, ".data");
 const TOKEN_FILE = path.join(DATA_DIR, "tiktok-token.json");
 const STATE_FILE = path.join(DATA_DIR, "tiktok-oauth-state.json");
+const CREATOR_FILE = path.join(DATA_DIR, "platform-creators.json");
+const CATEGORY_FILE = path.join(DATA_DIR, "tiktok-categories.json");
 
 function loadEnvFile(fileName) {
   const filePath = path.join(__dirname, fileName);
@@ -50,6 +52,24 @@ function readJson(filePath, fallback = null) {
 function writeJson(filePath, value) {
   ensureDataDir();
   fs.writeFileSync(filePath, JSON.stringify(value, null, 2));
+}
+
+function readPlatformCreators() {
+  const rows = readJson(CREATOR_FILE, []);
+  return Array.isArray(rows) ? rows : [];
+}
+
+function writePlatformCreators(rows) {
+  writeJson(CREATOR_FILE, Array.isArray(rows) ? rows : []);
+}
+
+function readCategoryMap() {
+  const value = readJson(CATEGORY_FILE, {});
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
+function writeCategoryMap(map) {
+  writeJson(CATEGORY_FILE, map && typeof map === "object" ? map : {});
 }
 
 function json(res, statusCode, payload) {
@@ -298,6 +318,15 @@ async function searchCreators(shopCipher, keyword = "", pageSize = 12, pageToken
   return tiktokFetch("/affiliate_seller/202508/marketplace_creators/search", { method: "POST", params, body });
 }
 
+async function getCategories(shop) {
+  const params = {};
+  const cipher = shopCipher(shop);
+  const shopId = shop?.shop_id || shop?.id || "";
+  if (cipher) params.shop_cipher = cipher;
+  if (shopId) params.shop_id = shopId;
+  return tiktokFetch("/product/202309/categories", { params });
+}
+
 function normalizeProducts(upstream) {
   const products = upstream.data?.products || upstream.products || [];
   return products.map((item, index) => {
@@ -334,7 +363,7 @@ function normalizeProductStatus(status) {
   return status || "已同步";
 }
 
-function normalizeCreators(upstream) {
+function normalizeCreators(upstream, categoryMap = readCategoryMap()) {
   const data = upstream.data || {};
   const creators = data.creators || data.marketplace_creators || data.creator_profiles || data.results || [];
   return creators.map((item, index) => {
@@ -342,7 +371,9 @@ function normalizeCreators(upstream) {
     const username = profile.username || profile.handle || profile.creator_username || profile.tiktok_username || profile.nick_name || `creator_${index + 1}`;
     const nickname = profile.display_name || profile.nickname || profile.name || username;
     const followers = Number(profile.follower_count || profile.followers || profile.fans || 0);
-    const category = normalizeCreatorCategory(profile);
+    const categoryIds = Array.isArray(profile.category_ids) ? profile.category_ids.filter(Boolean).map(String) : [];
+    const categoryLabels = categoryIds.map((id) => categoryMap[id]).filter(Boolean);
+    const category = normalizeCreatorCategory(profile, categoryMap, categoryLabels);
     const region = normalizeCreatorRegion(profile.selection_region || profile.region || profile.country || profile.market || "");
     const gmv = formatMoney(profile.gmv || profile.monthly_gmv || profile.sales_amount || profile.gmv_range || "");
     const replyRate = profile.reply_rate || profile.response_rate || "-";
@@ -365,7 +396,8 @@ function normalizeCreators(upstream) {
       gmv,
       replyRate: String(replyRate),
       avatarUrl,
-      categoryIds: profile.category_ids || [],
+      categoryIds,
+      categoryLabels,
       tags,
       status: "待联系",
       email: "",
@@ -375,10 +407,12 @@ function normalizeCreators(upstream) {
   });
 }
 
-function normalizeCreatorCategory(profile) {
+function normalizeCreatorCategory(profile, categoryMap = readCategoryMap(), categoryLabels = []) {
   if (profile.category || profile.main_category || profile.vertical) return profile.category || profile.main_category || profile.vertical;
   const ids = Array.isArray(profile.category_ids) ? profile.category_ids.filter(Boolean) : [];
-  if (ids.length) return `类目ID ${ids.slice(0, 3).join("/")}`;
+  const labels = categoryLabels.length ? categoryLabels : ids.map((id) => categoryMap[String(id)]).filter(Boolean);
+  if (labels.length) return labels[0];
+  if (ids.length) return "TikTok Shop";
   return "TikTok Shop";
 }
 
@@ -397,6 +431,207 @@ function normalizeCreatorRegion(region) {
     MX: "墨西哥",
   };
   return map[String(region || "").toUpperCase()] || region || "-";
+}
+
+function shopCipher(shop) {
+  return shop?.cipher || shop?.shop_cipher || shop?.shopCipher || "";
+}
+
+function shopRegion(shop) {
+  return shop?.region || shop?.seller_region || shop?.shop_region || shop?.market || shop?.country || "";
+}
+
+function shopLabel(shop) {
+  return shop?.shop_name || shop?.name || shop?.seller_name || shop?.shop_id || shopCipher(shop) || "TikTok Shop";
+}
+
+function platformCreatorKeys(row) {
+  const keys = [];
+  const shopKey = row.sourceShopCipher || "";
+  const identity = row.sourceId || row.username || "";
+  if (shopKey && identity) keys.push(`${shopKey}:${identity}`);
+  if (row.sourceId) keys.push(row.sourceId);
+  if (row.username) keys.push(row.username);
+  return keys.filter(Boolean);
+}
+
+function categoryDisplayName(node) {
+  return node?.local_name || node?.name || node?.display_name || node?.category_name || node?.localized_name || "";
+}
+
+function normalizeCategoryLabel(name) {
+  const text = String(name || "").trim();
+  const map = {
+    "Phụ kiện thời trang": "时尚配饰",
+    "Trang phục nữ & Đồ lót": "女装与内衣",
+    "Chăm sóc sắc đẹp & Chăm sóc cá nhân": "美妆个护",
+    "Đồ gia dụng": "家居日用",
+    "Thời trang trẻ em": "童装童鞋",
+    "Trẻ sơ sinh & thai sản": "母婴用品",
+    "Giày": "鞋靴",
+    "Thể thao & Ngoài trời": "户外运动",
+    "Đồ chơi & Sở thích": "玩具爱好",
+    "Điện thoại & Điện tử": "手机数码",
+    "Thiết bị điện gia dụng": "家用电器",
+    "Máy tính & Thiết bị văn phòng": "电脑办公",
+    "Thực phẩm & Đồ uống": "食品饮料",
+    "Sức khỏe": "健康保健",
+    "Chăm sóc thú cưng": "宠物用品",
+    "Ô tô & Xe máy": "汽车摩托",
+    "Sách, Tạp chí & Âm thanh": "图书文娱",
+    "Đồ nội thất": "家具",
+    "Nam giới": "男装与运动",
+    "Túi xách": "箱包",
+    "Nhà bếp": "厨房用品",
+    "Đồ dùng nhà bếp": "厨房用品",
+    "Đồ ăn & Đồ uống": "食品饮料",
+    "Điện thoại & đồ điện tử": "手机数码",
+    "Thiết bị gia dụng": "家用电器",
+    "Hành lý & Túi xách": "箱包",
+    "Trang phục nam & Đồ lót": "男装与内衣",
+    "Ô tô & xe máy": "汽车摩托",
+    "Đồ chơi & sở thích": "玩具爱好",
+    "Hàng dệt & Đồ nội thất mềm": "家纺布艺",
+  };
+  return map[text] || text;
+}
+
+function collectCategoryMap(value, map = {}) {
+  if (Array.isArray(value)) {
+    for (const item of value) collectCategoryMap(item, map);
+    return map;
+  }
+  if (!value || typeof value !== "object") return map;
+  const id = value.id || value.category_id || value.categoryId;
+  const name = categoryDisplayName(value);
+  if (id && name) map[String(id)] = normalizeCategoryLabel(name);
+  for (const key of ["children", "child_categories", "sub_categories", "categories"]) {
+    if (value[key]) collectCategoryMap(value[key], map);
+  }
+  return map;
+}
+
+async function refreshCategoryMap(shops) {
+  const next = { ...readCategoryMap() };
+  for (const shop of shops || []) {
+    try {
+      const upstream = await getCategories(shop);
+      collectCategoryMap(upstream.data?.categories || upstream.data || upstream, next);
+      if (Object.keys(next).length) writeCategoryMap(next);
+      return next;
+    } catch {
+      // Category names are a display enhancement; creator import should still continue.
+    }
+  }
+  return next;
+}
+
+function relabelPlatformCreators(categoryMap) {
+  const rows = readPlatformCreators();
+  let changed = false;
+  for (const row of rows) {
+    const ids = Array.isArray(row.categoryIds) ? row.categoryIds.map(String) : [];
+    const labels = ids.map((id) => categoryMap[id]).filter(Boolean);
+    if (!labels.length) continue;
+    row.categoryLabels = labels;
+    row.category = labels[0];
+    changed = true;
+  }
+  if (changed) writePlatformCreators(rows);
+  return rows;
+}
+
+function upsertPlatformCreators(incoming, shop = null) {
+  const rows = readPlatformCreators();
+  const existing = new Map();
+  for (const row of rows) {
+    for (const key of platformCreatorKeys(row)) existing.set(key, row);
+  }
+
+  const sourceShopCipher = shop ? shopCipher(shop) : "";
+  const sourceShopName = shop ? shopLabel(shop) : "";
+  const sourceShopRegion = shop ? normalizeCreatorRegion(shopRegion(shop)) : "";
+  let changed = 0;
+
+  for (const creator of incoming || []) {
+    const region = normalizeCreatorRegion(creator.region || sourceShopRegion);
+    const payload = {
+      ...creator,
+      region,
+      sourceShopCipher: creator.sourceShopCipher || sourceShopCipher,
+      sourceShopName: creator.sourceShopName || sourceShopName,
+      sourceShopRegion: creator.sourceShopRegion || sourceShopRegion || region,
+      librarySource: "platform",
+      updatedAt: new Date().toISOString(),
+    };
+    const current = platformCreatorKeys(payload).map((key) => existing.get(key)).find(Boolean);
+    if (current) {
+      Object.assign(current, {
+        ...payload,
+        id: current.id,
+        email: payload.email || current.email || "",
+        whatsapp: payload.whatsapp || current.whatsapp || "",
+        notes: current.notes && current.notes !== creator.notes ? current.notes : payload.notes,
+      });
+    } else {
+      const next = {
+        ...payload,
+        id: Number(String(payload.sourceId || Date.now() + rows.length).replace(/\D/g, "").slice(-9)) || Date.now() + rows.length,
+      };
+      rows.push(next);
+      for (const key of platformCreatorKeys(next)) existing.set(key, next);
+    }
+    changed += 1;
+  }
+
+  writePlatformCreators(rows);
+  return { changed, total: rows.length, creators: rows };
+}
+
+async function importPlatformCreatorsFromTikTok(options = {}) {
+  const shops = await getAuthorizedShops();
+  const categoryMap = await refreshCategoryMap(shops);
+  relabelPlatformCreators(categoryMap);
+  const pageSize = [12, 20].includes(Number(options.page_size)) ? Number(options.page_size) : 12;
+  const maxPages = Math.max(1, Math.min(Number(options.max_pages) || 1, 10));
+  const keyword = options.keyword || "";
+  let imported = 0;
+  let successMarkets = 0;
+  const failures = [];
+
+  for (const shop of shops) {
+    const cipher = shopCipher(shop);
+    if (!cipher) continue;
+    let pageToken = "";
+    let page = 0;
+    let marketImported = 0;
+    try {
+      do {
+        const upstream = await searchCreators(cipher, keyword, pageSize, pageToken);
+        const normalized = normalizeCreators(upstream, categoryMap);
+        const result = upsertPlatformCreators(normalized, shop);
+        marketImported += normalized.length;
+        pageToken = upstream.data?.next_page_token || upstream.data?.nextPageToken || upstream.data?.pagination?.next_page_token || "";
+        page += 1;
+        if (pageToken) await new Promise((resolve) => setTimeout(resolve, 700));
+        if (result.total >= 20000) break;
+      } while (pageToken && page < maxPages);
+      imported += marketImported;
+      successMarkets += 1;
+    } catch (error) {
+      imported += marketImported;
+      if (marketImported > 0) successMarkets += 1;
+      failures.push({ shop: shopLabel(shop), message: error.message || "Import failed" });
+    }
+  }
+
+  return {
+    imported,
+    successMarkets,
+    failures,
+    total: readPlatformCreators().length,
+    creators: readPlatformCreators(),
+  };
 }
 
 function formatMoney(value) {
@@ -471,6 +706,16 @@ async function handle(req, res) {
       return json(res, 200, { ok: true, upstream, products: normalizeProducts(upstream) });
     }
 
+    if (requestUrl.pathname === "/api/platform/creators") {
+      return json(res, 200, { ok: true, creators: readPlatformCreators() });
+    }
+
+    if (requestUrl.pathname === "/api/platform/creators/import-tiktok") {
+      const body = req.method === "POST" ? await readRequestBody(req) : {};
+      const result = await importPlatformCreatorsFromTikTok(body);
+      return json(res, 200, { ok: true, ...result });
+    }
+
     if (requestUrl.pathname === "/api/tiktok/creators/search") {
       const body = req.method === "POST" ? await readRequestBody(req) : {};
       const shopCipher = body.shop_cipher || requestUrl.searchParams.get("shop_cipher") || "";
@@ -503,4 +748,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { generateSign, normalizeProducts, normalizeCreators, handle };
+module.exports = { generateSign, normalizeProducts, normalizeCreators, readPlatformCreators, upsertPlatformCreators, handle };

@@ -1,6 +1,6 @@
 # KOL Compass 项目记忆
 
-更新时间：2026-06-22 18:48 CST
+更新时间：2026-06-22 19:18 CST
 
 ## 当前工作目录
 
@@ -61,6 +61,7 @@ node smoke-test.js
 - 2026-06-22 18:03 CST：客户主流程已明确为“第一步绑定店铺/同步商品 -> 第二步进入达人库筛选达人”。原 `KOL池` 导航和页面标题改为 `达人库`；产品管理页新增“下一步：筛选达人”和“进入达人库”入口；达人库顶部新增店铺来源、真实达人数量、本地/演示达人数量和上次抓取信息。真实达人来源仍是 TikTok Affiliate Seller Marketplace Creator Search，不伪造数据。
 - 2026-06-22 18:16 CST：达人库抓取逻辑已改为按所有已授权 TikTok Shop 店铺市场分页抓取，系统会逐个 `shop_cipher` 调用 `/api/tiktok/creators/search`，使用 `page_token` 继续翻页并写入 `sourceShopCipher/sourceShopRegion`。达人库展示不再让客户手选国家，改为按当前绑定店铺市场自动过滤；店铺切到哪个国家，只展示该国家达人。
 - 2026-06-22 18:48 CST：达人库边界已修正为“平台已有达人库 + 客户按店铺市场筛选”。客户绑定店铺不会触发客户侧自动抓取达人，进入达人库或切换店铺也不会自动抓取；`syncCreators` 不再暴露到 `window`。达人基础资料由平台内部导入/维护，客户侧只能筛选、查看、建联、拉黑/不感兴趣。只有客户选择 Email 建联且达人缺少邮箱时，系统才创建 `联系方式补充` 任务，状态进入 `联系方式补充中`，补充完成前不发送 Email。
+- 2026-06-22 19:18 CST：已补齐真正的平台达人库数据源。后端新增 `.data/platform-creators.json` 持久化文件、`GET /api/platform/creators` 读取接口和 `POST /api/platform/creators/import-tiktok` 平台内部导入接口；前端启动时只读取平台达人库，不在客户侧调用 TikTok 抓取。平台管理端新增“更新平台达人库”按钮，默认按多页导入。已用当前授权 VN sandbox 店铺从 TikTok API 写入 40 个真实达人到本地平台库；TikTok 在继续分页时返回 downstream 限流，需要后续做节流分页任务继续全量回填。类目已接 `/product/202309/categories` 映射，客户侧不再展示 `类目ID ...`，已将当前 VN 返回的常见类目中文化为“时尚配饰 / 美妆个护 / 家居日用 / 母婴用品”等固定筛选项。
 - `node --check app.js` 通过。
 - `node smoke-test.js` 全部通过。
 - 控制台截图 `smoke-dashboard.png` 已重新生成并目视检查通过，时间范围筛选、负责人筛选、指标下钻、内容状态分布和负责人概览可见。
