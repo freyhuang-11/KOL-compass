@@ -38,7 +38,7 @@ TikTok Shop API 后端使用：
 - `start-full.bat`
 - `smoke-test.js`
 
-最近一次连续推进检查：2026-06-22 17:40 CST，当前分支已连接 GitHub 远端；TikTok Shop sandbox OAuth 已跑通，已读取授权店铺 `SANDBOX_VN7651055422359521044` 并同步 1 个商品。产品同步已补充商品详情读取，实测可返回真实 `imageUrl`，`rawStatus=ACTIVATE` 会在前端归一显示为 `可选`。产品管理页按参考后台收敛为“商品名 / 商品ID”两个检索条件，不再保留类目、状态、合作模式三组筛选。KOL 池已补齐固定筛选：达人类型、TikTok 类目、市场地区为多选 chip；粉丝量级、近30天GMV、回复率、联系方式、建联状态为固定单选。新增/编辑达人不再手填达人类型、类目、地区；API scope 和团队成员可访问店铺也改为固定勾选。达人搜索接口 `/api/tiktok/creators/search` 已接入并确认恢复响应；本地后端已修正字段映射：`creator_open_id` -> `sourceId`，`selection_region` -> 中文市场，`gmv.amount/currency` -> 可读 GMV，`avatar.url` -> 头像。注意该接口连续测试仍可能返回 429，下次验证不要高频请求。
+最近一次连续推进检查：2026-06-22 17:50 CST，当前分支已连接 GitHub 远端；TikTok Shop sandbox OAuth 已跑通，已读取授权店铺 `SANDBOX_VN7651055422359521044` 并同步 1 个商品。产品同步已补充商品详情读取，实测可返回真实 `imageUrl`，`rawStatus=ACTIVATE` 会在前端归一显示为 `可选`。产品管理页按参考后台收敛为“商品名 / 商品ID”两个检索条件，不再保留类目、状态、合作模式三组筛选。KOL 池已补齐固定筛选：达人类型、TikTok 类目、市场地区为多选 chip；粉丝量级、近30天GMV、回复率、联系方式、建联状态为固定单选。新增/编辑达人不再手填达人类型、类目、地区；API scope 和团队成员可访问店铺也改为固定勾选。达人搜索接口 `/api/tiktok/creators/search` 已接入并确认恢复响应；本地后端已修正字段映射：`creator_open_id` -> `sourceId`，`selection_region` -> 中文市场，`gmv.amount/currency` -> 可读 GMV，`avatar.url` -> 头像。侧边栏导航已从字符占位图标改为统一的内联 SVG 图标组件，并已在冒烟测试中加入防回退断言。注意达人搜索接口连续测试仍可能返回 429，下次验证不要高频请求。
 
 启动：
 

@@ -510,7 +510,7 @@ function appLayout(content) {
     <div class="nav-group-title">${group}</div>
     ${items.map(([key, label]) => `
       <button class="nav-item ${state.page === key ? "active" : ""}" onclick="setPage('${key}')">
-        <span>${navIcon(key)}</span><span>${label}</span>
+        ${svgIcon(key)}<span>${label}</span>
       </button>
     `).join("")}
   `).join("");
@@ -538,12 +538,25 @@ function appLayout(content) {
   `;
 }
 
-function navIcon(key) {
-  return {
-    dashboard: "▦", products: "▣", kol: "◎", outreach: "✉",
-    autoReply: "↻", templates: "▤", blacklist: "⊘", samples: "□",
-    cooperations: "◆", messages: "!", team: "☷", billing: "$", admin: "⚙",
-  }[key] || "•";
+const navIconPaths = {
+  dashboard: `<rect x="3" y="3" width="7" height="7" rx="1.5"></rect><rect x="14" y="3" width="7" height="7" rx="1.5"></rect><rect x="3" y="14" width="7" height="7" rx="1.5"></rect><rect x="14" y="14" width="7" height="7" rx="1.5"></rect>`,
+  products: `<path d="M6.5 8.5 12 5l5.5 3.5v7L12 19l-5.5-3.5z"></path><path d="M6.7 8.7 12 12l5.3-3.3"></path><path d="M12 12v6.8"></path>`,
+  kol: `<circle cx="12" cy="8" r="3.2"></circle><path d="M5.5 19c1.2-3.2 3.4-4.8 6.5-4.8s5.3 1.6 6.5 4.8"></path>`,
+  outreach: `<path d="M4 6.5h16v11H4z"></path><path d="m4.5 7 7.5 6 7.5-6"></path>`,
+  autoReply: `<path d="M4.5 12a7.5 7.5 0 0 1 12.8-5.3L19.5 9"></path><path d="M19.5 5.2V9h-3.8"></path><path d="M19.5 12a7.5 7.5 0 0 1-12.8 5.3L4.5 15"></path><path d="M4.5 18.8V15h3.8"></path>`,
+  templates: `<path d="M6 3.5h9l3 3v14H6z"></path><path d="M14.5 3.5V7h3.5"></path><path d="M8.5 11h7"></path><path d="M8.5 14.5h7"></path><path d="M8.5 18h4.5"></path>`,
+  blacklist: `<circle cx="12" cy="12" r="8"></circle><path d="m7 17 10-10"></path>`,
+  samples: `<path d="M4.5 8h15v11.5h-15z"></path><path d="M8 8V6a4 4 0 0 1 8 0v2"></path><path d="M9 13h6"></path>`,
+  cooperations: `<path d="M8.5 12.5 11 15a3 3 0 0 0 4.2 0l3.3-3.3a3 3 0 0 0 0-4.2l-.8-.8a3 3 0 0 0-4.2 0l-1.1 1.1"></path><path d="M15.5 11.5 13 9a3 3 0 0 0-4.2 0l-3.3 3.3a3 3 0 0 0 0 4.2l.8.8a3 3 0 0 0 4.2 0l1.1-1.1"></path>`,
+  messages: `<path d="M4.5 5.5h15v10.8h-9L6.5 20v-3.7h-2z"></path><path d="M8 9.5h8"></path><path d="M8 12.5h5"></path>`,
+  team: `<circle cx="9" cy="8" r="3"></circle><path d="M3.8 19c.9-3.2 2.6-4.8 5.2-4.8s4.3 1.6 5.2 4.8"></path><path d="M15.5 10.8a2.5 2.5 0 1 0-.2-5"></path><path d="M16.3 14.2c2.1.4 3.4 1.9 3.9 4.8"></path>`,
+  billing: `<rect x="4" y="5.5" width="16" height="13" rx="2"></rect><path d="M4 9h16"></path><path d="M7.5 14.5h4"></path><path d="M15.5 14.5h1"></path>`,
+  admin: `<circle cx="12" cy="12" r="3"></circle><path d="M19.2 13.5a7.6 7.6 0 0 0 0-3l2-1.2-2-3.4-2.1 1a7.5 7.5 0 0 0-2.6-1.5L14.2 3h-4.4l-.3 2.4A7.5 7.5 0 0 0 6.9 7L4.8 6 2.8 9.3l2 1.2a7.6 7.6 0 0 0 0 3l-2 1.2 2 3.4 2.1-1a7.5 7.5 0 0 0 2.6 1.5l.3 2.4h4.4l.3-2.4a7.5 7.5 0 0 0 2.6-1.5l2.1 1 2-3.4z"></path>`,
+};
+
+function svgIcon(key) {
+  const paths = navIconPaths[key] || navIconPaths.dashboard;
+  return `<svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
 }
 
 function pageHead(title, desc, action = "") {

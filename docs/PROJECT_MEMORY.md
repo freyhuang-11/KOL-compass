@@ -1,6 +1,6 @@
 # KOL Compass 项目记忆
 
-更新时间：2026-06-22 17:40 CST
+更新时间：2026-06-22 17:50 CST
 
 ## 当前工作目录
 
@@ -57,6 +57,7 @@ node smoke-test.js
 - 2026-06-22 16:30 CST：产品页已按真实 TikTok 商品数据重验收。`node --check app.js`、`node --check server.js`、`node smoke-test.js`、`git diff --check` 已通过；`smoke-products.png` 已更新，截图中商品图片来自 TikTok 返回的 `imageUrl`，状态显示为 `可选`，搜索只保留“商品名 / 商品ID”。
 - 2026-06-22 17:20 CST：KOL 池筛选已补齐固定选项。达人类型、TikTok 类目、市场地区为多选 chip；粉丝量级、近30天GMV、回复率、联系方式、建联状态为固定单选。新增/编辑达人中的达人类型、类目、地区改为固定下拉；API scope 和团队成员可访问店铺改为固定勾选。`smoke-kol-pool.png` 已重截。
 - 2026-06-22 17:40 CST：TikTok Affiliate Seller 达人搜索接口恢复响应，本地接口曾成功返回真实达人。已修正 `normalizeCreators`：`creator_open_id` 映射到 `sourceId`，`selection_region=VN` 显示为越南，`gmv.amount/currency` 显示为可读 GMV，`avatar.url` 显示为达人头像，均播/直播 UV 写入标签。连续请求该接口仍可能触发 429，后续测试应低频执行。
+- 2026-06-22 17:50 CST：侧边栏导航已从字符占位图标改为统一的内联 SVG 图标组件，包含控制台、产品、KOL、建联、自动回复、模板、黑名单、寄样、合作、消息、团队、订阅和平台管理；冒烟测试新增断言，禁止回退到符号图标。
 - `node --check app.js` 通过。
 - `node smoke-test.js` 全部通过。
 - 控制台截图 `smoke-dashboard.png` 已重新生成并目视检查通过，时间范围筛选、负责人筛选、指标下钻、内容状态分布和负责人概览可见。

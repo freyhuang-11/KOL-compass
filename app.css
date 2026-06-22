@@ -96,6 +96,23 @@ button {
   margin: 2px 0;
 }
 
+.nav-icon {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 17px;
+  color: #64748b;
+}
+
+.nav-item:hover {
+  color: var(--primary-strong);
+  background: #f5f7fb;
+}
+
+.nav-item:hover .nav-icon,
+.nav-item.active .nav-icon {
+  color: currentColor;
+}
+
 .nav-item.active {
   color: var(--primary-strong);
   background: #eef3ff;
