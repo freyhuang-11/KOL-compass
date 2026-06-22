@@ -101,6 +101,7 @@ async function main() {
   assert("TikTok API backend exists", ["generateSign", "/api/tiktok/auth-url", "/api/tiktok/callback", "/api/tiktok/shops", "/api/tiktok/products", "x-tts-access-token", "/authorization/202309/shops", "/product/202309/products/search"].every((text) => server.includes(text)));
   assert("TikTok API backend keeps secrets out of frontend", server.includes("TIKTOK_SHOP_APP_SECRET") && read(".gitignore").includes(".env.local") && read(".gitignore").includes(".data/"));
   assert("TikTok Shop binding UI calls backend", ["API_BASE", "startTikTokAuth", "checkTikTokBackend", "checkTikTokShops", "apiRequest(\"/api/tiktok/products\""].every((text) => app.includes(text)));
+  assert("TikTok Shop multi-store selection supported", ["tiktokShops", "selectedTikTokShopCipher", "selectTikTokShop", "shopCipher", "授权店铺列表", "已授权店铺数"].every((text) => app.includes(text)));
   assert("TikTok API settings can be saved locally", ["tiktokClientKey", "tiktokRedirectUrl", "tiktokScopes", "saveApiSettings", "markApiAuthBlocked"].every((name) => app.includes(name)) && app.includes("client_secret 不应保存在前端"));
   assert("TikTok API blockers show user handoff steps", ["showApiHandoffSteps", "查看人工处理流程", "Partner Center 已登录", "scope 已开通或审批通过", "client_secret 只放后端环境变量"].every((text) => app.includes(text)));
   assert("sync logs are visible and recorded", ["syncLogs", "addSyncLog"].every((name) => app.includes(name)) && app.includes("同步日志"));

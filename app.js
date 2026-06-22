@@ -79,6 +79,8 @@ const seed = {
     tiktokBackendStatus: "未检查",
     tiktokShopName: "",
     tiktokShopCipher: "",
+    tiktokShops: [],
+    selectedTikTokShopCipher: "",
     tiktokTokenSavedAt: "",
     planName: "专业版",
     featureSwitches: {
@@ -617,6 +619,8 @@ function renderProducts() {
   const categories = Array.from(new Set(state.products.map((p) => p.category).filter(Boolean)));
   const statuses = Array.from(new Set(state.products.map((p) => p.status).filter(Boolean)));
   const modes = Array.from(new Set(state.products.map((p) => p.mode).filter(Boolean)));
+  const shops = state.settings.tiktokShops || [];
+  const selectedShop = shops.find((shop) => shopCipher(shop) === state.settings.selectedTikTokShopCipher) || shops[0];
   const rows = state.products.filter((p) => {
     const kw = state.filters.productSearch.trim().toLowerCase();
     const kwOk = !kw || [p.name, p.category, p.mode, p.status].join(" ").toLowerCase().includes(kw);
@@ -642,10 +646,18 @@ function renderProducts() {
       </div>
       <div class="filters">
         <span class="muted">上次同步：${state.settings.lastProductSync}</span>
+        ${shops.length ? `
+          <select class="select" onchange="selectTikTokShop(this.value)">
+            ${shops.map((shop) => {
+              const cipher = shopCipher(shop);
+              return `<option value="${escapeHtml(cipher)}" ${cipher === state.settings.selectedTikTokShopCipher ? "selected" : ""}>${escapeHtml(shopLabel(shop))}</option>`;
+            }).join("")}
+          </select>
+        ` : ""}
         <button class="btn" onclick="addProduct()">商品来源说明</button>
       </div>
     </div>
-    <div class="notice" style="margin-bottom:12px">真实商品、佣金率和合作模式应来自 TikTok Shop Partner API；未绑定店铺时不会伪造同步成功。当前店铺：${escapeHtml(state.settings.tiktokShopName || "未绑定")}；后端：${escapeHtml(state.settings.tiktokBackendStatus || "未检查")}。</div>
+    <div class="notice" style="margin-bottom:12px">真实商品、佣金率和合作模式应来自 TikTok Shop Partner API；未绑定店铺时不会伪造同步成功。当前店铺：${escapeHtml(selectedShop ? shopLabel(selectedShop) : "未绑定")}；已授权店铺数：${shops.length}；后端：${escapeHtml(state.settings.tiktokBackendStatus || "未检查")}。</div>
     ${table(["产品", "类目", "价格", "佣金", "合作模式", "状态", "操作"], rows.map((p) => [
       `<b>${escapeHtml(p.name)}</b>`,
       p.category,
@@ -1167,6 +1179,7 @@ function renderAdmin() {
   const approved = applications.filter((x) => x.status === "已通过").length;
   const needsInfo = applications.filter((x) => x.status === "资料补充").length;
   const blocked = applications.filter((x) => ["授权阻塞", "配置不完整"].includes(x.apiStatus)).length;
+  const shops = state.settings.tiktokShops || [];
   return `
     ${pageHead("平台管理端", "功能开关、API 接入状态、商家统计和入驻审批。")}
     <div class="grid grid-4" style="margin-bottom:16px">
@@ -1227,11 +1240,22 @@ function renderAdmin() {
         <h3>接入状态</h3>
         <p><b>当前状态：</b>${badge(state.settings.apiStatus)}</p>
         <p><b>后端服务：</b>${escapeHtml(state.settings.tiktokBackendStatus || "未检查")}</p>
-        <p><b>已绑定店铺：</b>${escapeHtml(state.settings.tiktokShopName || "未绑定")}</p>
+        <p><b>已授权店铺：</b>${shops.length ? `${shops.length} 个` : "未绑定"}</p>
+        <p><b>当前同步店铺：</b>${escapeHtml(state.settings.tiktokShopName || "未选择")}</p>
         <p><b>Token 保存时间：</b>${escapeHtml(state.settings.tiktokTokenSavedAt || "未保存")}</p>
         <p><b>商品同步：</b>${escapeHtml(state.settings.lastProductSync)}</p>
         <p><b>达人同步：</b>${escapeHtml(state.settings.lastCreatorSync)}</p>
         <p class="muted">client_secret 只从后端环境变量读取；前端只负责触发授权和展示同步结果。</p>
+        ${shops.length ? `
+          <div class="divider"></div>
+          <h4>授权店铺列表</h4>
+          ${table(["店铺", "市场", "Shop ID", "操作"], shops.map((shop) => [
+            escapeHtml(shopLabel(shop)),
+            escapeHtml(shopRegion(shop)),
+            escapeHtml(shop.shop_id || shop.id || "-"),
+            `<button class="btn ghost" onclick="selectTikTokShop('${escapeJs(shopCipher(shop))}')">设为同步店铺</button>`,
+          ]))}
+        ` : `<div class="notice" style="margin-top:12px">当前还没有授权店铺。多国家不是在本系统里手动添加，而是每个国家/市场的真实 Seller 店铺授权后由 TikTok API 返回。</div>`}
       </div>
       <div class="card" style="grid-column: 1 / -1">
         <h3>商家入驻审批</h3>
@@ -1428,6 +1452,32 @@ function channelEnabled(channel) {
   return featureEnabled(channelFeatureKey(channel));
 }
 
+function shopCipher(shop) {
+  return shop?.cipher || shop?.shop_cipher || "";
+}
+
+function shopRegion(shop) {
+  return shop?.region || shop?.market || shop?.country || shop?.shop_region || "-";
+}
+
+function shopLabel(shop) {
+  const name = shop?.shop_name || shop?.name || shop?.seller_name || shop?.shop_id || "未命名店铺";
+  const region = shopRegion(shop);
+  return region && region !== "-" ? `${name} · ${region}` : String(name);
+}
+
+function selectTikTokShop(cipher) {
+  const shops = state.settings.tiktokShops || [];
+  const selected = shops.find((shop) => shopCipher(shop) === cipher) || shops[0];
+  if (!selected) return alert("当前没有可选择的 TikTok Shop 店铺。");
+  state.settings.selectedTikTokShopCipher = shopCipher(selected);
+  state.settings.tiktokShopCipher = shopCipher(selected);
+  state.settings.tiktokShopName = shopLabel(selected);
+  addSyncLog("店铺选择", "已切换", `当前同步店铺：${state.settings.tiktokShopName}`);
+  saveState();
+  render();
+}
+
 function channelOptionsForCreators(targets, currentChannel = "") {
   const list = [];
   const add = (value, text = value) => list.push([value, text]);
@@ -1518,16 +1568,20 @@ async function startTikTokAuth() {
 async function checkTikTokShops() {
   try {
     const data = await apiRequest("/api/tiktok/shops");
-    const firstShop = (data.shops || [])[0];
+    const shops = data.shops || [];
+    const firstShop = shops[0];
+    const selected = shops.find((shop) => shopCipher(shop) === state.settings.selectedTikTokShopCipher) || firstShop;
     state.settings.tiktokConnected = true;
     state.settings.apiStatus = firstShop ? "已绑定店铺" : "未返回店铺";
     state.settings.tiktokBackendStatus = "后端已连接 TikTok";
-    state.settings.tiktokShopName = firstShop?.shop_name || firstShop?.name || firstShop?.shop_id || "";
-    state.settings.tiktokShopCipher = firstShop?.cipher || firstShop?.shop_cipher || "";
+    state.settings.tiktokShops = shops;
+    state.settings.selectedTikTokShopCipher = selected ? shopCipher(selected) : "";
+    state.settings.tiktokShopName = selected ? shopLabel(selected) : "";
+    state.settings.tiktokShopCipher = selected ? shopCipher(selected) : "";
     state.settings.tiktokTokenSavedAt = data.token?.saved_at || state.settings.tiktokTokenSavedAt || "";
     state.settings.tiktokLastAuthCheck = nowText();
-    addSyncLog("店铺绑定", state.settings.apiStatus, firstShop ? `已读取店铺：${state.settings.tiktokShopName}` : "TikTok API 返回成功但没有店铺列表。");
-    pushMessage("店铺绑定", firstShop ? `已绑定 TikTok Shop 店铺：${state.settings.tiktokShopName}` : "TikTok Shop 已授权，但未返回店铺列表。");
+    addSyncLog("店铺绑定", state.settings.apiStatus, firstShop ? `已读取 ${shops.length} 个授权店铺；当前同步：${state.settings.tiktokShopName}` : "TikTok API 返回成功但没有店铺列表。");
+    pushMessage("店铺绑定", firstShop ? `已读取 TikTok Shop 授权店铺 ${shops.length} 个；当前同步：${state.settings.tiktokShopName}` : "TikTok Shop 已授权，但未返回店铺列表。");
     saveState();
     render();
   } catch (error) {
@@ -1543,6 +1597,9 @@ async function checkTikTokShops() {
 async function syncProducts() {
   state.settings.lastProductSync = nowText();
   try {
+    const shops = state.settings.tiktokShops || [];
+    const selected = shops.find((shop) => shopCipher(shop) === state.settings.selectedTikTokShopCipher) || shops[0];
+    if (selected) selectTikTokShop(shopCipher(selected));
     const data = await apiRequest("/api/tiktok/products", {
       method: "POST",
       body: JSON.stringify({ shop_cipher: state.settings.tiktokShopCipher || "", page_size: 50 }),
@@ -2901,6 +2958,7 @@ window.syncCoopData = syncCoopData;
 window.checkTikTokBackend = checkTikTokBackend;
 window.startTikTokAuth = startTikTokAuth;
 window.checkTikTokShops = checkTikTokShops;
+window.selectTikTokShop = selectTikTokShop;
 window.markMessageRead = markMessageRead;
 window.markAllMessagesRead = markAllMessagesRead;
 window.deleteMessage = deleteMessage;
