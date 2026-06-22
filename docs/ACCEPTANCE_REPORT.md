@@ -1,6 +1,6 @@
 # KOL Compass 首次验收报告
 
-验收时间：2026-06-21
+验收时间：2026-06-22
 
 ## 验收范围
 
@@ -352,7 +352,9 @@ node smoke-test.js
 
 - 导出 JSON
 - 导入 JSON
+- 下载 KOL CSV 模板
 - 导入 KOL CSV
+- 下载合作 CSV 模板
 - 导入合作 CSV
 - 重置演示数据
 
