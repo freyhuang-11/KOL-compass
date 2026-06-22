@@ -26,6 +26,39 @@ python -m http.server 5175
 http://localhost:5175
 ```
 
+TikTok Shop API 后端使用 `8015`，用于保存 `client_secret`、OAuth token、签名请求和店铺/商品同步。首次绑定店铺前，复制 `.env.example` 为 `.env.local` 并填入 Partner App 信息：
+
+```powershell
+Copy-Item .env.example .env.local
+notepad .env.local
+```
+
+启动后端：
+
+```powershell
+node server.js
+```
+
+或双击：
+
+```text
+start-api-8015.bat
+```
+
+同时启动前端和后端：
+
+```text
+start-full.bat
+```
+
+绑定流程：
+
+1. 打开 `http://localhost:5175/#admin`。
+2. 点击 `检查后端`，确认 `8015` 已启动且环境变量完整。
+3. 点击 `绑定店铺`，在 TikTok Shop Partner 授权页完成店铺授权。
+4. 回到平台管理端点击 `读取已授权店铺`。
+5. 到产品管理点击 `同步商品`。
+
 可直接打开的验收页面：
 
 ```text
@@ -94,10 +127,10 @@ KOL CSV 支持表头：
 
 ## TikTok API 接入边界
 
-当前版本不会伪造 TikTok Partner API 数据。真实接入需要：
+当前版本已新增本地后端 `server.js`，不会在前端保存 `client_secret`，也不会伪造 TikTok Partner API 数据。真实接入需要：
 
-平台管理端可保存本地接入准备信息：client_key、OAuth Redirect URL、scope、最近检查时间；client_secret 不保存在前端。
-产品、达人、内容/订单同步按钮在未授权时会直接弹出人工处理流程，并写入同步日志，不会伪造成功。
+平台管理端可保存本地接入准备信息：client_key、OAuth Redirect URL、scope、最近检查时间；client_secret 只读取后端 `.env.local`。
+店铺绑定和商品同步会优先调用 `http://127.0.0.1:8015/api/tiktok/*`；未启动后端、缺少密钥、未授权或 scope 不足时会直接显示阻塞原因，并写入同步日志。
 
 1. Partner Center 已登录并有店铺 Affiliate 权限。
 2. Partner App 已开通 Product、Affiliate、Messaging、Order 相关 scope。

@@ -1,6 +1,6 @@
 # KOL Compass 项目记忆
 
-更新时间：2026-06-22 12:15 CST
+更新时间：2026-06-22 15:05 CST
 
 ## 当前工作目录
 
@@ -16,9 +16,13 @@
 
 ## 当前可运行版本
 
-本项目当前是本地静态后台版本，默认端口：
+本项目当前包含本地前端和 TikTok Shop API 后端，默认端口：
 
 `http://127.0.0.1:5175`
+
+TikTok Shop API 后端：
+
+`http://127.0.0.1:8015`
 
 当前 Git 分支：
 
@@ -28,6 +32,18 @@
 
 ```bat
 start-5175.bat
+```
+
+同时启动前端和后端：
+
+```bat
+start-full.bat
+```
+
+后端单独启动：
+
+```bat
+start-api-8015.bat
 ```
 
 验收：
@@ -75,7 +91,8 @@ node smoke-test.js
 - 建联记录已支持建联总数、待达人回复、待我方回复、已转合作状态总览；状态卡片可直接筛选列表，并展示当前显示条数。
 - 合作管理已支持按达人/产品/负责人/备注搜索，并支持全部/已产出/未产出筛选；筛选后的当前视图会汇总 GMV、订单、佣金+投流和 ROI，便于复投或终止判断。
 - 平台管理端已支持保存 TikTok API 本地配置：client_key、OAuth Redirect URL、scope、最近检查时间；client_secret 明确不保存到前端。
-- TikTok API 未授权或授权阻塞时，商品、达人、内容/订单同步按钮会直接弹出 Partner Center / OAuth / scope / redirect URL / client_secret 的人工处理流程，并写入同步日志。
+- 已新增本地 TikTok Shop API 后端 `server.js`：支持 `/api/health`、授权链接、OAuth 回调换 token、读取已授权店铺、商品搜索同步；token 保存到 `.data/tiktok-token.json`，`.data/` 与 `.env.local` 已加入 `.gitignore`。
+- TikTok API 未授权或授权阻塞时，商品、达人、内容/订单同步按钮会优先调用真实后端并展示失败原因；不会伪造同步成功。
 - 平台管理端功能开关已从静态展示变成真实状态：TikTok 私信、Email、WhatsApp、消息翻译、Stripe 支付可切换。
 - 平台管理端已支持本地商家统计和入驻审批台账：申请商家、待审批、已通过、接入阻塞统计可见；入驻申请可通过、驳回、恢复待审；动作写入系统消息和操作日志，不调用真实商户系统、支付系统或 TikTok API。
 - 建联和回复渠道会读取功能开关；关闭 Email/WhatsApp 后，新建联和回复不会再显示对应渠道，保存时也会二次校验。
@@ -101,9 +118,9 @@ node smoke-test.js
 - 当前分支为 `codex/kol-compass-mvp`。
 - 每次可验证阶段完成后，先跑 `node smoke-test.js`，再小步 commit/push。
 
-仍未真实接入的外部能力：
+仍未完整真实接入的外部能力：
 
-- TikTok Partner API
+- TikTok Partner API：店铺绑定和商品同步代码已接入，仍需要真实 `TIKTOK_SHOP_APP_KEY` / `TIKTOK_SHOP_APP_SECRET`、Partner Center Redirect URL 和人工 OAuth 授权后验证。
 - WhatsApp Business API
 - Email SMTP/IMAP
 - 支付

@@ -18,6 +18,10 @@
 
 `http://127.0.0.1:5175`
 
+TikTok Shop API 后端使用：
+
+`http://127.0.0.1:8015`
+
 不要占用 `5173` / `5174`。
 
 ## 当前状态
@@ -29,9 +33,12 @@
 - `app.js`
 - `start-5175.bat`
 - `stop-5175.bat`
+- `server.js`
+- `start-api-8015.bat`
+- `start-full.bat`
 - `smoke-test.js`
 
-最近一次连续推进检查：2026-06-22 12:15 CST，当前分支已连接 GitHub 远端；本轮已按用户参考图补齐图像式后台视觉：全局点阵画布、深色侧栏、精修卡片、KOL 详情左侧资料卡 + 右侧沟通工作台、合作管理生命周期 + 内容追踪 + 直播追踪 + ROI 分析模块；`node --check app.js` 与 `node smoke-test.js` 已通过，截图 `smoke-kol-detail.png`、`smoke-cooperations.png` 已重新生成并目视复核，下一步小步提交推送。
+最近一次连续推进检查：2026-06-22 15:05 CST，当前分支已连接 GitHub 远端；本轮已新增 TikTok Shop API 本地后端和前端接入：授权链接、OAuth 回调换 token、读取已授权店铺、商品搜索同步、后端健康检查、`.env.local` 密钥配置和 `.data/` token 存储。`node --check app.js`、`node --check server.js`、`node smoke-test.js`、`git diff --check` 已通过；8015 后端已启动并返回缺少 `TIKTOK_SHOP_APP_KEY` / `TIKTOK_SHOP_APP_SECRET` 的明确配置阻塞。
 
 启动：
 

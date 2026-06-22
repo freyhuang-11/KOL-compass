@@ -1,6 +1,27 @@
 # TikTok Partner API 接入交接
 
-本项目当前是可直接打开的本地后台版本。它不会伪造 TikTok Partner API 数据；未完成授权前，产品、达人、内容、订单同步按钮只会写入本地状态提示。
+本项目当前已新增本地 TikTok Shop API 后端 `server.js`。它不会伪造 TikTok Partner API 数据；未完成后端配置或 OAuth 授权前，产品、达人、内容、订单同步按钮会写入明确失败原因。
+
+## 本地后端
+
+后端端口：`http://127.0.0.1:8015`
+
+配置文件：
+
+1. 复制 `.env.example` 为 `.env.local`。
+2. 填入 `TIKTOK_SHOP_APP_KEY` 和 `TIKTOK_SHOP_APP_SECRET`。
+3. 确认 Partner Center Redirect URL 配置为 `http://127.0.0.1:8015/api/tiktok/callback`。
+4. 运行 `start-api-8015.bat` 或 `node server.js`。
+5. 打开 `http://127.0.0.1:5175/#admin`，点击 `检查后端`、`绑定店铺`、`读取已授权店铺`。
+
+后端已实现：
+
+- 生成 TikTok Shop 授权链接：`/api/tiktok/auth-url`
+- OAuth 回调换 token：`/api/tiktok/callback`
+- 获取已授权店铺：`/api/tiktok/shops`
+- 搜索商品并映射到产品管理：`/api/tiktok/products`
+
+Token 保存到 `.data/tiktok-token.json`，该目录已加入 `.gitignore`，不要提交。
 
 ## 需要人工处理的情况
 
@@ -26,7 +47,7 @@
    - 本地：`http://127.0.0.1:8015/api/tiktok/callback`
    - 线上：使用正式 HTTPS 域名。
 4. 记录 `client_key` 和 `client_secret`，不要写进前端代码。
-5. 先跑商品同步，再跑达人同步，再跑内容/订单同步。
+5. 先跑店铺绑定和商品同步，再跑达人同步，再跑内容/订单同步。
 
 ## 验收口径
 

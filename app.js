@@ -1,4 +1,5 @@
 const STORAGE_KEY = "kol-compass-state-v1";
+const API_BASE = "http://127.0.0.1:8015";
 
 const pages = [
   ["运营", [
@@ -75,6 +76,10 @@ const seed = {
     tiktokRedirectUrl: "http://localhost:8015/api/tiktok/callback",
     tiktokScopes: "product,affiliate,messaging,order",
     tiktokLastAuthCheck: "尚未检查",
+    tiktokBackendStatus: "未检查",
+    tiktokShopName: "",
+    tiktokShopCipher: "",
+    tiktokTokenSavedAt: "",
     planName: "专业版",
     featureSwitches: {
       tiktokMessaging: true,
@@ -621,7 +626,7 @@ function renderProducts() {
     return kwOk && categoryOk && statusOk && modeOk;
   });
   return `
-    ${pageHead("产品管理", "同步和查看 TikTok Shop 商品、联盟佣金与合作模式。", `<button class="btn primary" onclick="syncProducts()">同步商品</button>`)}
+    ${pageHead("产品管理", "同步和查看 TikTok Shop 商品、联盟佣金与合作模式。", `<button class="btn primary" onclick="syncProducts()">同步商品</button> <button class="btn" onclick="checkTikTokShops()">检查店铺绑定</button>`)}
     <div class="toolbar">
       <div class="filters">
         <input class="input" placeholder="搜索产品名称、类目、模式..." value="${escapeHtml(state.filters.productSearch)}" oninput="setFilter('productSearch', this.value)" />
@@ -640,7 +645,7 @@ function renderProducts() {
         <button class="btn" onclick="addProduct()">商品来源说明</button>
       </div>
     </div>
-    <div class="notice" style="margin-bottom:12px">真实商品、佣金率和合作模式应来自 TikTok Shop Partner API；当前未授权时仅使用本地数据，不伪造同步成功。</div>
+    <div class="notice" style="margin-bottom:12px">真实商品、佣金率和合作模式应来自 TikTok Shop Partner API；未绑定店铺时不会伪造同步成功。当前店铺：${escapeHtml(state.settings.tiktokShopName || "未绑定")}；后端：${escapeHtml(state.settings.tiktokBackendStatus || "未检查")}。</div>
     ${table(["产品", "类目", "价格", "佣金", "合作模式", "状态", "操作"], rows.map((p) => [
       `<b>${escapeHtml(p.name)}</b>`,
       p.category,
@@ -1198,7 +1203,7 @@ function renderAdmin() {
           <li>拿到 client_key / client_secret 后放入本项目环境变量或配置文件。</li>
           <li>若页面出现验证码、人机校验或 scope 审批缺失，需要你在浏览器里处理，我再继续同步。</li>
         </ol>
-        <div class="warning-box">当前本地版本不会伪造 TikTok API 数据。未授权时，产品/达人/订单同步按钮只更新时间并写入系统提示。</div>
+        <div class="warning-box">当前版本已接入本地后端 <code>http://127.0.0.1:8015</code>。未配置 app_key/app_secret 或未完成 OAuth 时不会伪造 TikTok API 数据。</div>
       </div>
       <div class="card">
         <h3>TikTok API 本地配置</h3>
@@ -1211,6 +1216,9 @@ function renderAdmin() {
         <div class="warning-box" style="margin-top:12px">client_secret 不应保存在前端 localStorage。真实接入时请放在本项目后端环境变量中；遇到 OAuth、验证码、scope 审批时需要人工在浏览器完成。</div>
         <div style="margin-top:12px">
           <button class="btn primary" onclick="saveApiSettings()">保存配置</button>
+          <button class="btn primary" onclick="startTikTokAuth()">绑定店铺</button>
+          <button class="btn" onclick="checkTikTokBackend()">检查后端</button>
+          <button class="btn" onclick="checkTikTokShops()">读取已授权店铺</button>
           <button class="btn" onclick="markApiAuthBlocked()">标记授权阻塞</button>
           <button class="btn ghost" onclick="showApiHandoffSteps('API接入')">查看人工处理流程</button>
         </div>
@@ -1218,9 +1226,12 @@ function renderAdmin() {
       <div class="card">
         <h3>接入状态</h3>
         <p><b>当前状态：</b>${badge(state.settings.apiStatus)}</p>
+        <p><b>后端服务：</b>${escapeHtml(state.settings.tiktokBackendStatus || "未检查")}</p>
+        <p><b>已绑定店铺：</b>${escapeHtml(state.settings.tiktokShopName || "未绑定")}</p>
+        <p><b>Token 保存时间：</b>${escapeHtml(state.settings.tiktokTokenSavedAt || "未保存")}</p>
         <p><b>商品同步：</b>${escapeHtml(state.settings.lastProductSync)}</p>
         <p><b>达人同步：</b>${escapeHtml(state.settings.lastCreatorSync)}</p>
-        <p class="muted">保存配置不会触发真实 API 调用；它只让首次验收时能清楚看到接入准备状态。</p>
+        <p class="muted">client_secret 只从后端环境变量读取；前端只负责触发授权和展示同步结果。</p>
       </div>
       <div class="card" style="grid-column: 1 / -1">
         <h3>商家入驻审批</h3>
@@ -1443,14 +1454,116 @@ function validateChannelForCreators(channel, targets) {
   return true;
 }
 
-function syncProducts() {
+async function apiRequest(path, options = {}) {
+  const response = await fetch(`${API_BASE}${path}`, {
+    headers: { "Content-Type": "application/json" },
+    ...options,
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data.ok === false) {
+    const message = data.message || `请求失败：HTTP ${response.status}`;
+    const error = new Error(message);
+    error.data = data;
+    throw error;
+  }
+  return data;
+}
+
+function applyBackendHealth(data) {
+  state.settings.tiktokBackendStatus = data.configured ? "后端已配置" : `后端缺少配置：${(data.missing || []).join(", ") || "未知"}`;
+  state.settings.tiktokTokenSavedAt = data.token?.saved_at || state.settings.tiktokTokenSavedAt || "";
+  state.settings.apiStatus = data.token ? "已授权" : (data.configured ? "待OAuth授权" : "配置不完整");
+  state.settings.tiktokConnected = Boolean(data.token);
+}
+
+async function checkTikTokBackend() {
+  try {
+    const data = await apiRequest("/api/health");
+    applyBackendHealth(data);
+    state.settings.tiktokLastAuthCheck = nowText();
+    addSyncLog("API后端", data.configured ? "可用" : "配置不完整", state.settings.tiktokBackendStatus);
+    saveState();
+    render();
+    alert(`后端检查完成：${state.settings.tiktokBackendStatus}`);
+  } catch (error) {
+    state.settings.tiktokBackendStatus = "后端未启动";
+    state.settings.apiStatus = "后端未启动";
+    addSyncLog("API后端", "后端未启动", "请先运行 start-api-8015.bat 或 start-full.bat。");
+    saveState();
+    render();
+    alert("后端未启动。请先运行 start-api-8015.bat 或 start-full.bat。");
+  }
+}
+
+async function startTikTokAuth() {
+  try {
+    const data = await apiRequest("/api/tiktok/auth-url");
+    state.settings.apiStatus = "等待授权";
+    state.settings.tiktokBackendStatus = "后端已配置";
+    state.settings.tiktokRedirectUrl = data.redirect_uri || state.settings.tiktokRedirectUrl;
+    addSyncLog("店铺绑定", "等待授权", "已生成 TikTok Shop 授权链接，将打开 Partner 授权页。");
+    saveState();
+    render();
+    window.open(data.auth_url, "_blank");
+  } catch (error) {
+    const reason = error.message || "无法生成授权链接。";
+    state.settings.apiStatus = "配置不完整";
+    addSyncLog("店铺绑定", "失败", reason);
+    saveState();
+    render();
+    showApiHandoffSteps("店铺绑定", reason);
+  }
+}
+
+async function checkTikTokShops() {
+  try {
+    const data = await apiRequest("/api/tiktok/shops");
+    const firstShop = (data.shops || [])[0];
+    state.settings.tiktokConnected = true;
+    state.settings.apiStatus = firstShop ? "已绑定店铺" : "未返回店铺";
+    state.settings.tiktokBackendStatus = "后端已连接 TikTok";
+    state.settings.tiktokShopName = firstShop?.shop_name || firstShop?.name || firstShop?.shop_id || "";
+    state.settings.tiktokShopCipher = firstShop?.cipher || firstShop?.shop_cipher || "";
+    state.settings.tiktokTokenSavedAt = data.token?.saved_at || state.settings.tiktokTokenSavedAt || "";
+    state.settings.tiktokLastAuthCheck = nowText();
+    addSyncLog("店铺绑定", state.settings.apiStatus, firstShop ? `已读取店铺：${state.settings.tiktokShopName}` : "TikTok API 返回成功但没有店铺列表。");
+    pushMessage("店铺绑定", firstShop ? `已绑定 TikTok Shop 店铺：${state.settings.tiktokShopName}` : "TikTok Shop 已授权，但未返回店铺列表。");
+    saveState();
+    render();
+  } catch (error) {
+    const reason = error.message || "读取已授权店铺失败。";
+    state.settings.apiStatus = "店铺读取失败";
+    addSyncLog("店铺绑定", "失败", reason);
+    saveState();
+    render();
+    showApiHandoffSteps("店铺绑定", reason);
+  }
+}
+
+async function syncProducts() {
   state.settings.lastProductSync = nowText();
-  const reason = "本地模式下仅更新时间；真实商品数据需完成 TikTok Partner API 授权。";
-  addSyncLog("商品同步", state.settings.tiktokConnected ? "待OAuth授权" : "未连接", reason);
-  pushMessage("商品同步", `已触发商品同步。${reason}`);
-  saveState();
-  render();
-  showApiHandoffSteps("商品同步", reason);
+  try {
+    const data = await apiRequest("/api/tiktok/products", {
+      method: "POST",
+      body: JSON.stringify({ shop_cipher: state.settings.tiktokShopCipher || "", page_size: 50 }),
+    });
+    if (Array.isArray(data.products) && data.products.length) {
+      state.products = data.products;
+    }
+    state.settings.apiStatus = "商品已同步";
+    state.settings.tiktokBackendStatus = "后端已连接 TikTok";
+    addSyncLog("商品同步", "成功", `已从 TikTok Shop 同步 ${data.products?.length || 0} 个商品。`);
+    pushMessage("商品同步", `TikTok Shop 商品同步完成：${data.products?.length || 0} 个。`);
+    saveState();
+    render();
+  } catch (error) {
+    const reason = error.message || "商品同步失败。";
+    addSyncLog("商品同步", "失败", reason);
+    pushMessage("商品同步失败", reason);
+    saveState();
+    render();
+    showApiHandoffSteps("商品同步", reason);
+  }
 }
 
 function syncCreators() {
@@ -2785,6 +2898,9 @@ window.showCreator = showCreator;
 window.syncProducts = syncProducts;
 window.syncCreators = syncCreators;
 window.syncCoopData = syncCoopData;
+window.checkTikTokBackend = checkTikTokBackend;
+window.startTikTokAuth = startTikTokAuth;
+window.checkTikTokShops = checkTikTokShops;
 window.markMessageRead = markMessageRead;
 window.markAllMessagesRead = markAllMessagesRead;
 window.deleteMessage = deleteMessage;

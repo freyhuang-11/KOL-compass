@@ -33,7 +33,7 @@ function get(url) {
 }
 
 async function main() {
-  const requiredFiles = ["index.html", "app.css", "app.js", "README.md", "PRODUCT.md", "DESIGN.md"];
+  const requiredFiles = ["index.html", "app.css", "app.js", "server.js", "README.md", "PRODUCT.md", "DESIGN.md", ".env.example"];
   for (const file of requiredFiles) {
     assert(`file exists: ${file}`, fs.existsSync(file));
   }
@@ -45,7 +45,15 @@ async function main() {
     fail("app.js syntax", String(error.stderr || error.message));
   }
 
+  try {
+    execFileSync("node", ["--check", "server.js"], { stdio: "pipe" });
+    pass("server.js syntax");
+  } catch (error) {
+    fail("server.js syntax", String(error.stderr || error.message));
+  }
+
   const app = read("app.js");
+  const server = read("server.js");
   const index = read("index.html");
   assert("index loads app.js", index.includes("./app.js"));
   assert("port boundary documented", read("README.md").includes("5175") && read("README.md").includes("5173"));
@@ -90,6 +98,9 @@ async function main() {
   assert("local data import/export supported", app.includes("function exportState") && app.includes("function importState"));
   assert("hash routes supported", app.includes("routeFromHash") && app.includes("kol/creator/"));
   assert("TikTok API handoff exists", fs.existsSync("docs/TIKTOK_API_HANDOFF.md"));
+  assert("TikTok API backend exists", ["generateSign", "/api/tiktok/auth-url", "/api/tiktok/callback", "/api/tiktok/shops", "/api/tiktok/products", "x-tts-access-token", "/authorization/202309/shops", "/product/202309/products/search"].every((text) => server.includes(text)));
+  assert("TikTok API backend keeps secrets out of frontend", server.includes("TIKTOK_SHOP_APP_SECRET") && read(".gitignore").includes(".env.local") && read(".gitignore").includes(".data/"));
+  assert("TikTok Shop binding UI calls backend", ["API_BASE", "startTikTokAuth", "checkTikTokBackend", "checkTikTokShops", "apiRequest(\"/api/tiktok/products\""].every((text) => app.includes(text)));
   assert("TikTok API settings can be saved locally", ["tiktokClientKey", "tiktokRedirectUrl", "tiktokScopes", "saveApiSettings", "markApiAuthBlocked"].every((name) => app.includes(name)) && app.includes("client_secret 不应保存在前端"));
   assert("TikTok API blockers show user handoff steps", ["showApiHandoffSteps", "查看人工处理流程", "Partner Center 已登录", "scope 已开通或审批通过", "client_secret 只放后端环境变量"].every((text) => app.includes(text)));
   assert("sync logs are visible and recorded", ["syncLogs", "addSyncLog"].every((name) => app.includes(name)) && app.includes("同步日志"));
