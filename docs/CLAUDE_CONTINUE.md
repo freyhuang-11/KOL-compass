@@ -38,7 +38,7 @@ TikTok Shop API 后端使用：
 - `start-full.bat`
 - `smoke-test.js`
 
-最近一次连续推进检查：2026-06-22 15:05 CST，当前分支已连接 GitHub 远端；本轮已新增 TikTok Shop API 本地后端和前端接入：授权链接、OAuth 回调换 token、读取已授权店铺、商品搜索同步、后端健康检查、`.env.local` 密钥配置和 `.data/` token 存储。`node --check app.js`、`node --check server.js`、`node smoke-test.js`、`git diff --check` 已通过；8015 后端已启动并返回缺少 `TIKTOK_SHOP_APP_KEY` / `TIKTOK_SHOP_APP_SECRET` 的明确配置阻塞。
+最近一次连续推进检查：2026-06-22 15:30 CST，当前分支已连接 GitHub 远端；TikTok Shop sandbox OAuth 已跑通，已读取授权店铺 `SANDBOX_VN7651055422359521044` 并同步 1 个商品。已接入达人搜索接口 `/api/tiktok/creators/search`，对应 TikTok Open API `/affiliate_seller/202508/marketplace_creators/search`；当前 sandbox 实测返回 `36009002 Too many requests for downstream`，属于 TikTok 下游限流，前端会展示真实错误，不伪造达人同步成功。`node --check app.js`、`node --check server.js`、`node smoke-test.js`、`git diff --check` 已通过。
 
 启动：
 

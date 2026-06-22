@@ -1433,6 +1433,10 @@ function nowText() {
   return new Date().toLocaleString("zh-CN", { hour12: false });
 }
 
+function nextId(rows) {
+  return Math.max(0, ...rows.map((row) => Number(row.id) || 0)) + 1;
+}
+
 function addSyncLog(module, status, reason) {
   state.syncLogs.unshift({ id: Date.now(), module, status, reason, at: nowText() });
   state.syncLogs = state.syncLogs.slice(0, 50);
@@ -1623,14 +1627,41 @@ async function syncProducts() {
   }
 }
 
-function syncCreators() {
+async function syncCreators() {
   state.settings.lastCreatorSync = nowText();
-  const reason = "本地模式下不会抓取 Partner API 达人数据；需完成 Affiliate / Messaging scope 授权。";
-  addSyncLog("达人同步", state.settings.tiktokConnected ? "待OAuth授权" : "未连接", reason);
-  pushMessage("达人同步", `已触发达人同步。${reason}`);
-  saveState();
-  render();
-  showApiHandoffSteps("达人同步", reason);
+  try {
+    const shops = state.settings.tiktokShops || [];
+    const selected = shops.find((shop) => shopCipher(shop) === state.settings.selectedTikTokShopCipher) || shops[0];
+    if (selected) selectTikTokShop(shopCipher(selected));
+    const data = await apiRequest("/api/tiktok/creators/search", {
+      method: "POST",
+      body: JSON.stringify({
+        shop_cipher: state.settings.tiktokShopCipher || "",
+        keyword: state.filters.kolSearch || "",
+        page_size: 12,
+      }),
+    });
+    if (Array.isArray(data.creators) && data.creators.length) {
+      const existingBySource = new Map(state.creators.map((creator) => [creator.sourceId || creator.username, creator]));
+      for (const creator of data.creators) {
+        const key = creator.sourceId || creator.username;
+        if (existingBySource.has(key)) Object.assign(existingBySource.get(key), creator);
+        else state.creators.push({ ...creator, id: nextId(state.creators) });
+      }
+    }
+    state.settings.apiStatus = "达人已同步";
+    addSyncLog("达人同步", "成功", `已从 TikTok Shop API 同步 ${data.creators?.length || 0} 个达人。`);
+    pushMessage("达人同步", `TikTok Shop 达人同步完成：${data.creators?.length || 0} 个。`);
+    saveState();
+    render();
+  } catch (error) {
+    const reason = error.message || "达人同步失败。";
+    addSyncLog("达人同步", "失败", reason);
+    pushMessage("达人同步失败", reason);
+    saveState();
+    render();
+    showApiHandoffSteps("达人同步", reason);
+  }
 }
 
 function syncCoopData() {

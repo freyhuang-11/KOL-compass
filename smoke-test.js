@@ -99,6 +99,7 @@ async function main() {
   assert("hash routes supported", app.includes("routeFromHash") && app.includes("kol/creator/"));
   assert("TikTok API handoff exists", fs.existsSync("docs/TIKTOK_API_HANDOFF.md"));
   assert("TikTok API backend exists", ["generateSign", "/api/tiktok/auth-url", "/api/tiktok/callback", "/api/tiktok/shops", "/api/tiktok/products", "x-tts-access-token", "/authorization/202309/shops", "/product/202309/products/search"].every((text) => server.includes(text)));
+  assert("TikTok creator search API wired", ["/api/tiktok/creators/search", "/affiliate_seller/202508/marketplace_creators/search", "normalizeCreators"].every((text) => server.includes(text)) && ["apiRequest(\"/api/tiktok/creators/search\"", "达人同步失败"].every((text) => app.includes(text)));
   assert("TikTok API backend keeps secrets out of frontend", server.includes("TIKTOK_SHOP_APP_SECRET") && read(".gitignore").includes(".env.local") && read(".gitignore").includes(".data/"));
   assert("TikTok Shop binding UI calls backend", ["API_BASE", "startTikTokAuth", "checkTikTokBackend", "checkTikTokShops", "apiRequest(\"/api/tiktok/products\""].every((text) => app.includes(text)));
   assert("TikTok Shop multi-store selection supported", ["tiktokShops", "selectedTikTokShopCipher", "selectTikTokShop", "shopCipher", "授权店铺列表", "已授权店铺数"].every((text) => app.includes(text)));

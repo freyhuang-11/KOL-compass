@@ -260,6 +260,23 @@ async function searchProducts(shopCipher, pageSize = 20, pageToken = "") {
   return tiktokFetch("/product/202309/products/search", { method: "POST", params, body });
 }
 
+async function searchCreators(shopCipher, keyword = "", pageSize = 12, pageToken = "") {
+  if (!shopCipher) {
+    const shops = await getAuthorizedShops();
+    shopCipher = shops[0]?.cipher || shops[0]?.shop_cipher;
+  }
+  if (!shopCipher) {
+    const error = new Error("No authorized shop cipher found. Bind a shop first.");
+    error.statusCode = 404;
+    error.payload = { ok: false, code: "SHOP_CIPHER_MISSING", message: error.message };
+    throw error;
+  }
+  const params = { shop_cipher: shopCipher, page_size: [12, 20].includes(Number(pageSize)) ? Number(pageSize) : 12 };
+  if (pageToken) params.page_token = pageToken;
+  const body = keyword ? { query: keyword } : {};
+  return tiktokFetch("/affiliate_seller/202508/marketplace_creators/search", { method: "POST", params, body });
+}
+
 function normalizeProducts(upstream) {
   const products = upstream.data?.products || upstream.products || [];
   return products.map((item, index) => {
@@ -277,6 +294,38 @@ function normalizeProducts(upstream) {
       commission: item.commission?.rate || item.open_collaboration?.commission_rate || "-",
       mode: item.open_collaboration ? "公开合作" : "店铺商品",
       status: item.status || item.audit_status || "已同步",
+    };
+  });
+}
+
+function normalizeCreators(upstream) {
+  const data = upstream.data || {};
+  const creators = data.creators || data.marketplace_creators || data.creator_profiles || data.results || [];
+  return creators.map((item, index) => {
+    const profile = item.profile || item.creator_profile || item;
+    const username = profile.username || profile.handle || profile.creator_username || profile.tiktok_username || profile.nick_name || `creator_${index + 1}`;
+    const nickname = profile.display_name || profile.nickname || profile.name || username;
+    const followers = Number(profile.follower_count || profile.followers || profile.fans || 0);
+    const category = profile.category || profile.main_category || profile.vertical || "TikTok Shop";
+    const region = profile.region || profile.country || profile.market || "-";
+    const gmv = profile.gmv || profile.monthly_gmv || profile.sales_amount || "-";
+    const replyRate = profile.reply_rate || profile.response_rate || "-";
+    return {
+      id: Number(String(profile.creator_id || profile.open_id || profile.id || Date.now() + index).replace(/\D/g, "").slice(-9)) || Date.now() + index,
+      sourceId: profile.creator_id || profile.open_id || profile.id || "",
+      username: String(username).replace(/^@/, ""),
+      nickname,
+      type: "联盟达人",
+      category,
+      region,
+      followers,
+      gmv: String(gmv),
+      replyRate: String(replyRate),
+      tags: ["TikTok API"],
+      status: "待联系",
+      email: "",
+      whatsapp: "",
+      notes: "来自 TikTok Shop Affiliate Seller 达人搜索 API。",
     };
   });
 }
@@ -341,6 +390,16 @@ async function handle(req, res) {
       return json(res, 200, { ok: true, upstream, products: normalizeProducts(upstream) });
     }
 
+    if (requestUrl.pathname === "/api/tiktok/creators/search") {
+      const body = req.method === "POST" ? await readRequestBody(req) : {};
+      const shopCipher = body.shop_cipher || requestUrl.searchParams.get("shop_cipher") || "";
+      const keyword = body.keyword || requestUrl.searchParams.get("keyword") || "";
+      const pageSize = body.page_size || requestUrl.searchParams.get("page_size") || 12;
+      const pageToken = body.page_token || requestUrl.searchParams.get("page_token") || "";
+      const upstream = await searchCreators(shopCipher, keyword, pageSize, pageToken);
+      return json(res, 200, { ok: true, upstream, creators: normalizeCreators(upstream) });
+    }
+
     return json(res, 404, { ok: false, code: "NOT_FOUND", message: "API route not found" });
   } catch (error) {
     return json(res, error.statusCode || 500, error.payload || { ok: false, code: "SERVER_ERROR", message: error.message });
@@ -363,4 +422,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { generateSign, normalizeProducts, handle };
+module.exports = { generateSign, normalizeProducts, normalizeCreators, handle };

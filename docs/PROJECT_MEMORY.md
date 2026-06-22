@@ -1,6 +1,6 @@
 # KOL Compass 项目记忆
 
-更新时间：2026-06-22 15:05 CST
+更新时间：2026-06-22 15:30 CST
 
 ## 当前工作目录
 
@@ -92,6 +92,8 @@ node smoke-test.js
 - 合作管理已支持按达人/产品/负责人/备注搜索，并支持全部/已产出/未产出筛选；筛选后的当前视图会汇总 GMV、订单、佣金+投流和 ROI，便于复投或终止判断。
 - 平台管理端已支持保存 TikTok API 本地配置：client_key、OAuth Redirect URL、scope、最近检查时间；client_secret 明确不保存到前端。
 - 已新增本地 TikTok Shop API 后端 `server.js`：支持 `/api/health`、授权链接、OAuth 回调换 token、读取已授权店铺、商品搜索同步；token 保存到 `.data/tiktok-token.json`，`.data/` 与 `.env.local` 已加入 `.gitignore`。
+- TikTok Shop sandbox OAuth 已跑通：已授权测试店铺 `SANDBOX_VN7651055422359521044`，region `VN`，商品同步成功返回 1 个商品。
+- 已接入 Affiliate Seller 达人搜索后端 `/api/tiktok/creators/search`，对应 TikTok Open API `/affiliate_seller/202508/marketplace_creators/search`；当前 sandbox 实测返回 `36009002 Too many requests for downstream`，前端会把真实错误写入同步日志，不伪造达人数据。
 - TikTok API 未授权或授权阻塞时，商品、达人、内容/订单同步按钮会优先调用真实后端并展示失败原因；不会伪造同步成功。
 - 平台管理端功能开关已从静态展示变成真实状态：TikTok 私信、Email、WhatsApp、消息翻译、Stripe 支付可切换。
 - 平台管理端已支持本地商家统计和入驻审批台账：申请商家、待审批、已通过、接入阻塞统计可见；入驻申请可通过、驳回、恢复待审；动作写入系统消息和操作日志，不调用真实商户系统、支付系统或 TikTok API。
