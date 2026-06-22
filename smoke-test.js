@@ -76,6 +76,7 @@ async function main() {
   assert("outreach quota and safety rules enforced", ["planQuotas", "quotaRemaining", "creatorOutreachBlockReason", "markNotInterested", "clearNotInterested", "selectPlan"].every((name) => app.includes(name)) && app.includes("24小时内已建联") && app.includes("不感兴趣至"));
   assert("outreach replies supported", ["openReplyModal", "saveReply", "replyChannelOptions"].every((name) => app.includes(`function ${name}`)) && app.includes("回复达人"));
   assert("outreach filters supported", ["outreachSearch", "outreachStatus", "outreachChannel"].every((name) => app.includes(name)) && app.includes("搜索达人、产品、消息"));
+  assert("outreach status summary supported", ["建联总数", "待达人回复", "待我方回复", "已转合作", "当前显示"].every((text) => app.includes(text)));
   assert("auto reply CRUD and local trigger test supported", ["openAutoReplyModal", "saveAutoReply", "deleteAutoReply", "openAutoReplyTest", "runAutoReplyTest", "autoReplyMatches"].every((name) => app.includes(`function ${name}`)) && app.includes("自动回复规则最多 50 条"));
   assert("message template CRUD supported", ["openTemplateModal", "saveTemplate", "deleteTemplate"].every((name) => app.includes(`function ${name}`)) && app.includes("支持变量"));
   assert("outreach workflow advances to sample and cooperation", ["advanceOutreach", "createSampleFromOutreach", "createCoopFromOutreach", "deleteOutreach"].every((name) => app.includes(`function ${name}`)));

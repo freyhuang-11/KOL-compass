@@ -31,7 +31,7 @@
 - `stop-5175.bat`
 - `smoke-test.js`
 
-最近一次心跳检查：2026-06-22 05:24 CST，当前分支已连接 GitHub 远端，`node --check app.js` 与 `node smoke-test.js` 通过。本轮增强订阅计费：账单与支付记录本地台账、套餐切换写入本地账单/系统消息/操作日志、明确不发起真实扣款或开票；截图 `smoke-billing.png` 已重新生成并目视检查通过。
+最近一次心跳检查：2026-06-22 09:30 CST，当前分支已连接 GitHub 远端，已增强建联记录页状态总览：建联总数、待达人回复、待我方回复、已转合作状态卡片可直接筛选，列表展示当前显示条数；`node --check app.js` 与 `node smoke-test.js` 已通过，截图 `smoke-outreach.png` 已重新生成并目视复核，下一步小步提交推送。
 
 启动：
 

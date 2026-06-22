@@ -718,6 +718,10 @@ function renderKolPool() {
 function renderOutreach() {
   const channels = Array.from(new Set(state.outreach.map((o) => o.channel).filter(Boolean)));
   const statuses = Array.from(new Set(state.outreach.map((o) => o.status).filter(Boolean)));
+  const totalCount = state.outreach.length;
+  const waitingCreatorCount = state.outreach.filter((o) => o.status === "待回复").length;
+  const waitingTeamCount = state.outreach.filter((o) => o.status === "待我方回复").length;
+  const convertedCount = state.outreach.filter((o) => o.status === "已转合作").length;
   const rows = state.outreach.filter((o) => {
     const c = creator(o.creatorId);
     const p = product(o.productId);
@@ -729,6 +733,12 @@ function renderOutreach() {
   });
   return `
     ${pageHead("建联记录", "统一查看 TikTok 私信、Email、WhatsApp 的沟通状态和待处理消息。")}
+    <div class="grid grid-4" style="margin-bottom:16px">
+      ${stat("建联总数", totalCount, "全部沟通记录", "setFilter('outreachStatus','全部')")}
+      ${stat("待达人回复", waitingCreatorCount, "已发出邀请，等待达人响应", "setFilter('outreachStatus','待回复')")}
+      ${stat("待我方回复", waitingTeamCount, "达人已响应，需要 BD 处理", "setFilter('outreachStatus','待我方回复')")}
+      ${stat("已转合作", convertedCount, "已进入合作管理履约", "setFilter('outreachStatus','已转合作')")}
+    </div>
     <div class="toolbar">
       <div class="filters">
         <input class="input" placeholder="搜索达人、产品、消息..." value="${escapeHtml(state.filters.outreachSearch)}" oninput="setFilter('outreachSearch', this.value)" />
@@ -738,6 +748,7 @@ function renderOutreach() {
         <select class="select" onchange="setFilter('outreachChannel', this.value)">
           ${["全部", ...channels].map((x) => `<option ${state.filters.outreachChannel === x ? "selected" : ""}>${escapeHtml(x)}</option>`).join("")}
         </select>
+        <span class="muted">当前显示 ${rows.length} / ${totalCount} 条</span>
       </div>
     </div>
     ${table(["达人", "产品", "渠道", "状态", "最后消息", "更新时间", "操作"], rows.map((o) => [
