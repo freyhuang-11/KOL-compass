@@ -57,7 +57,7 @@ const marketRegionLabels = {
 };
 const followerTierOptions = ["<10K", "10K-100K", "100K-1M", ">1M"];
 const replyRateOptions = [">=60%", "40%-60%", "<40%"];
-const gmvRangeOptions = ["<$10K", "$10K-$50K", "$50K-$100K", "$100K-$500K", ">$500K"];
+const gmvRangeOptions = ["有GMV", "无GMV"];
 const contactOptions = ["有Email", "有WhatsApp", "有Email或WhatsApp", "无联系方式"];
 const tiktokScopeOptions = [["product", "商品"], ["affiliate", "联盟/达人"], ["messaging", "消息"], ["order", "订单"]];
 const planQuotas = { "免费版": 100, "基础版": 1000, "专业版": 5000, "企业版": Infinity };
@@ -122,7 +122,7 @@ const seed = {
       translation: true,
       stripePayment: false,
     },
-    demoDataClearedVersion: 1,
+    demoDataClearedVersion: 2,
   },
   products: [],
   creators: [],
@@ -157,8 +157,8 @@ function normalizeState(next) {
   merged.filters = { ...seed.filters, ...(next.filters || {}) };
   merged.settings = { ...seed.settings, ...(next.settings || {}) };
   merged.settings.featureSwitches = { ...seed.settings.featureSwitches, ...((next.settings || {}).featureSwitches || {}) };
-  if ((next.settings || {}).demoDataClearedVersion !== 1) purgeDemoData(merged);
-  merged.settings.demoDataClearedVersion = 1;
+  if ((next.settings || {}).demoDataClearedVersion !== 2) purgeDemoData(merged);
+  merged.settings.demoDataClearedVersion = 2;
   if (Array.isArray(merged.autoReplies)) merged.autoReplies = merged.autoReplies.map(normalizeAutoReply);
   if (Array.isArray(merged.team)) merged.team = merged.team.map(normalizeTeamMember);
   if (!Array.isArray(merged.merchantApplications)) merged.merchantApplications = [];
@@ -393,12 +393,15 @@ function creatorGmvNumber(value) {
 
 function creatorGmvRangeOk(gmv, range) {
   const value = creatorGmvNumber(gmv);
-  if (range === "<$10K") return value < 10000;
-  if (range === "$10K-$50K") return value >= 10000 && value < 50000;
-  if (range === "$50K-$100K") return value >= 50000 && value < 100000;
-  if (range === "$100K-$500K") return value >= 100000 && value < 500000;
-  if (range === ">$500K") return value >= 500000;
+  if (range === "有GMV") return value > 0 || (gmv && gmv !== "-");
+  if (range === "无GMV") return !value && (!gmv || gmv === "-");
   return true;
+}
+
+function creatorGmvDisplay(gmv) {
+  const text = String(gmv || "-").trim();
+  if (!text || text === "-") return "-";
+  return text.replace(/\s*\/\s*月/g, "").replace(/\/月/g, "");
 }
 
 function metricNumber(value) {
@@ -852,7 +855,7 @@ function renderKolPool() {
         <div class="filter-search-row">
           <input class="input kol-search-input" placeholder="搜索达人、用户名、标签..." value="${escapeHtml(state.filters.kolSearch)}" oninput="setFilter('kolSearch', this.value)" />
           ${singleFilterSelect("kolFollowers", "粉丝量级", followerTierOptions)}
-          ${singleFilterSelect("kolGmv", "近30天GMV", gmvRangeOptions)}
+          ${singleFilterSelect("kolGmv", "TikTok GMV", gmvRangeOptions)}
           ${singleFilterSelect("kolReplyRate", "回复率", replyRateOptions)}
           ${singleFilterSelect("kolContact", "联系方式", contactOptions)}
           <label class="filter-select">
@@ -872,7 +875,7 @@ function renderKolPool() {
         <button class="btn primary" onclick="openOutreachModal()">一键建联(${state.bulkCreatorIds.length})</button>
       </div>
     </div>
-    ${rows.length ? table(["选择", "达人", "类型", "类目/地区", "粉丝", "GMV", "均播/直播UV", "回复率", "状态/标签", "操作"], rows.map((c) => {
+    ${rows.length ? table(["选择", "达人", "类型", "类目/地区", "粉丝", "TikTok GMV（接口币种）", "均播/直播UV", "回复率", "状态/标签", "操作"], rows.map((c) => {
       const blockReason = creatorOutreachBlockReason(c);
       return [
       blockReason ? `<span class="muted">${escapeHtml(blockReason)}</span>` : `<input type="checkbox" ${state.bulkCreatorIds.includes(c.id) ? "checked" : ""} onchange="toggleCreatorSelection(${c.id}, this.checked)" aria-label="选择 @${escapeHtml(c.username)}" />`,
@@ -880,7 +883,7 @@ function renderKolPool() {
       normalizeCreatorType(c.type, c),
       `${creatorCategoryValues(c).map(escapeHtml).join(" / ")}<br><span class="muted">${escapeHtml(c.region)}</span>`,
       c.followers.toLocaleString(),
-      c.gmv,
+      creatorGmvDisplay(c.gmv),
       `<div class="metric-stack"><span>均播 ${creatorMetricValue(c, "avgVideoViews")}</span><span>直播UV ${creatorMetricValue(c, "avgLiveUv")}</span></div>`,
       c.replyRate,
       `${c.status === "不感兴趣" ? badge("不感兴趣") : ""} ${creatorVisibleTags(c)}`,
@@ -2524,7 +2527,7 @@ function openCreatorModal(id = 0) {
       ${selectField("category", "TikTok 类目", categoryOptions, row?.category || "美妆个护")}
       ${selectField("region", "市场地区", regionOptions, row?.region || "新加坡")}
       ${field("followers", "粉丝数", "100000", row?.followers ?? "")}
-      ${field("gmv", "近30天GMV", "$10K/月", row?.gmv || "")}
+      ${field("gmv", "TikTok GMV（接口币种）", "接口返回值，例如 VND 1000000", creatorGmvDisplay(row?.gmv || ""))}
       ${field("replyRate", "回复率", "35%", row?.replyRate || "")}
       ${field("email", "Email", "creator@example.com", row?.email || "")}
       ${field("whatsapp", "WhatsApp", "+62812345678", row?.whatsapp || "")}

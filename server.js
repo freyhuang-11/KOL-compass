@@ -114,6 +114,7 @@ function normalizeStoredCreator(row = {}) {
     type: normalizeCreatorType(row.type, { avgVideoViews, avgLiveUv }),
     avgVideoViews,
     avgLiveUv,
+    gmv: sanitizeGmvValue(row.gmv || "-"),
     tags: normalizeCreatorTags(row.tags),
   };
 }
@@ -836,14 +837,19 @@ function startCreatorAutoImportScheduler() {
 
 function formatMoney(value) {
   if (!value) return "-";
-  if (typeof value === "string" || typeof value === "number") return String(value);
-  if (value.formatted_range) return `${value.formatted_range}${value.currency ? ` ${value.currency}` : ""}`;
+  if (typeof value === "string" || typeof value === "number") return sanitizeGmvValue(String(value));
+  if (value.formatted_range) return sanitizeGmvValue(`${value.formatted_range}${value.currency ? ` ${value.currency}` : ""}`);
   if (value.amount) {
     const amount = Number(value.amount);
     const formatted = Number.isFinite(amount) ? amount.toLocaleString(undefined, { maximumFractionDigits: 0 }) : String(value.amount);
-    return `${value.currency || ""} ${formatted}`.trim();
+    return sanitizeGmvValue(`${value.currency || ""} ${formatted}`.trim());
   }
   return "-";
+}
+
+function sanitizeGmvValue(value) {
+  const text = String(value || "-").trim();
+  return text ? text.replace(/\s*\/\s*月/g, "").replace(/\/月/g, "") : "-";
 }
 
 async function handle(req, res) {
