@@ -25,10 +25,13 @@ const CREATOR_MARKET_PRIORITY = (process.env.KOL_CREATOR_MARKET_PRIORITY || "SG,
   .map((x) => x.trim().toUpperCase())
   .filter(Boolean);
 const CREATOR_AUTO_IMPORT_ENABLED = process.env.KOL_CREATOR_AUTO_IMPORT_ENABLED !== "false";
-const CREATOR_AUTO_IMPORT_INTERVAL_MS = Number(process.env.KOL_CREATOR_AUTO_IMPORT_INTERVAL_MS || 60 * 60 * 1000);
-const CREATOR_AUTO_IMPORT_INITIAL_DELAY_MS = Number(process.env.KOL_CREATOR_AUTO_IMPORT_INITIAL_DELAY_MS || 30 * 1000);
+const CREATOR_AUTO_IMPORT_INTERVAL_MS = Number(process.env.KOL_CREATOR_AUTO_IMPORT_INTERVAL_MS || 5 * 1000);
+const CREATOR_AUTO_IMPORT_INITIAL_DELAY_MS = Number(process.env.KOL_CREATOR_AUTO_IMPORT_INITIAL_DELAY_MS || 5 * 1000);
 const CREATOR_AUTO_IMPORT_PAGE_SIZE = Number(process.env.KOL_CREATOR_AUTO_IMPORT_PAGE_SIZE || 20);
-const CREATOR_AUTO_IMPORT_PAGES_PER_RUN = Number(process.env.KOL_CREATOR_AUTO_IMPORT_PAGES_PER_RUN || 2);
+const CREATOR_AUTO_IMPORT_PAGES_PER_RUN = Number(process.env.KOL_CREATOR_AUTO_IMPORT_PAGES_PER_RUN || 1);
+const CREATOR_SEARCH_PAGE_DELAY_MS = Number(process.env.KOL_CREATOR_SEARCH_PAGE_DELAY_MS || 5000);
+const CREATOR_RATE_LIMIT_BACKOFF_MS = parseDurationSchedule(process.env.KOL_CREATOR_RATE_LIMIT_BACKOFF_MS || "300000,900000,3600000");
+const CREATOR_FULL_REFRESH_INTERVAL_MS = Number(process.env.KOL_CREATOR_FULL_REFRESH_INTERVAL_MS || 24 * 60 * 60 * 1000);
 let creatorJobRunning = false;
 
 function loadEnvFile(fileName) {
@@ -49,6 +52,33 @@ function loadEnvFile(fileName) {
 
 function ensureDataDir() {
   fs.mkdirSync(DATA_DIR, { recursive: true });
+}
+
+function parseDurationSchedule(value) {
+  const values = String(value || "")
+    .split(",")
+    .map((item) => Number(item.trim()))
+    .filter((item) => Number.isFinite(item) && item > 0);
+  return values.length ? values : [300000, 900000, 3600000];
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
+}
+
+function isoAfter(ms) {
+  return new Date(Date.now() + Math.max(0, Number(ms) || 0)).toISOString();
+}
+
+function isFutureIso(value) {
+  if (!value) return false;
+  const time = Date.parse(value);
+  return Number.isFinite(time) && time > Date.now();
+}
+
+function msSinceIso(value) {
+  const time = Date.parse(value || "");
+  return Number.isFinite(time) ? Date.now() - time : Number.POSITIVE_INFINITY;
 }
 
 function readJson(filePath, fallback = null) {
@@ -139,6 +169,31 @@ function readCreatorJobState() {
 
 function writeCreatorJobState(state) {
   writeJson(CREATOR_JOB_FILE, state || { markets: {}, runs: [] });
+}
+
+function creatorNextPageToken(upstream) {
+  return upstream?.data?.next_page_token
+    || upstream?.data?.nextPageToken
+    || upstream?.data?.pagination?.next_page_token
+    || upstream?.data?.pagination?.nextPageToken
+    || "";
+}
+
+function isTikTokRateLimitError(error) {
+  const payload = error?.payload || {};
+  const upstream = payload.upstream || {};
+  const code = String(payload.code || upstream.code || "");
+  const message = String(error?.message || payload.message || upstream.message || "").toLowerCase();
+  return error?.statusCode === 429
+    || code === "36009002"
+    || message.includes("too many request")
+    || message.includes("rate limit")
+    || message.includes("downstream");
+}
+
+function creatorBackoffMs(rateLimitCount) {
+  const index = Math.max(0, Math.min((Number(rateLimitCount) || 1) - 1, CREATOR_RATE_LIMIT_BACKOFF_MS.length - 1));
+  return CREATOR_RATE_LIMIT_BACKOFF_MS[index];
 }
 
 function json(res, statusCode, payload) {
@@ -675,46 +730,17 @@ function upsertPlatformCreators(incoming, shop = null) {
 }
 
 async function importPlatformCreatorsFromTikTok(options = {}) {
-  const shops = await getAuthorizedShops();
-  const categoryMap = await refreshCategoryMap(shops);
-  relabelPlatformCreators(categoryMap);
-  const pageSize = [12, 20].includes(Number(options.page_size)) ? Number(options.page_size) : 12;
-  const maxPages = Math.max(1, Math.min(Number(options.max_pages) || 1, 10));
-  const keyword = options.keyword || "";
-  let imported = 0;
-  let successMarkets = 0;
-  const failures = [];
-
-  for (const shop of shops) {
-    const cipher = shopCipher(shop);
-    if (!cipher) continue;
-    let pageToken = "";
-    let page = 0;
-    let marketImported = 0;
-    try {
-      do {
-        const upstream = await searchCreators(cipher, keyword, pageSize, pageToken);
-        const normalized = normalizeCreators(upstream, categoryMap);
-        const result = upsertPlatformCreators(normalized, shop);
-        marketImported += normalized.length;
-        pageToken = upstream.data?.next_page_token || upstream.data?.nextPageToken || upstream.data?.pagination?.next_page_token || "";
-        page += 1;
-        if (pageToken) await new Promise((resolve) => setTimeout(resolve, 700));
-        if (result.total >= 20000) break;
-      } while (pageToken && page < maxPages);
-      imported += marketImported;
-      successMarkets += 1;
-    } catch (error) {
-      imported += marketImported;
-      if (marketImported > 0) successMarkets += 1;
-      failures.push({ shop: shopLabel(shop), message: error.message || "Import failed" });
-    }
-  }
-
+  const run = await runCreatorAutoImportOnce("manual-import", {
+    pagesPerRun: options.max_pages,
+    pageSize: options.page_size,
+    force: options.force === true,
+  });
   return {
-    imported,
-    successMarkets,
-    failures,
+    imported: run.imported || 0,
+    successMarkets: Array.isArray(run.processed) ? run.processed.filter((row) => row.imported > 0 || row.status === "processed").length : 0,
+    failures: run.failures || [],
+    skipped: run.skippedMarkets || [],
+    nextRunAt: run.nextRunAt || "",
     total: readPlatformCreators().length,
     creators: readPlatformCreators(),
   };
@@ -736,7 +762,7 @@ function sortShopsByCreatorPriority(shops) {
   });
 }
 
-async function runCreatorAutoImportOnce(reason = "scheduled") {
+async function runCreatorAutoImportOnce(reason = "scheduled", options = {}) {
   if (creatorJobRunning) return { skipped: true, reason: "job_already_running" };
   creatorJobRunning = true;
   const startedAt = new Date().toISOString();
@@ -744,6 +770,10 @@ async function runCreatorAutoImportOnce(reason = "scheduled") {
   let imported = 0;
   const failures = [];
   const processed = [];
+  const skippedMarkets = [];
+  const pageSize = [12, 20].includes(Number(options.pageSize)) ? Number(options.pageSize) : CREATOR_AUTO_IMPORT_PAGE_SIZE;
+  const pagesPerRun = Math.max(1, Math.min(Number(options.pagesPerRun) || CREATOR_AUTO_IMPORT_PAGES_PER_RUN, 5));
+  const force = options.force === true;
 
   try {
     const shops = sortShopsByCreatorPriority(await getAuthorizedShops());
@@ -757,44 +787,68 @@ async function runCreatorAutoImportOnce(reason = "scheduled") {
 
       const key = cipher;
       const marketState = jobState.markets[key] || {};
+      const wasExhausted = marketState.exhausted === true;
+      const shouldRefreshExhausted = wasExhausted && msSinceIso(marketState.lastExhaustedAt || marketState.lastRunAt) >= CREATOR_FULL_REFRESH_INTERVAL_MS;
+      if (!force && wasExhausted && !shouldRefreshExhausted) {
+        const nextRunAt = marketState.nextRunAt || isoAfter(CREATOR_FULL_REFRESH_INTERVAL_MS - msSinceIso(marketState.lastExhaustedAt || marketState.lastRunAt));
+        jobState.markets[key] = { ...marketState, market: code, shop: shopLabel(shop), nextRunAt };
+        skippedMarkets.push({ market: code, shop: shopLabel(shop), reason: "market_exhausted", nextRunAt });
+        continue;
+      }
+      if (!force && isFutureIso(marketState.nextRunAt)) {
+        skippedMarkets.push({ market: code, shop: shopLabel(shop), reason: "waiting_for_next_run", nextRunAt: marketState.nextRunAt });
+        continue;
+      }
       let pageToken = marketState.nextPageToken || "";
+      if (shouldRefreshExhausted || force) pageToken = "";
       let marketImported = 0;
       let pages = 0;
 
       try {
-        while (pages < CREATOR_AUTO_IMPORT_PAGES_PER_RUN) {
-          const upstream = await searchCreators(cipher, "", CREATOR_AUTO_IMPORT_PAGE_SIZE, pageToken);
+        while (pages < pagesPerRun) {
+          if (pages > 0) await sleep(CREATOR_SEARCH_PAGE_DELAY_MS);
+          const upstream = await searchCreators(cipher, "", pageSize, pageToken);
           const normalized = normalizeCreators(upstream, categoryMap);
           upsertPlatformCreators(normalized, shop);
           marketImported += normalized.length;
           imported += normalized.length;
-          pageToken = upstream.data?.next_page_token || upstream.data?.nextPageToken || upstream.data?.pagination?.next_page_token || "";
+          pageToken = creatorNextPageToken(upstream);
           pages += 1;
           if (!pageToken) break;
-          await new Promise((resolve) => setTimeout(resolve, 1500));
         }
+        const exhausted = !pageToken;
+        const nextRunAt = exhausted ? isoAfter(CREATOR_FULL_REFRESH_INTERVAL_MS) : isoAfter(CREATOR_AUTO_IMPORT_INTERVAL_MS);
         jobState.markets[key] = {
           market: code,
           shop: shopLabel(shop),
           nextPageToken: pageToken,
           lastImported: marketImported,
           lastRunAt: new Date().toISOString(),
-          exhausted: !pageToken,
+          nextRunAt,
+          exhausted,
+          lastExhaustedAt: exhausted ? new Date().toISOString() : marketState.lastExhaustedAt || "",
+          rateLimitCount: 0,
           lastError: "",
         };
-        processed.push({ market: code, shop: shopLabel(shop), imported: marketImported, nextPageToken: Boolean(pageToken) });
+        processed.push({ market: code, shop: shopLabel(shop), imported: marketImported, pages, nextPageToken: Boolean(pageToken), exhausted, nextRunAt, status: "processed" });
       } catch (error) {
         const message = error.message || "Creator import failed";
+        const rateLimited = isTikTokRateLimitError(error);
+        const rateLimitCount = rateLimited ? (Number(marketState.rateLimitCount) || 0) + 1 : Number(marketState.rateLimitCount) || 0;
+        const nextRunAt = rateLimited ? isoAfter(creatorBackoffMs(rateLimitCount)) : isoAfter(CREATOR_AUTO_IMPORT_INTERVAL_MS);
         jobState.markets[key] = {
           ...marketState,
           market: code,
           shop: shopLabel(shop),
           nextPageToken: pageToken || marketState.nextPageToken || "",
           lastRunAt: new Date().toISOString(),
+          nextRunAt,
           exhausted: false,
+          rateLimitCount,
+          lastRateLimitedAt: rateLimited ? new Date().toISOString() : marketState.lastRateLimitedAt || "",
           lastError: message,
         };
-        failures.push({ market: code, shop: shopLabel(shop), message });
+        failures.push({ market: code, shop: shopLabel(shop), message, rateLimited, nextRunAt });
       }
     }
   } finally {
@@ -808,7 +862,12 @@ async function runCreatorAutoImportOnce(reason = "scheduled") {
     priority: CREATOR_MARKET_PRIORITY,
     imported,
     processed,
+    skippedMarkets,
     failures,
+    nextRunAt: Object.values(jobState.markets || {})
+      .map((row) => row.nextRunAt)
+      .filter(Boolean)
+      .sort()[0] || "",
     total: readPlatformCreators().length,
   };
   jobState.lastRun = run;
@@ -832,7 +891,7 @@ function startCreatorAutoImportScheduler() {
       state.lastRun = { reason: "scheduled", finishedAt: new Date().toISOString(), imported: 0, failures: [{ message: error.message }] };
       writeCreatorJobState(state);
     });
-  }, Math.max(60_000, CREATOR_AUTO_IMPORT_INTERVAL_MS));
+  }, Math.max(5_000, CREATOR_AUTO_IMPORT_INTERVAL_MS));
 }
 
 function formatMoney(value) {

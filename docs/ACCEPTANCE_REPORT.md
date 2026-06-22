@@ -27,7 +27,7 @@ node smoke-test.js
 
 ## 未完成/需继续验收
 
-- TikTok 达人搜索后台任务需要更稳的节流和退避。
+- TikTok 达人搜索后台任务已按 5 秒巡检、`nextRunAt` 退避续跑方向处理；仍需真实长时间运行观察。
 - SG / MY / TH / PH 需要真实授权店铺后才能回填对应市场达人。
 - Email SMTP/IMAP、WhatsApp Business、TikTok 私信真实发送尚未完成生产接入。
 - `app.js` 需要模块化拆分，降低维护风险。
