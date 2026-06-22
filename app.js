@@ -114,6 +114,13 @@ const seed = {
     tiktokShops: [],
     selectedTikTokShopCipher: "",
     tiktokTokenSavedAt: "",
+    emailConnected: false,
+    emailProvider: "Gmail",
+    emailAddress: "",
+    emailSmtpHost: "smtp.gmail.com",
+    emailSmtpPort: "587",
+    emailImapHost: "imap.gmail.com",
+    emailImapPort: "993",
     planName: "专业版",
     featureSwitches: {
       tiktokMessaging: true,
@@ -883,7 +890,7 @@ function renderKolPool() {
         <button class="btn primary" onclick="openOutreachModal()">一键建联(${state.bulkCreatorIds.length})</button>
       </div>
     </div>
-    ${rows.length ? table(["选择", "达人", "类型", "类目/地区", "粉丝", "TikTok GMV（接口币种）", "均播/直播UV", "回复率", "状态/标签", "操作"], rows.map((c) => {
+    ${rows.length ? table(["选择", "达人", "类型", "类目/地区", "粉丝", "TikTok GMV（接口币种）", "内容表现", "回复率", "状态/标签", "操作"], rows.map((c) => {
       const blockReason = creatorOutreachBlockReason(c);
       return [
       blockReason ? `<span class="muted">${escapeHtml(blockReason)}</span>` : `<input type="checkbox" ${state.bulkCreatorIds.includes(c.id) ? "checked" : ""} onchange="toggleCreatorSelection(${c.id}, this.checked)" aria-label="选择 @${escapeHtml(c.username)}" />`,
@@ -892,13 +899,19 @@ function renderKolPool() {
       `${creatorCategoryValues(c).map(escapeHtml).join(" / ")}<br><span class="muted">${escapeHtml(c.region)}</span>`,
       c.followers.toLocaleString(),
       creatorGmvDisplay(c.gmv),
-      `<div class="metric-stack"><span>均播 ${creatorMetricValue(c, "avgVideoViews")}</span><span>直播UV ${creatorMetricValue(c, "avgLiveUv")}</span></div>`,
+      `<div class="metric-stack"><span>视频平均播放 ${creatorMetricValue(c, "avgVideoViews")}</span><span>直播观看人数 ${creatorMetricValue(c, "avgLiveUv")}</span></div>`,
       c.replyRate,
       `${c.status === "不感兴趣" ? badge("不感兴趣") : ""} ${creatorVisibleTags(c)}`,
       `${blockReason ? "" : `<button class="btn" onclick="openOutreachModal(${c.id})">建联</button>`} <button class="btn ghost" onclick="showCreator(${c.id})">详情</button> ${c.status === "不感兴趣" ? `<button class="btn ghost" onclick="clearNotInterested(${c.id})">恢复建联</button>` : `<button class="btn ghost" onclick="markNotInterested(${c.id})">不感兴趣</button>`} <button class="btn ghost" onclick="blacklistCreator(${c.id})">拉黑</button>`,
     ];
     })) : `<div class="empty-state">当前市场有 ${realMarketCreators.length} 个平台达人，但被筛选条件过滤为空。<button class="btn" onclick="resetKolFilters()">清空筛选</button></div>`}
   `;
+}
+
+function outreachMessageCell(o) {
+  const translated = o.translatedMessage ? `<div class="muted" style="margin-top:6px">翻译稿（${escapeHtml(o.translationLanguage || "目标语言")}）：${escapeHtml(o.translatedMessage)}</div>` : "";
+  const invite = o.inviteLink ? `<div style="margin-top:8px"><a class="link" href="${escapeHtml(o.inviteLink)}">查看邀请链接</a> <button class="btn ghost" onclick="copyInviteLink(${o.id})">复制链接</button></div>` : "";
+  return `${escapeHtml(o.lastMessage)}${translated}${invite}`;
 }
 
 function renderOutreach() {
@@ -942,7 +955,7 @@ function renderOutreach() {
       product(o.productId)?.name || "-",
       o.channel,
       badge(o.status),
-      escapeHtml(o.lastMessage),
+      outreachMessageCell(o),
       o.updatedAt,
       outreachActions(o),
     ]))}
@@ -1173,7 +1186,7 @@ function renderCooperations() {
       const r = roi(c);
       return [
         personCell(creator(c.creatorId)),
-        product(c.productId)?.name || "-",
+        `${escapeHtml(product(c.productId)?.name || "-")}${c.inviteLink ? `<div style="margin-top:8px"><a class="link" href="${escapeHtml(c.inviteLink)}">邀请链接</a></div>` : ""}`,
         c.type,
         badge(c.status),
         `视频 ${c.videos || 0}<br>直播 ${c.lives || 0}<br><span class="muted">截止 ${c.dueDate || "-"}</span>`,
@@ -1463,7 +1476,7 @@ function renderCreatorDetail() {
       <div class="work-panel">
         <div class="card chat-frame">
           <div class="tabs"><span class="tab active">沟通记录</span><span class="tab">合作记录</span><span class="tab">基本信息</span></div>
-          ${records.map((r) => `<div class="message ${r.status === "待我方回复" ? "inbound" : "outbound"}"><b>${escapeHtml(r.channel)}</b> · ${badge(r.status)}<div>${escapeHtml(r.lastMessage)}</div><span class="muted">${escapeHtml(r.updatedAt)}</span><div style="margin-top:8px"><button class="btn ghost" onclick="openReplyModal(${r.id})">回复</button></div></div>`).join("") || `<div class="empty">暂无沟通记录。</div>`}
+          ${records.map((r) => `<div class="message ${r.status === "待我方回复" ? "inbound" : "outbound"}"><b>${escapeHtml(r.channel)}</b> · ${badge(r.status)}<div>${outreachMessageCell(r)}</div><span class="muted">${escapeHtml(r.updatedAt)}</span><div style="margin-top:8px"><button class="btn ghost" onclick="openReplyModal(${r.id})">回复</button></div></div>`).join("") || `<div class="empty">暂无沟通记录。</div>`}
           <div class="chat-input-bar">
             <input class="input" style="flex:1" placeholder="输入沟通内容..." />
             <button class="btn">选择模板</button>
@@ -1744,6 +1757,72 @@ function validateChannelForCreators(channel, targets) {
     return false;
   }
   return true;
+}
+
+function emailAccountConfigured() {
+  return Boolean(state.settings.emailConnected && state.settings.emailAddress);
+}
+
+function channelLabel(channel) {
+  if (channel === "TikTok私信") return "TikTok私信";
+  if (channel === "Email") return "Email";
+  if (channel === "WhatsApp") return "WhatsApp";
+  return channel || "-";
+}
+
+function validateChannelsForCreators(channels, targets) {
+  if (!channels.length) {
+    alert("请至少选择一个发送渠道。");
+    return false;
+  }
+  for (const channel of channels) {
+    if (!validateChannelForCreators(channel, targets)) return false;
+    if (channel === "Email" && !emailAccountConfigured()) {
+      openEmailSetupModal("outreach");
+      alert("Email 尚未绑定。请先完成邮箱配置，再用 Email 发送建联消息。");
+      return false;
+    }
+  }
+  return true;
+}
+
+function targetLanguageForCreator(c) {
+  const region = normalizeMarketRegion(c?.region || "");
+  if (region === "越南") return "越南语";
+  if (region === "泰国") return "泰语";
+  if (region === "马来西亚") return "马来语";
+  if (region === "菲律宾") return "菲律宾语";
+  if (region === "印尼" || region === "印度尼西亚") return "印尼语";
+  return "英语";
+}
+
+function languageOptionsForTargets(targets) {
+  const recommended = targetLanguageForCreator(targets[0]);
+  return fixedOptions([recommended, "英语", "越南语", "泰语", "马来语", "菲律宾语", "印尼语", "中文"], []).map((x) => [x, x]);
+}
+
+function translatedInviteDraft(lang, c, p) {
+  const name = c?.nickname || c?.username || "{KOL名称}";
+  const productName = p?.name || "{产品名称}";
+  const lines = {
+    英语: `Hi ${name}, we would like to invite you to collaborate on ${productName}.`,
+    越南语: `Chào ${name}, chúng tôi muốn mời bạn hợp tác quảng bá ${productName}.`,
+    泰语: `สวัสดี ${name}, เราอยากเชิญคุณร่วมโปรโมต ${productName}.`,
+    马来语: `Hai ${name}, kami ingin menjemput anda bekerjasama untuk mempromosikan ${productName}.`,
+    菲律宾语: `Hi ${name}, nais ka naming imbitahan na makipag-collaborate para sa ${productName}.`,
+    印尼语: `Halo ${name}, kami ingin mengundang Anda untuk berkolaborasi mempromosikan ${productName}.`,
+    中文: `Hi ${name}，我们想邀请你合作 ${productName}。`,
+  };
+  return lines[lang] || lines.英语;
+}
+
+function inviteLinkFor(creatorId, productId, outreachId = "") {
+  const params = new URLSearchParams({
+    creator: String(creatorId),
+    product: String(productId),
+  });
+  if (outreachId) params.set("outreach", String(outreachId));
+  return `${location.origin}${location.pathname}#invite?${params.toString()}`;
 }
 
 async function apiRequest(path, options = {}) {
@@ -2449,9 +2528,15 @@ function createSampleFromOutreach(id) {
   render();
 }
 
-function createCoopRecord(creatorId, productId, source = "手动创建") {
+function createCoopRecord(creatorId, productId, source = "手动创建", inviteLink = "") {
   const existing = state.cooperations.find((x) => x.creatorId === creatorId && x.productId === productId && x.status !== "合作结束");
-  if (existing) return existing;
+  if (existing) {
+    if (inviteLink && !existing.inviteLink) existing.inviteLink = inviteLink;
+    if (inviteLink && !String(existing.notes || "").includes(inviteLink)) {
+      existing.notes = `${existing.notes || ""}\n[${nowText()}] 已附加邀请链接：${inviteLink}`.trim();
+    }
+    return existing;
+  }
   const row = {
     id: Date.now(),
     creatorId,
@@ -2466,9 +2551,10 @@ function createCoopRecord(creatorId, productId, source = "手动创建") {
     commission: 0,
     adSpend: 0,
     contentUrl: "",
+    inviteLink,
     tags: ["需催发"],
     owner: "Sam",
-    notes: `[${nowText()}] ${source}，等待达人产出内容。`,
+    notes: `[${nowText()}] ${source}，等待达人产出内容。${inviteLink ? `\n邀请链接：${inviteLink}` : ""}`,
   };
   state.cooperations.unshift(row);
   const c = creator(creatorId);
@@ -2677,18 +2763,37 @@ function openOutreachModal(creatorId = 0) {
   const channelOptions = channelOptionsForCreators(targets);
   if (!channelOptions.length) return alert("当前没有可用发送渠道，请先到平台管理端开启 TikTok 私信、Email 或 WhatsApp。");
   const defaultTemplate = state.templates[0]?.content || "Hi {KOL名称}，我们想邀请你合作 {产品名称}。";
+  const defaultChannels = channelOptions.some(([value]) => value === "TikTok私信") ? ["TikTok私信"] : [channelOptions[0][0]];
+  const emailNotice = emailAccountConfigured()
+    ? `Email 已绑定：${escapeHtml(state.settings.emailAddress)}`
+    : `Email 尚未绑定，选择 Email 前请先完成邮箱配置。`;
   openModal("发起建联", `
     <div class="notice">本次将联系 ${targets.length} 位达人：${targets.slice(0, 4).map((c) => `@${escapeHtml(c.username)}`).join("、")}${targets.length > 4 ? " 等" : ""}。选择 Email 时，如果达人暂未有邮箱，系统会先创建联系方式补充任务，补充完成后再发送。</div>
     <div class="modal-section-title">选择建联商品</div>
     ${productPicker(state.products[0]?.id)}
     <div class="form-grid" style="margin-top:12px">
-      ${selectField("outreachChannel", "发送渠道", channelOptions, channelOptions[0][0])}
+      ${multiCheckField("outreachChannels", "发送渠道（可多选）", channelOptions, defaultChannels)}
       ${selectField("outreachTemplateId", "消息模板", [["0", "不使用模板"], ...state.templates.map((x) => [x.id, x.name])], state.templates[0]?.id || "0")}
       ${selectField("outreachSendMode", "发送方式", [["立即发送", "立即发送"], ["定时发送", "定时发送"]], "立即发送")}
       ${field("outreachScheduleAt", "定时发送时间", "2026-06-22 09:30", "")}
-      ${selectField("outreachInvite", "附加邀请链接", [["否", "否"], ["是", "是，创建待产出合作"]], "否")}
+      ${selectField("outreachInvite", "附加邀请链接", [["否", "不附加"], ["是", "生成邀请链接并创建待产出合作"]], "否")}
+      ${selectField("outreachLanguage", "翻译目标语言", languageOptionsForTargets(targets), targetLanguageForCreator(targets[0]))}
+    </div>
+    <div class="notice soft" style="margin-top:12px">
+      <b>Email 配置：</b>${emailNotice}
+      <button class="btn ghost" type="button" onclick="openEmailSetupModal('outreach')">配置邮箱/查看教程</button>
+    </div>
+    <div class="notice soft" style="margin-top:12px">
+      <b>邀请链接说明：</b>选择“生成邀请链接”后，链接会保存到建联记录和合作记录，不会因为点击按钮而丢失。
     </div>
     <div class="form-field" style="margin-top:12px"><label>消息内容</label><textarea id="outreachMessage" class="textarea">${escapeHtml(defaultTemplate)}</textarea></div>
+    <div class="translation-panel">
+      <div class="toolbar" style="margin:0 0 8px">
+        <div><b>翻译稿</b><div class="muted">用于 Email 或私信发送前预览，保存后进入建联记录。</div></div>
+        <button class="btn" type="button" onclick="translateOutreachDraft()">翻译成达人语言</button>
+      </div>
+      <textarea id="outreachTranslatedMessage" class="textarea" placeholder="点击翻译后生成目标语言版本。"></textarea>
+    </div>
   `, `<button class="btn primary" onclick="saveOutreach('${selectedIds.join(",")}')">确认建联</button>`);
 }
 
@@ -2698,6 +2803,82 @@ function renderTemplate(content, c, p) {
     .replaceAll("{达人名称}", c.nickname || c.username)
     .replaceAll("{产品名称}", p.name)
     .replaceAll("{联盟佣金率}", p.commission || "-");
+}
+
+function translateOutreachDraft() {
+  if (!featureEnabled("translation")) return alert("消息翻译功能已被平台管理端关闭。");
+  const selectedProductInput = document.querySelector('input[name="outreachProductId"]:checked');
+  const p = product(Number(selectedProductInput?.value)) || state.products[0];
+  const lang = document.getElementById("outreachLanguage")?.value || "英语";
+  const c = String(document.querySelector("#modalFoot .btn.primary")?.getAttribute("onclick") || "")
+    .match(/saveOutreach\('([^']*)'\)/)?.[1]
+    ?.split(",")
+    .map((id) => creator(Number(id)))
+    .filter(Boolean)[0] || state.creators[0];
+  const target = document.getElementById("outreachTranslatedMessage");
+  if (target) target.value = translatedInviteDraft(lang, c, p);
+}
+
+function openEmailSetupModal(origin = "") {
+  const provider = state.settings.emailProvider || "Gmail";
+  const tabs = ["Gmail+Lark", "Gmail", "Outlook/Hotmail", "其他"];
+  openModal("绑定发信邮箱", `
+    <div class="notice">Email 建联需要先配置发信邮箱。这里保存的是本地连接配置；真实生产环境应由后端加密保存应用专用密码。</div>
+    <div class="email-guide-layout">
+      <div>
+        <div class="form-grid">
+          ${selectField("emailProvider", "邮箱类型", tabs.map((x) => [x, x]), provider)}
+          ${field("emailAddress", "邮箱账号", "bd@brand.com", state.settings.emailAddress || "")}
+          ${field("emailSmtpHost", "SMTP（发件）", "smtp.gmail.com", state.settings.emailSmtpHost || "smtp.gmail.com")}
+          ${field("emailSmtpPort", "SMTP 端口", "587", state.settings.emailSmtpPort || "587")}
+          ${field("emailImapHost", "IMAP（收件）", "imap.gmail.com", state.settings.emailImapHost || "imap.gmail.com")}
+          ${field("emailImapPort", "IMAP 端口", "993", state.settings.emailImapPort || "993")}
+        </div>
+        <div class="form-field" style="margin-top:12px"><label>应用专用密码</label><input id="emailAppPassword" class="input" type="password" placeholder="不要填写登录密码，必须是应用专用密码" style="width:100%" /></div>
+      </div>
+      <div class="email-guide-card">
+        <h3>配置指南</h3>
+        <div class="guide-tabs">${tabs.map((x) => `<span class="guide-tab ${x === provider ? "active" : ""}">${escapeHtml(x)}</span>`).join("")}</div>
+        <div class="guide-row"><b>SMTP（发件）</b><code>smtp.gmail.com:587</code></div>
+        <div class="guide-row"><b>IMAP（收件）</b><code>imap.gmail.com:993</code></div>
+        <div class="guide-warning"><b>密码说明</b><br>必须使用“应用专用密码”，不是邮箱登录密码。</div>
+        <ol>
+          <li>登录 Google 账号，进入 myaccount.google.com。</li>
+          <li>打开“安全性”，先开启“两步验证”。</li>
+          <li>搜索“应用专用密码”，生成 16 位密码。</li>
+          <li>把 16 位密码填入左侧密码框。</li>
+          <li>每日发信量受邮箱服务商限制，Gmail 通常约 500 封/天。</li>
+        </ol>
+        <div class="notice soft">发件和收件可以用同一个邮箱账号，但服务器地址不能填反。</div>
+      </div>
+    </div>
+  `, `<button class="btn" onclick="closeModal()">关闭</button><button class="btn primary" onclick="saveEmailSettings()">保存邮箱配置</button>`);
+}
+
+function saveEmailSettings() {
+  const get = (id) => document.getElementById(id)?.value.trim() || "";
+  if (!get("emailAddress")) return alert("请填写邮箱账号。");
+  if (!get("emailAppPassword")) return alert("请填写应用专用密码。");
+  state.settings.emailProvider = get("emailProvider") || "Gmail";
+  state.settings.emailAddress = get("emailAddress");
+  state.settings.emailSmtpHost = get("emailSmtpHost");
+  state.settings.emailSmtpPort = get("emailSmtpPort");
+  state.settings.emailImapHost = get("emailImapHost");
+  state.settings.emailImapPort = get("emailImapPort");
+  state.settings.emailConnected = true;
+  state.settings.emailAppPasswordConfigured = true;
+  addSyncLog("Email 配置", "已保存", `已绑定发信邮箱：${state.settings.emailAddress}`);
+  pushMessage("Email 配置", `已绑定发信邮箱：${state.settings.emailAddress}。`);
+  saveState();
+  closeModal();
+  render();
+}
+
+function copyInviteLink(id) {
+  const row = state.outreach.find((x) => x.id === id);
+  if (!row?.inviteLink) return alert("该建联记录没有邀请链接。");
+  navigator.clipboard?.writeText(row.inviteLink);
+  alert("邀请链接已复制。");
 }
 
 function needsContactEnrichment(channel, c) {
@@ -2717,10 +2898,12 @@ function saveOutreach(idList) {
   if (!p) return alert("请先选择一个已同步商品。");
   const templateId = Number(document.getElementById("outreachTemplateId").value);
   const template = state.templates.find((x) => x.id === templateId);
-  const channel = document.getElementById("outreachChannel").value;
+  const channels = getCheckedValues("outreachChannels");
   const sendMode = document.getElementById("outreachSendMode").value;
   const scheduleAt = document.getElementById("outreachScheduleAt").value.trim();
   const invite = document.getElementById("outreachInvite").value === "是";
+  const translationLanguage = document.getElementById("outreachLanguage")?.value || "";
+  const editedTranslation = document.getElementById("outreachTranslatedMessage")?.value.trim() || "";
   const message = document.getElementById("outreachMessage").value.trim() || template?.content || "";
   const blocked = ids.map((id) => creator(id)).filter(Boolean).map((c) => [c, creatorOutreachBlockReason(c)]).filter(([, reason]) => reason);
   if (blocked.length) {
@@ -2735,31 +2918,43 @@ function saveOutreach(idList) {
     render();
     return;
   }
-  if (!validateChannelForCreators(channel, targets)) return;
+  if (!validateChannelsForCreators(channels, targets)) return;
   let created = 0;
   ids.forEach((id, index) => {
     const c = creator(id);
     if (!c || c.status === "黑名单") return;
     const rendered = renderTemplate(message, c, p);
     const scheduledText = sendMode === "定时发送" && scheduleAt ? `定时发送：${scheduleAt}` : "立即发送";
-    const pendingContact = needsContactEnrichment(channel, c);
-    if (pendingContact) queueContactEnrichment(c, channel, p.name);
-    state.outreach.unshift({
-      id: Date.now() + index,
-      creatorId: c.id,
-      productId: p.id,
-      channel,
-      status: pendingContact ? "联系方式补充中" : "待回复",
-      lastMessage: pendingContact ? `待补充 Email 后发送 · ${rendered}` : `${scheduledText} · ${rendered}`,
-      updatedAt: nowText(),
+    const inviteLink = invite ? inviteLinkFor(c.id, p.id) : "";
+    const translatedMessage = editedTranslation && targets.length === 1
+      ? editedTranslation
+      : (translationLanguage ? translatedInviteDraft(translationLanguage, c, p) : "");
+    channels.forEach((channel, channelIndex) => {
+      const pendingContact = needsContactEnrichment(channel, c);
+      if (pendingContact) queueContactEnrichment(c, channel, p.name);
+      const recordId = Date.now() + index * 10 + channelIndex;
+      const finalInviteLink = invite ? inviteLinkFor(c.id, p.id, recordId) : "";
+      const messageWithInvite = finalInviteLink ? `${rendered}\n邀请链接：${finalInviteLink}` : rendered;
+      state.outreach.unshift({
+        id: recordId,
+        creatorId: c.id,
+        productId: p.id,
+        channel,
+        status: pendingContact ? "联系方式补充中" : "待回复",
+        lastMessage: pendingContact ? `待补充 Email 后发送 · ${messageWithInvite}` : `${scheduledText} · ${messageWithInvite}`,
+        translatedMessage,
+        translationLanguage,
+        inviteLink: finalInviteLink,
+        updatedAt: nowText(),
+      });
+      created += 1;
     });
-    c.status = pendingContact ? "联系方式补充中" : "已发送";
-    if (invite) createCoopRecord(c.id, p.id, "建联时附加邀请链接");
-    created += 1;
+    c.status = channels.includes("Email") && needsContactEnrichment("Email", c) ? "联系方式补充中" : "已发送";
+    if (invite) createCoopRecord(c.id, p.id, "建联时附加邀请链接", inviteLink);
   });
   state.bulkCreatorIds = [];
-  logOperation("建联发送", channel, `创建 ${created} 条建联记录；产品：${p.name}；方式：${sendMode}`);
-  pushMessage("批量建联", `已创建 ${created} 条建联记录，渠道：${channel}，产品：${p.name}。缺少 Email 的达人已进入联系方式补充。`);
+  logOperation("建联发送", channels.join("+"), `创建 ${created} 条建联记录；产品：${p.name}；方式：${sendMode}`);
+  pushMessage("批量建联", `已创建 ${created} 条建联记录，渠道：${channels.map(channelLabel).join("+")}，产品：${p.name}。缺少 Email 的达人已进入联系方式补充。`);
   closeModal();
   saveState();
   state.page = "outreach";
@@ -2864,6 +3059,7 @@ function saveCoop(id) {
     commission: Number(get("coopCommission") || 0),
     adSpend: Number(get("coopAdSpend") || 0),
     contentUrl: get("coopContentUrl"),
+    inviteLink: id ? (state.cooperations.find((x) => x.id === id)?.inviteLink || "") : "",
     tags: get("coopTags").split(",").map((x) => x.trim()).filter(Boolean),
     owner: get("coopOwner"),
     notes: document.getElementById("coopNotes").value.trim(),
@@ -3494,6 +3690,10 @@ window.clearNotInterested = clearNotInterested;
 window.toggleCreatorSelection = toggleCreatorSelection;
 window.openOutreachModal = openOutreachModal;
 window.saveOutreach = saveOutreach;
+window.translateOutreachDraft = translateOutreachDraft;
+window.openEmailSetupModal = openEmailSetupModal;
+window.saveEmailSettings = saveEmailSettings;
+window.copyInviteLink = copyInviteLink;
 window.openReplyModal = openReplyModal;
 window.saveReply = saveReply;
 window.openCoopModal = openCoopModal;

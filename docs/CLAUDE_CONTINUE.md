@@ -215,3 +215,14 @@ GitHub 提交流程：
 "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --headless=new --disable-gpu --no-first-run --window-size=1440,1000 --screenshot="smoke-auto-reply.png" "http://127.0.0.1:5175/#autoReply"
 "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --headless=new --disable-gpu --no-first-run --window-size=1440,1000 --screenshot="smoke-team.png" "http://127.0.0.1:5175/#team"
 ```
+
+## 2026-06-22 建联流程修复节点
+
+- 工作范围：只修改 `D:\SamsoData\Documents\Kol compass`，未触碰 `D:\tiktok-creator-tool`，未占用 5173/5174。
+- 已完成：达人库“均播/直播UV”改为客户可理解的“内容表现 / 视频平均播放 / 直播观看人数”。
+- 已完成：发起建联从单渠道改为多渠道，可同时勾选 TikTok 私信和 Email。
+- 已完成：Email 未绑定时不假装发送，弹出邮箱配置入口；配置页包含 Gmail/Outlook 等标签、SMTP/IMAP 和应用专用密码教程。
+- 已完成：附加邀请链接会保存到建联记录和合作记录，并提供复制入口，不再是一次性点击动作。
+- 已完成：建联弹窗新增目标语言选择和翻译稿区域；翻译稿保存进建联记录。
+- 已验证：`node --check app.js`、`node --check server.js`、`node --check smoke-test.js`、`node smoke-test.js` 均通过。
+- 下一步：如用户继续验收建联，需要重点点测“同时 TikTok 私信 + Email”“Email 未绑定引导”“附加邀请链接进入合作管理”“翻译稿在建联详情展示”。

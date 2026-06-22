@@ -694,6 +694,11 @@ tr:last-child td {
   color: var(--muted);
 }
 
+.notice.soft {
+  background: #f8fbff;
+  border-color: #cfe0ff;
+}
+
 .link {
   color: var(--primary);
   border: 0;
@@ -1024,6 +1029,66 @@ tr:last-child td {
   padding: 16px;
 }
 
+.translation-panel {
+  margin-top: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-muted);
+  padding: 12px;
+}
+
+.email-guide-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 16px;
+  align-items: start;
+}
+
+.email-guide-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+  padding: 14px;
+}
+
+.guide-tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 8px 0 12px;
+}
+
+.guide-tab {
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  padding: 4px 2px;
+}
+
+.guide-tab.active {
+  color: var(--primary);
+  border-color: var(--primary);
+}
+
+.guide-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  margin-bottom: 8px;
+}
+
+.guide-warning {
+  border: 1px solid #fde68a;
+  background: #fffbeb;
+  border-radius: 8px;
+  padding: 10px;
+  margin: 10px 0;
+  color: #92400e;
+}
+
 .form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1055,7 +1120,8 @@ tr:last-child td {
   .grid-2,
   .grid-3,
   .grid-4,
-  .split {
+  .split,
+  .email-guide-layout {
     grid-template-columns: 1fr;
   }
 
