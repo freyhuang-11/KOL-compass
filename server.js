@@ -263,7 +263,10 @@ async function searchProducts(shopCipher, pageSize = 20, pageToken = "") {
 function normalizeProducts(upstream) {
   const products = upstream.data?.products || upstream.products || [];
   return products.map((item, index) => {
-    const price = item.price?.sale_price || item.price?.tax_exclusive_price || item.price?.original_price || item.skus?.[0]?.price?.sale_price || "";
+    const skuPrice = item.skus?.[0]?.price || {};
+    const priceValue = item.price?.sale_price || item.price?.tax_exclusive_price || item.price?.original_price || skuPrice.sale_price || skuPrice.tax_exclusive_price || skuPrice.original_price || "";
+    const currency = item.price?.currency || skuPrice.currency || "";
+    const price = priceValue && currency ? `${currency} ${priceValue}` : priceValue;
     const category = item.category_chains?.[0]?.local_name || item.category_name || item.category?.name || "TikTok Shop";
     return {
       id: Number(String(item.id || item.product_id || Date.now() + index).replace(/\D/g, "").slice(-9)) || Date.now() + index,
@@ -301,6 +304,8 @@ async function handle(req, res) {
       writeJson(STATE_FILE, { state, created_at: new Date().toISOString() });
       const authUrl = new URL("/oauth/authorize", AUTH_BASE_URL);
       authUrl.searchParams.set("app_key", APP_KEY);
+      authUrl.searchParams.set("response_type", "code");
+      authUrl.searchParams.set("redirect_uri", REDIRECT_URI);
       authUrl.searchParams.set("state", state);
       return json(res, 200, { ok: true, auth_url: authUrl.toString(), redirect_uri: REDIRECT_URI, state });
     }
