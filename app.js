@@ -1467,7 +1467,7 @@ function personCell(c) {
   if (!c) return "-";
   return `
     <div class="person">
-      <span class="avatar">${escapeHtml(c.username.slice(0, 1).toUpperCase())}</span>
+      <span class="avatar">${c.avatarUrl ? `<img src="${escapeHtml(c.avatarUrl)}" alt="${escapeHtml(c.username)}" />` : escapeHtml(c.username.slice(0, 1).toUpperCase())}</span>
       <div>
         <button class="link" onclick="showCreator(${c.id})">@${escapeHtml(c.username)}</button>
         <div class="muted">${escapeHtml(c.nickname || "-")}</div>

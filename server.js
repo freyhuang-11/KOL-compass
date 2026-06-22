@@ -342,28 +342,73 @@ function normalizeCreators(upstream) {
     const username = profile.username || profile.handle || profile.creator_username || profile.tiktok_username || profile.nick_name || `creator_${index + 1}`;
     const nickname = profile.display_name || profile.nickname || profile.name || username;
     const followers = Number(profile.follower_count || profile.followers || profile.fans || 0);
-    const category = profile.category || profile.main_category || profile.vertical || "TikTok Shop";
-    const region = profile.region || profile.country || profile.market || "-";
-    const gmv = profile.gmv || profile.monthly_gmv || profile.sales_amount || "-";
+    const category = normalizeCreatorCategory(profile);
+    const region = normalizeCreatorRegion(profile.selection_region || profile.region || profile.country || profile.market || "");
+    const gmv = formatMoney(profile.gmv || profile.monthly_gmv || profile.sales_amount || profile.gmv_range || "");
     const replyRate = profile.reply_rate || profile.response_rate || "-";
+    const sourceId = profile.creator_open_id || profile.creator_id || profile.open_id || profile.id || "";
+    const avatarUrl = profile.avatar?.url || profile.avatar_url || profile.profile_image?.url || "";
+    const avgVideoViews = Number(profile.avg_ec_video_view_count || profile.avg_video_view_count || 0);
+    const avgLiveUv = Number(profile.avg_ec_live_uv || profile.avg_live_uv || 0);
+    const tags = ["TikTok API"];
+    if (avgVideoViews > 0) tags.push(`均播 ${avgVideoViews.toLocaleString()}`);
+    if (avgLiveUv > 0) tags.push(`直播UV ${avgLiveUv.toLocaleString()}`);
     return {
-      id: Number(String(profile.creator_id || profile.open_id || profile.id || Date.now() + index).replace(/\D/g, "").slice(-9)) || Date.now() + index,
-      sourceId: profile.creator_id || profile.open_id || profile.id || "",
+      id: Number(String(sourceId || Date.now() + index).replace(/\D/g, "").slice(-9)) || Date.now() + index,
+      sourceId,
       username: String(username).replace(/^@/, ""),
       nickname,
       type: "联盟达人",
       category,
       region,
       followers,
-      gmv: String(gmv),
+      gmv,
       replyRate: String(replyRate),
-      tags: ["TikTok API"],
+      avatarUrl,
+      categoryIds: profile.category_ids || [],
+      tags,
       status: "待联系",
       email: "",
       whatsapp: "",
       notes: "来自 TikTok Shop Affiliate Seller 达人搜索 API。",
     };
   });
+}
+
+function normalizeCreatorCategory(profile) {
+  if (profile.category || profile.main_category || profile.vertical) return profile.category || profile.main_category || profile.vertical;
+  const ids = Array.isArray(profile.category_ids) ? profile.category_ids.filter(Boolean) : [];
+  if (ids.length) return `类目ID ${ids.slice(0, 3).join("/")}`;
+  return "TikTok Shop";
+}
+
+function normalizeCreatorRegion(region) {
+  const map = {
+    SG: "新加坡",
+    VN: "越南",
+    MY: "马来西亚",
+    TH: "泰国",
+    PH: "菲律宾",
+    ID: "印尼",
+    US: "美国",
+    GB: "英国",
+    UK: "英国",
+    SA: "沙特",
+    MX: "墨西哥",
+  };
+  return map[String(region || "").toUpperCase()] || region || "-";
+}
+
+function formatMoney(value) {
+  if (!value) return "-";
+  if (typeof value === "string" || typeof value === "number") return String(value);
+  if (value.formatted_range) return `${value.formatted_range}${value.currency ? ` ${value.currency}` : ""}`;
+  if (value.amount) {
+    const amount = Number(value.amount);
+    const formatted = Number.isFinite(amount) ? amount.toLocaleString(undefined, { maximumFractionDigits: 0 }) : String(value.amount);
+    return `${value.currency || ""} ${formatted}`.trim();
+  }
+  return "-";
 }
 
 async function handle(req, res) {
