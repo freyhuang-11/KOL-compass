@@ -415,3 +415,23 @@ client_secret 不保存在前端 localStorage，真实接入时应放到本项�
 - `node --check server.js`
 - `node --check smoke-test.js`
 - `node smoke-test.js`
+
+## 2026-06-22 达人库批量选择与分页验收
+
+本轮修复达人库列表操作效率问题：
+
+- 批量选择入口已放到达人表格正上方，客户进入列表后能直接看到。
+- 支持“全选本页可建联”和“全选筛选结果”，避免客户逐个勾选。
+- 表头提供“本页”复选框，可快速选择/取消当前页达人。
+- 达人库新增分页，默认 20 条/页，支持 20/50/100 条/页。
+- 筛选条件变更后自动回到第 1 页，避免停留在空页。
+
+验证命令：
+
+- `node --check app.js`
+- `node --check smoke-test.js`
+- `node smoke-test.js`
+
+页面验收：
+
+- Edge CDP 检查通过：`.bulk-action-bar`、`.pagination-bar`、分页按钮、每页数量选择器均存在，达人表格当前页渲染 20 行。

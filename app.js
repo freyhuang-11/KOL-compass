@@ -84,6 +84,8 @@ const seed = {
     kolGmv: "全部",
     kolContact: "全部",
     kolInterest: "可建联",
+    kolPage: 1,
+    kolPageSize: 20,
     blacklistSearch: "",
     outreachSearch: "",
     outreachStatus: "全部",
@@ -823,11 +825,21 @@ function renderKolPool() {
   const availableRows = rows.filter((c) => !creatorOutreachBlockReason(c));
   const blockedRows = rows.filter((c) => creatorOutreachBlockReason(c));
   state.bulkCreatorIds = (state.bulkCreatorIds || []).filter((id) => availableRows.some((c) => c.id === id));
+  const pageSize = [20, 50, 100].includes(Number(state.filters.kolPageSize)) ? Number(state.filters.kolPageSize) : 20;
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  const currentPage = Math.min(Math.max(1, Number(state.filters.kolPage || 1)), totalPages);
+  state.filters.kolPage = currentPage;
+  state.filters.kolPageSize = pageSize;
+  const pageStart = (currentPage - 1) * pageSize;
+  const pagedRows = rows.slice(pageStart, pageStart + pageSize);
+  const pageAvailableRows = pagedRows.filter((c) => !creatorOutreachBlockReason(c));
   const selectedAvailableCount = (state.bulkCreatorIds || []).filter((id) => {
     const c = creator(id);
     return c && !creatorOutreachBlockReason(c);
   }).length;
-  const visibleAvailableIds = `[${availableRows.map((c) => c.id).join(",")}]`;
+  const pageAvailableIds = `[${pageAvailableRows.map((c) => c.id).join(",")}]`;
+  const filteredAvailableIds = `[${availableRows.map((c) => c.id).join(",")}]`;
+  const pageAllSelected = pageAvailableRows.length > 0 && pageAvailableRows.every((c) => state.bulkCreatorIds.includes(c.id));
   return `
     ${pageHead("达人库", "第二步：从平台达人库筛选达人；系统按当前绑定店铺市场自动展示对应国家达人。")}
     <section class="store-panel">
@@ -884,13 +896,21 @@ function renderKolPool() {
         ${multiFilterChips("kolCategories", "TikTok 类目", categories)}
         <div class="filter-chip-row"><span>当前店铺市场</span><button class="chip active" type="button">${escapeHtml(currentMarket || "绑定店铺后自动识别")}</button></div>
       </div>
-      <div class="filters">
-        <button class="btn" onclick="selectVisibleCreators(${visibleAvailableIds})">选择当前可建联</button>
-        <button class="btn ghost" onclick="clearBulkSelection()">清空选择</button>
-        <button class="btn primary" onclick="openOutreachModal()">一键建联(${state.bulkCreatorIds.length})</button>
-      </div>
     </div>
-    ${rows.length ? table(["选择", "达人", "类型", "类目/地区", "粉丝", "TikTok GMV（接口币种）", "内容表现", "回复率", "状态/标签", "操作"], rows.map((c) => {
+    ${rows.length ? `
+      <div class="bulk-action-bar">
+        <div>
+          <b>批量建联</b>
+          <span class="muted">当前第 ${currentPage} / ${totalPages} 页，已选 ${selectedAvailableCount} 位达人</span>
+        </div>
+        <div class="filters">
+          <button class="btn" onclick="selectVisibleCreators(${pageAvailableIds})">全选本页可建联</button>
+          <button class="btn" onclick="selectVisibleCreators(${filteredAvailableIds})">全选筛选结果</button>
+          <button class="btn ghost" onclick="clearBulkSelection()">清空选择</button>
+          <button class="btn primary" onclick="openOutreachModal()">一键建联(${state.bulkCreatorIds.length})</button>
+        </div>
+      </div>
+      ${table([`<label class="table-check"><input type="checkbox" ${pageAllSelected ? "checked" : ""} onchange="toggleCreatorPageSelection(${pageAvailableIds}, this.checked)" /> 本页</label>`, "达人", "类型", "类目/地区", "粉丝", "TikTok GMV（接口币种）", "内容表现", "回复率", "状态/标签", "操作"], pagedRows.map((c) => {
       const blockReason = creatorOutreachBlockReason(c);
       return [
       blockReason ? `<span class="muted">${escapeHtml(blockReason)}</span>` : `<input type="checkbox" ${state.bulkCreatorIds.includes(c.id) ? "checked" : ""} onchange="toggleCreatorSelection(${c.id}, this.checked)" aria-label="选择 @${escapeHtml(c.username)}" />`,
@@ -904,7 +924,9 @@ function renderKolPool() {
       `${c.status === "不感兴趣" ? badge("不感兴趣") : ""} ${creatorVisibleTags(c)}`,
       `${blockReason ? "" : `<button class="btn" onclick="openOutreachModal(${c.id})">建联</button>`} <button class="btn ghost" onclick="showCreator(${c.id})">详情</button> ${c.status === "不感兴趣" ? `<button class="btn ghost" onclick="clearNotInterested(${c.id})">恢复建联</button>` : `<button class="btn ghost" onclick="markNotInterested(${c.id})">不感兴趣</button>`} <button class="btn ghost" onclick="blacklistCreator(${c.id})">拉黑</button>`,
     ];
-    })) : `<div class="empty-state">当前市场有 ${realMarketCreators.length} 个平台达人，但被筛选条件过滤为空。<button class="btn" onclick="resetKolFilters()">清空筛选</button></div>`}
+      }))}
+      ${paginationBar("kol", currentPage, totalPages, pageSize, rows.length)}
+    ` : `<div class="empty-state">当前市场有 ${realMarketCreators.length} 个平台达人，但被筛选条件过滤为空。<button class="btn" onclick="resetKolFilters()">清空筛选</button></div>`}
   `;
 }
 
@@ -1512,6 +1534,29 @@ function table(headers, rows) {
   `;
 }
 
+function paginationBar(scope, currentPage, totalPages, pageSize, totalRows) {
+  const pages = Array.from(new Set([
+    1,
+    Math.max(1, currentPage - 1),
+    currentPage,
+    Math.min(totalPages, currentPage + 1),
+    totalPages,
+  ])).filter((x) => x >= 1 && x <= totalPages).sort((a, b) => a - b);
+  return `
+    <div class="pagination-bar">
+      <div class="muted">共 ${totalRows} 位达人</div>
+      <div class="pagination-controls">
+        <button class="btn" ${currentPage <= 1 ? "disabled" : ""} onclick="setKolPage(${currentPage - 1})">上一页</button>
+        ${pages.map((page, index) => `${index > 0 && page - pages[index - 1] > 1 ? `<span class="muted">...</span>` : ""}<button class="btn ${page === currentPage ? "primary" : ""}" onclick="setKolPage(${page})">${page}</button>`).join("")}
+        <button class="btn" ${currentPage >= totalPages ? "disabled" : ""} onclick="setKolPage(${currentPage + 1})">下一页</button>
+        <select class="select" onchange="setKolPageSize(this.value)">
+          ${[20, 50, 100].map((size) => `<option value="${size}" ${Number(pageSize) === size ? "selected" : ""}>${size} 条/页</option>`).join("")}
+        </select>
+      </div>
+    </div>
+  `;
+}
+
 function productImage(product) {
   return product?.imageUrl || product?.image || "";
 }
@@ -1634,6 +1679,7 @@ function render() {
 
 function setFilter(key, value) {
   state.filters[key] = value;
+  if (key.startsWith("kol") && !["kolPage", "kolPageSize"].includes(key)) state.filters.kolPage = 1;
   saveState();
   render();
 }
@@ -1642,12 +1688,27 @@ function toggleMultiFilter(key, value) {
   const current = filterValues(state.filters[key]);
   const next = current.includes(value) ? current.filter((x) => x !== value) : [...current, value];
   state.filters[key] = next;
+  if (key.startsWith("kol")) state.filters.kolPage = 1;
   saveState();
   render();
 }
 
 function clearMultiFilter(key) {
   state.filters[key] = [];
+  if (key.startsWith("kol")) state.filters.kolPage = 1;
+  saveState();
+  render();
+}
+
+function setKolPage(page) {
+  state.filters.kolPage = Math.max(1, Number(page) || 1);
+  saveState();
+  render();
+}
+
+function setKolPageSize(size) {
+  state.filters.kolPageSize = Number(size) || 20;
+  state.filters.kolPage = 1;
   saveState();
   render();
 }
@@ -2736,6 +2797,19 @@ function selectVisibleCreators(ids) {
   render();
 }
 
+function toggleCreatorPageSelection(ids, checked) {
+  const next = new Set(state.bulkCreatorIds || []);
+  (ids || []).forEach((id) => {
+    const c = creator(id);
+    if (!c || creatorOutreachBlockReason(c)) return;
+    if (checked) next.add(id);
+    else next.delete(id);
+  });
+  state.bulkCreatorIds = Array.from(next);
+  saveState();
+  render();
+}
+
 function clearBulkSelection() {
   state.bulkCreatorIds = [];
   saveState();
@@ -3688,6 +3762,9 @@ window.goProductOutreach = goProductOutreach;
 window.markNotInterested = markNotInterested;
 window.clearNotInterested = clearNotInterested;
 window.toggleCreatorSelection = toggleCreatorSelection;
+window.toggleCreatorPageSelection = toggleCreatorPageSelection;
+window.setKolPage = setKolPage;
+window.setKolPageSize = setKolPageSize;
 window.openOutreachModal = openOutreachModal;
 window.saveOutreach = saveOutreach;
 window.translateOutreachDraft = translateOutreachDraft;
