@@ -1,4 +1,4 @@
-# Claude Continue
+# Agent Continue
 
 更新时间：2026-06-22 21:05 CST
 
@@ -58,6 +58,6 @@ node smoke-test.js
 ## 文档规则
 
 - `PROJECT_MEMORY.md` 只保留当前决策需要的信息。
-- `CLAUDE_CONTINUE.md` 只保留下一步执行信息。
+- `AGENT_CONTINUE.md` 只保留下一步执行信息。
 - `ACCEPTANCE_REPORT.md` 只保留最近一次验收结果。
 - 历史超过一个阶段就归档到 `docs/archive/`。

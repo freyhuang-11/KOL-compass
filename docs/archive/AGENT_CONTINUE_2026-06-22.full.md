@@ -1,4 +1,4 @@
-# Claude Code 继续开发指令
+# Agent Continue 历史完整记录
 
 ## 工作位置
 
@@ -186,7 +186,7 @@ node smoke-test.js
 每次心跳或阶段性开发后，必须先更新：
 
 - `docs/PROJECT_MEMORY.md`
-- `docs/CLAUDE_CONTINUE.md`
+- `docs/AGENT_CONTINUE.md`
 
 记录内容只写会影响继续开发和验收的信息：
 

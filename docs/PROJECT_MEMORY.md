@@ -60,5 +60,5 @@
 完整历史已归档到：
 
 - `docs/archive/PROJECT_MEMORY_2026-06-22.full.md`
-- `docs/archive/CLAUDE_CONTINUE_2026-06-22.full.md`
+- `docs/archive/AGENT_CONTINUE_2026-06-22.full.md`
 - `docs/archive/ACCEPTANCE_REPORT_2026-06-22.full.md`

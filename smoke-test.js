@@ -135,7 +135,7 @@ async function main() {
   assert("admin merchant onboarding workflow supported", ["merchantApplications", "approveMerchantApplication", "rejectMerchantApplication", "resetMerchantApplication", "merchantApplicationActions"].every((name) => app.includes(name)) && app.includes("商家入驻审批") && app.includes("不会调用真实商户系统、支付系统或 TikTok API"));
   assert("team management and operation logs supported", ["rolePermissions", "operationLogs", "logOperation", "openTeamMemberModal", "saveTeamMember", "toggleTeamMember"].every((name) => app.includes(name)) && app.includes("操作日志") && app.includes("可访问店铺"));
   assert("products cannot be manually faked", app.includes("本地版本不允许手动新增") && app.includes("产品数据应来自 TikTok Shop Partner API"));
-  assert("Claude continuation doc exists", fs.existsSync("docs/CLAUDE_CONTINUE.md"));
+  assert("agent continuation doc exists", fs.existsSync("docs/AGENT_CONTINUE.md"));
   assert("acceptance report exists", fs.existsSync("docs/ACCEPTANCE_REPORT.md"));
 
   const detailStart = app.indexOf("function renderCreatorDetail");

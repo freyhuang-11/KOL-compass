@@ -144,7 +144,7 @@ node smoke-test.js
 
 ## 下次继续优先级
 
-1. 继续保持 `docs/PROJECT_MEMORY.md` 和 `docs/CLAUDE_CONTINUE.md` 最新。
+1. 继续保持 `docs/PROJECT_MEMORY.md` 和 `docs/AGENT_CONTINUE.md` 最新。
 2. 每次阶段完成后先跑 `node smoke-test.js`。
 3. 验证通过后小步提交并推送到 GitHub。
 4. TikTok Partner API 接入前先读 `docs/TIKTOK_API_HANDOFF.md`，遇到 OAuth、验证码、scope、redirect URL 问题时给用户操作流程。

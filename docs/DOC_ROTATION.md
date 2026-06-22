@@ -9,7 +9,7 @@
 ## 当前文件职责
 
 - `docs/PROJECT_MEMORY.md`：当前事实、业务边界、外部 API 状态、风险。
-- `docs/CLAUDE_CONTINUE.md`：下一步怎么继续、先跑什么、禁止做什么。
+- `docs/AGENT_CONTINUE.md`：下一步怎么继续、先跑什么、禁止做什么。
 - `docs/ACCEPTANCE_REPORT.md`：最近一次验收结论和未完成项。
 - `docs/archive/`：历史完整记录。
 
