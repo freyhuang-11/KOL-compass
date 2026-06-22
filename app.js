@@ -901,6 +901,10 @@ function renderCooperations() {
   const produced = state.cooperations.filter((x) => x.videos > 0 || x.lives > 0).length;
   const unproduced = state.cooperations.length - produced;
   const gmv = state.cooperations.reduce((sum, x) => sum + Number(x.gmv || 0), 0);
+  const visibleGmv = rows.reduce((sum, x) => sum + Number(x.gmv || 0), 0);
+  const visibleOrders = rows.reduce((sum, x) => sum + Number(x.orders || 0), 0);
+  const visibleSpend = rows.reduce((sum, x) => sum + Number(x.commission || 0) + Number(x.adSpend || 0), 0);
+  const visibleRoi = visibleSpend > 0 ? visibleGmv / visibleSpend : 0;
   const allTags = Array.from(new Set([...fixedTags, ...state.cooperations.flatMap((x) => x.tags)]));
   return `
     ${pageHead("合作管理", "内容追踪唯一主入口：视频、直播、GMV、订单、佣金、ROI 都在这里管理。", `<button class="btn primary" onclick="openCoopModal()">新增合作</button>`)}
@@ -928,6 +932,12 @@ function renderCooperations() {
         <button class="btn" onclick="importCoopsCsv()">导入合作 CSV</button>
         <button class="btn" onclick="syncCoopData()">同步 TikTok 内容/订单</button>
       </div>
+    </div>
+    <div class="grid grid-4" style="margin-bottom:16px">
+      ${stat("当前视图GMV", money(visibleGmv), "按当前筛选结果汇总")}
+      ${stat("当前订单", visibleOrders, "用于判断销售贡献")}
+      ${stat("佣金+投流", money(visibleSpend), "佣金支出加投流支出")}
+      ${stat("当前ROI", visibleRoi ? `${visibleRoi.toFixed(1)}x` : "-", "GMV / 佣金与投流支出")}
     </div>
     ${table(["达人", "产品", "合作类型", "内容状态", "内容数据", "GMV / ROI", "标签", "负责人", "操作"], rows.map((c) => {
       const r = roi(c);
