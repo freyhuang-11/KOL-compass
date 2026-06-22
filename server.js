@@ -30,7 +30,7 @@ const CREATOR_AUTO_IMPORT_INITIAL_DELAY_MS = Number(process.env.KOL_CREATOR_AUTO
 const CREATOR_AUTO_IMPORT_PAGE_SIZE = Number(process.env.KOL_CREATOR_AUTO_IMPORT_PAGE_SIZE || 20);
 const CREATOR_AUTO_IMPORT_PAGES_PER_RUN = Number(process.env.KOL_CREATOR_AUTO_IMPORT_PAGES_PER_RUN || 1);
 const CREATOR_SEARCH_PAGE_DELAY_MS = Number(process.env.KOL_CREATOR_SEARCH_PAGE_DELAY_MS || 5000);
-const CREATOR_RATE_LIMIT_BACKOFF_MS = parseDurationSchedule(process.env.KOL_CREATOR_RATE_LIMIT_BACKOFF_MS || "300000,900000,3600000");
+const CREATOR_RATE_LIMIT_BACKOFF_MS = parseDurationSchedule(process.env.KOL_CREATOR_RATE_LIMIT_BACKOFF_MS || "60000,120000,300000,600000");
 const CREATOR_FULL_REFRESH_INTERVAL_MS = Number(process.env.KOL_CREATOR_FULL_REFRESH_INTERVAL_MS || 24 * 60 * 60 * 1000);
 let creatorJobRunning = false;
 
@@ -59,7 +59,7 @@ function parseDurationSchedule(value) {
     .split(",")
     .map((item) => Number(item.trim()))
     .filter((item) => Number.isFinite(item) && item > 0);
-  return values.length ? values : [300000, 900000, 3600000];
+  return values.length ? values : [60000, 120000, 300000, 600000];
 }
 
 function sleep(ms) {
