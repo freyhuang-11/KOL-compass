@@ -709,6 +709,7 @@ function renderKolPool() {
         <button class="btn" onclick="selectVisibleCreators(${visibleAvailableIds})">选择当前可建联</button>
         <button class="btn ghost" onclick="clearBulkSelection()">清空选择</button>
         <button class="btn primary" onclick="openOutreachModal()">一键建联(${state.bulkCreatorIds.length})</button>
+        <button class="btn" onclick="downloadCreatorsCsvTemplate()">下载KOL模板</button>
         <button class="btn" onclick="importCreatorsCsv()">导入KOL CSV</button>
         <button class="btn" onclick="syncCreators()">同步达人数据</button>
       </div>
@@ -929,6 +930,7 @@ function renderCooperations() {
         <button class="btn" onclick="markOverdue()">检查逾期未产出</button>
       </div>
       <div class="filters">
+        <button class="btn" onclick="downloadCoopsCsvTemplate()">下载合作模板</button>
         <button class="btn" onclick="importCoopsCsv()">导入合作 CSV</button>
         <button class="btn" onclick="syncCoopData()">同步 TikTok 内容/订单</button>
       </div>
@@ -2442,6 +2444,44 @@ function exportState() {
   a.download = `kol-compass-export-${Date.now()}.json`;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+function downloadTextFile(filename, content, type = "text/plain;charset=utf-8") {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function csvEscape(value) {
+  const text = String(value ?? "");
+  return /[",\n\r]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+}
+
+function csvLine(values) {
+  return values.map(csvEscape).join(",");
+}
+
+function downloadCreatorsCsvTemplate() {
+  const headers = ["username", "nickname", "type", "category", "region", "followers", "gmv", "replyRate", "tags", "email", "whatsapp", "notes"];
+  const rows = [
+    headers,
+    ["sample_creator", "示例达人", "短视频达人", "美妆", "美国", "120000", "$12K/月", "55%", "美妆达人,英语", "creator@example.com", "+12025550123", "适合新品测评"],
+  ];
+  downloadTextFile("kol-creators-template.csv", `\uFEFF${rows.map(csvLine).join("\n")}\n`, "text/csv;charset=utf-8");
+}
+
+function downloadCoopsCsvTemplate() {
+  const headers = ["username", "product", "type", "status", "dueDate", "videos", "lives", "orders", "gmv", "commission", "adSpend", "contentUrl", "tags", "owner", "notes"];
+  const productName = state.products[0]?.name || "示例产品";
+  const rows = [
+    headers,
+    ["sample_creator", productName, "短视频", "待产出", todayString(), "0", "0", "0", "0", "0", "0", "", "需催发", "Sam", "样品已签收，等待内容"],
+  ];
+  downloadTextFile("kol-cooperations-template.csv", `\uFEFF${rows.map(csvLine).join("\n")}\n`, "text/csv;charset=utf-8");
 }
 
 function importState() {

@@ -57,9 +57,13 @@ KOL CSV 支持表头：
 
 `username,tiktok_username,TikTok用户名,达人账号,达人,nickname,昵称,type,creator_type,达人类型,category,类目,region,地区,followers,粉丝,gmv,replyRate,tags,email,whatsapp,notes`
 
+也可以在 KOL池 页面点击 `下载KOL模板`，得到带示例行的 `kol-creators-template.csv`。
+
 合作 CSV 支持表头：
 
 `username,tiktok_username,达人,product,product_name,产品,type,合作类型,status,内容状态,dueDate,产出截止日,videos,视频数,lives,直播场次,orders,订单数,gmv,commission,adSpend,contentUrl,tags,owner,notes`
+
+也可以在 合作管理 页面点击 `下载合作模板`，得到带示例行的 `kol-cooperations-template.csv`。
 
 ## 当前版本范围
 
@@ -68,7 +72,7 @@ KOL CSV 支持表头：
 - 顶部工具栏支持导出/导入 JSON，便于本地备份、迁移和恢复。
 - 控制台支持本月/近7天/近30天/全部时间范围筛选、负责人筛选、指标下钻、内容状态分布和负责人概览。
 - 产品管理支持搜索、类目筛选、状态筛选和合作模式筛选；商品详情为只读视图，可下钻相关建联和相关合作；未授权时仅使用本地数据，不伪造 TikTok API 同步成功。
-- KOL池支持导入 KOL CSV、关键词/达人类型/类目/地区/粉丝量级/回复率筛选、当前筛选/可建联/暂不可建联/已选择状态总览、选择当前可建联、清空选择、一键建联、选择产品/模板/渠道、定时发送记录和附加邀请链接；合作管理支持导入合作 CSV。
+- KOL池支持下载 KOL CSV 模板、导入 KOL CSV、关键词/达人类型/类目/地区/粉丝量级/回复率筛选、当前筛选/可建联/暂不可建联/已选择状态总览、选择当前可建联、清空选择、一键建联、选择产品/模板/渠道、定时发送记录和附加邀请链接；合作管理支持下载合作 CSV 模板并导入合作 CSV。
 - KOL池和建联保存会执行建联安全规则：月配额、同一达人 24 小时限发、不感兴趣 30 天屏蔽。
 - 达人编辑弹窗支持录入 Email / WhatsApp；建联记录和 KOL 详情沟通记录支持直接回复。
 - 平台管理端功能开关会约束建联和回复渠道；关闭 Email/WhatsApp 后，新建联和回复不会再显示对应渠道。

@@ -85,6 +85,7 @@ async function main() {
   assert("sample workflow supports edit and cooperation handoff", ["openSampleModal", "saveSample", "createCoopFromSample", "deleteSample"].every((name) => app.includes(`function ${name}`)));
   assert("sample filters and status summary supported", ["sampleSearch", "sampleStatus"].every((name) => app.includes(name)) && app.includes("搜索达人、产品、物流单号") && app.includes("可转合作"));
   assert("CSV imports supported", app.includes("function importCreatorsCsv") && app.includes("function importCoopsCsv") && app.includes("parseCsv"));
+  assert("CSV templates can be downloaded", ["downloadCreatorsCsvTemplate", "downloadCoopsCsvTemplate", "downloadTextFile", "下载KOL模板", "下载合作模板"].every((text) => app.includes(text)));
   assert("local data import/export supported", app.includes("function exportState") && app.includes("function importState"));
   assert("hash routes supported", app.includes("routeFromHash") && app.includes("kol/creator/"));
   assert("TikTok API handoff exists", fs.existsSync("docs/TIKTOK_API_HANDOFF.md"));

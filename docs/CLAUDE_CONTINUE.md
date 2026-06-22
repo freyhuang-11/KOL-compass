@@ -31,7 +31,7 @@
 - `stop-5175.bat`
 - `smoke-test.js`
 
-最近一次连续推进检查：2026-06-22 11:33 CST，当前分支已连接 GitHub 远端，已增强合作管理销售复盘：当前筛选结果汇总 GMV、订单、佣金+投流和 ROI；`node --check app.js` 与 `node smoke-test.js` 已通过，截图 `smoke-cooperations.png` 已重新生成并目视复核，下一步小步提交推送。
+最近一次连续推进检查：2026-06-22 11:45 CST，当前分支已连接 GitHub 远端，已新增 KOL CSV 与合作 CSV 模板下载入口，降低首次验收导入真实数据的门槛；`node --check app.js` 与 `node smoke-test.js` 已通过，下一步完成最终 diff 检查后小步提交推送。
 
 启动：
 
