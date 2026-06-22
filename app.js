@@ -1,5 +1,7 @@
 const STORAGE_KEY = "kol-compass-state-v1";
 const API_BASE = "http://127.0.0.1:8015";
+let creatorAutoImportInFlight = false;
+const creatorAutoImportAttempted = new Set();
 
 const pages = [
   ["运营", [
@@ -316,6 +318,7 @@ function navigateHash(hash) {
 
 function setPage(page) {
   navigateHash(page);
+  if (page === "kol") setTimeout(() => autoImportCreatorsForCurrentMarket("进入达人库"), 0);
 }
 
 function money(v) {
@@ -794,17 +797,17 @@ function renderKolPool() {
   }).length;
   const visibleAvailableIds = `[${availableRows.map((c) => c.id).join(",")}]`;
   return `
-    ${pageHead("达人库", "第二步：从 TikTok Marketplace 导入达人，系统按当前绑定店铺市场自动展示对应国家达人。", `<button class="btn primary" onclick="syncCreators()">从TikTok导入达人</button> <button class="btn" onclick="openCreatorModal()">手动补充达人</button>`)}
+    ${pageHead("达人库", "第二步：系统默认从 TikTok Marketplace 抓取达人，并按当前绑定店铺市场自动展示对应国家达人。")}
     <section class="store-panel">
       <div>
         <div class="section-kicker">达人库来源</div>
         <h3>${escapeHtml(selectedShop ? shopLabel(selectedShop) : "请先绑定 TikTok Shop 店铺")}</h3>
-        <p>${selectedShop ? `当前店铺市场：${escapeHtml(currentMarket || "未识别")}。系统只展示该市场达人，不再让客户手动选择国家；导入时会按已授权店铺逐个市场写入达人库。` : "客户第一步必须先完成店铺绑定，否则无法从 TikTok API 获取可邀约达人。"}</p>
+        <p>${selectedShop ? `当前店铺市场：${escapeHtml(currentMarket || "未识别")}。系统只展示该市场达人，不再让客户手动选择国家；后台会按已授权店铺逐个市场抓取并写入达人库。` : "客户第一步必须先完成店铺绑定，否则无法从 TikTok API 获取可邀约达人。"}</p>
         <div class="store-meta">
           <span>当前市场真实达人：${realMarketCreators.length}</span>
           <span>全部真实达人：${realCreators.length}</span>
           <span>本地/演示达人：${localCreators.length}</span>
-          <span>上次导入：${escapeHtml(state.settings.lastCreatorSync || "尚未导入")}</span>
+          <span>上次抓取：${escapeHtml(state.settings.lastCreatorSync || "尚未抓取")}</span>
         </div>
       </div>
       <div class="store-actions">
@@ -815,7 +818,6 @@ function renderKolPool() {
               return `<option value="${escapeHtml(cipher)}" ${cipher === state.settings.selectedTikTokShopCipher ? "selected" : ""}>${escapeHtml(shopLabel(shop))}</option>`;
             }).join("")}
           </select>
-          <button class="btn primary" onclick="syncCreators()">从TikTok导入达人</button>
         ` : `
           <button class="btn primary" onclick="startTikTokAuth()">绑定店铺</button>
           <button class="btn" onclick="checkTikTokShops()">读取已授权店铺</button>
@@ -823,7 +825,7 @@ function renderKolPool() {
         <button class="btn" onclick="setPage('products')">返回产品管理</button>
       </div>
     </section>
-    ${selectedShop && !realMarketCreators.length ? `<div class="notice" style="margin-bottom:12px">当前店铺市场还没有从 TikTok API 导入的真实达人；下方如果看到达人，是该市场本地演示/CSV 数据。请点击“从TikTok导入达人”，系统会按已授权店铺市场批量导入。</div>` : ""}
+    ${selectedShop && !realMarketCreators.length ? `<div class="notice" style="margin-bottom:12px">当前店铺市场还没有 TikTok API 抓取到的真实达人；系统会在后台按已授权店铺市场自动抓取。下方如果看到达人，是该市场本地演示/平台补充数据。</div>` : ""}
     <div class="notice" style="margin-bottom:12px">当前套餐：${escapeHtml(state.settings.planName)}，本月建联配额已用 ${quotaLabel()}。同一达人 24 小时内只能建联一次；标记不感兴趣后 30 天内不可建联。</div>
     <div class="grid grid-4" style="margin-bottom:16px">
       ${stat("当前筛选", rows.length, "符合筛选条件的达人")}
@@ -854,9 +856,6 @@ function renderKolPool() {
         <button class="btn" onclick="selectVisibleCreators(${visibleAvailableIds})">选择当前可建联</button>
         <button class="btn ghost" onclick="clearBulkSelection()">清空选择</button>
         <button class="btn primary" onclick="openOutreachModal()">一键建联(${state.bulkCreatorIds.length})</button>
-        <button class="btn" onclick="downloadCreatorsCsvTemplate()">下载KOL模板</button>
-        <button class="btn" onclick="importCreatorsCsv()">导入CSV达人</button>
-        <button class="btn" onclick="syncCreators()">从TikTok导入达人</button>
       </div>
     </div>
     ${table(["选择", "达人", "类型", "类目/地区", "粉丝", "GMV", "回复率", "状态/标签", "操作"], rows.map((c) => {
@@ -870,7 +869,7 @@ function renderKolPool() {
       c.gmv,
       c.replyRate,
       `${c.status === "不感兴趣" ? badge("不感兴趣") : ""} ${c.tags.map((t) => `<span class="tag">${escapeHtml(t)}</span>`).join("")}`,
-      `${blockReason ? "" : `<button class="btn" onclick="openOutreachModal(${c.id})">建联</button>`} <button class="btn ghost" onclick="showCreator(${c.id})">详情</button> <button class="btn ghost" onclick="openCreatorModal(${c.id})">编辑</button> ${c.status === "不感兴趣" ? `<button class="btn ghost" onclick="clearNotInterested(${c.id})">恢复建联</button>` : `<button class="btn ghost" onclick="markNotInterested(${c.id})">不感兴趣</button>`} <button class="btn ghost" onclick="blacklistCreator(${c.id})">拉黑</button>`,
+      `${blockReason ? "" : `<button class="btn" onclick="openOutreachModal(${c.id})">建联</button>`} <button class="btn ghost" onclick="showCreator(${c.id})">详情</button> ${c.status === "不感兴趣" ? `<button class="btn ghost" onclick="clearNotInterested(${c.id})">恢复建联</button>` : `<button class="btn ghost" onclick="markNotInterested(${c.id})">不感兴趣</button>`} <button class="btn ghost" onclick="blacklistCreator(${c.id})">拉黑</button>`,
     ];
     }))}
   `;
@@ -1428,7 +1427,6 @@ function renderCreatorDetail() {
           <p><b>TikTok站内：</b>@${escapeHtml(c.username)}</p>
           <p><b>WhatsApp：</b>${escapeHtml(c.whatsapp || "未提供")}</p>
           <p><b>Email：</b>${escapeHtml(c.email || "未提供")}</p>
-          <button class="btn" onclick="openCreatorModal(${c.id})">编辑联系方式</button>
         </div>
         <div class="card">
           <h3>标签备注</h3>
@@ -1687,7 +1685,7 @@ function shopLabel(shop) {
   return region && region !== "-" ? `${name} · ${region}` : String(name);
 }
 
-function selectTikTokShop(cipher) {
+function selectTikTokShop(cipher, options = {}) {
   const shops = state.settings.tiktokShops || [];
   const selected = shops.find((shop) => shopCipher(shop) === cipher) || shops[0];
   if (!selected) return alert("当前没有可选择的 TikTok Shop 店铺。");
@@ -1697,6 +1695,7 @@ function selectTikTokShop(cipher) {
   addSyncLog("店铺选择", "已切换", `当前同步店铺：${state.settings.tiktokShopName}`);
   saveState();
   render();
+  if (options.autoImport !== false) setTimeout(() => autoImportCreatorsForCurrentMarket("切换店铺"), 0);
 }
 
 function channelOptionsForCreators(targets, currentChannel = "") {
@@ -1805,7 +1804,10 @@ async function checkTikTokShops() {
     pushMessage("店铺绑定", firstShop ? `已读取 TikTok Shop 授权店铺 ${shops.length} 个；当前同步：${state.settings.tiktokShopName}` : "TikTok Shop 已授权，但未返回店铺列表。");
     saveState();
     render();
-    if (firstShop) await syncProducts({ silent: true });
+    if (firstShop) {
+      await syncProducts({ silent: true });
+      await syncCreators({ silent: true, reason: "店铺绑定后自动抓取达人" });
+    }
   } catch (error) {
     const reason = error.message || "读取已授权店铺失败。";
     state.settings.apiStatus = "店铺读取失败";
@@ -1908,13 +1910,40 @@ function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function syncCreators() {
+function currentSelectedShop() {
+  const shops = state.settings.tiktokShops || [];
+  return shops.find((shop) => shopCipher(shop) === state.settings.selectedTikTokShopCipher) || shops[0] || null;
+}
+
+function hasRealCreatorsForShop(shop) {
+  if (!shop) return false;
+  const cipher = shopCipher(shop);
+  const market = selectedShopMarket(shop);
+  return state.creators.some((creator) => creator.sourceId && (creator.sourceShopCipher === cipher || normalizeMarketRegion(creator.region) === market));
+}
+
+async function autoImportCreatorsForCurrentMarket(reason = "自动抓取达人") {
+  const shop = currentSelectedShop();
+  if (!shop || hasRealCreatorsForShop(shop)) return;
+  const key = `${shopCipher(shop)}:${reason}`;
+  if (creatorAutoImportInFlight || creatorAutoImportAttempted.has(key)) return;
+  creatorAutoImportAttempted.add(key);
+  creatorAutoImportInFlight = true;
+  try {
+    await syncCreators({ silent: true, reason });
+  } finally {
+    creatorAutoImportInFlight = false;
+  }
+}
+
+async function syncCreators(options = {}) {
+  const silent = Boolean(options.silent);
   state.settings.lastCreatorSync = nowText();
   try {
     const shops = state.settings.tiktokShops || [];
     const selected = shops.find((shop) => shopCipher(shop) === state.settings.selectedTikTokShopCipher) || shops[0];
     const targetShops = shops.length ? shops : selected ? [selected] : [];
-    if (!targetShops.length) throw new Error("请先绑定 TikTok Shop 店铺，再从 TikTok 导入达人。");
+    if (!targetShops.length) throw new Error("请先绑定 TikTok Shop 店铺，系统才能从 TikTok 抓取达人。");
 
     let importedCount = 0;
     let successMarkets = 0;
@@ -1945,22 +1974,22 @@ async function syncCreators() {
         importedCount += marketImported;
         successMarkets += 1;
       } catch (error) {
-        failures.push(`${shopLabel(shop)}：${error.message || "导入失败"}`);
+        failures.push(`${shopLabel(shop)}：${error.message || "抓取失败"}`);
       }
     }
-    if (!successMarkets) throw new Error(failures.join("；") || "TikTok 达人导入失败。");
-    state.settings.apiStatus = "达人已导入";
-    addSyncLog("达人导入", failures.length ? "部分成功" : "成功", `已按 ${successMarkets} 个授权店铺市场从 TikTok 导入/更新 ${importedCount} 个达人。${failures.length ? `失败：${failures.join("；")}` : ""}`);
-    pushMessage("达人导入", `TikTok Shop 达人导入完成：${importedCount} 个；覆盖 ${successMarkets} 个授权店铺市场。`);
+    if (!successMarkets) throw new Error(failures.join("；") || "TikTok 达人抓取失败。");
+    state.settings.apiStatus = "达人已抓取";
+    addSyncLog("达人抓取", failures.length ? "部分成功" : "成功", `${options.reason || "系统默认抓取"}：已按 ${successMarkets} 个授权店铺市场从 TikTok 抓取/更新 ${importedCount} 个达人。${failures.length ? `失败：${failures.join("；")}` : ""}`);
+    pushMessage("达人抓取", `TikTok Shop 达人抓取完成：${importedCount} 个；覆盖 ${successMarkets} 个授权店铺市场。`);
     saveState();
     render();
   } catch (error) {
-    const reason = error.message || "达人导入失败。";
-    addSyncLog("达人导入", "失败", reason);
-    pushMessage("达人导入失败", reason);
+    const reason = error.message || "达人抓取失败。";
+    addSyncLog("达人抓取", "失败", reason);
+    pushMessage("达人抓取失败", reason);
     saveState();
     render();
-    showApiHandoffSteps("达人导入", reason);
+    if (!silent) showApiHandoffSteps("达人抓取", reason);
   }
 }
 
@@ -3377,8 +3406,6 @@ window.addProduct = addProduct;
 window.openProductModal = openProductModal;
 window.goProductCoops = goProductCoops;
 window.goProductOutreach = goProductOutreach;
-window.openCreatorModal = openCreatorModal;
-window.saveCreator = saveCreator;
 window.markNotInterested = markNotInterested;
 window.clearNotInterested = clearNotInterested;
 window.toggleCreatorSelection = toggleCreatorSelection;
@@ -3413,7 +3440,6 @@ window.saveTeamMember = saveTeamMember;
 window.toggleTeamMember = toggleTeamMember;
 window.exportState = exportState;
 window.importState = importState;
-window.importCreatorsCsv = importCreatorsCsv;
 window.importCoopsCsv = importCoopsCsv;
 window.resetDemo = resetDemo;
 window.closeModal = closeModal;
@@ -3424,3 +3450,4 @@ window.addEventListener("hashchange", () => {
 });
 
 render();
+if (state.page === "kol") setTimeout(() => autoImportCreatorsForCurrentMarket("打开达人库"), 0);

@@ -38,7 +38,7 @@ TikTok Shop API 后端使用：
 - `start-full.bat`
 - `smoke-test.js`
 
-最近一次连续推进检查：2026-06-22 18:16 CST，当前分支已连接 GitHub 远端；TikTok Shop sandbox OAuth 已跑通，已读取授权店铺 `SANDBOX_VN7651055422359521044` 并同步 1 个商品。产品同步已补充商品详情读取，实测可返回真实 `imageUrl`，`rawStatus=ACTIVATE` 会在前端归一显示为 `可选`。客户主流程已明确为“第一步绑定店铺/同步商品 -> 第二步进入达人库筛选达人”。产品管理页保留“商品名 / 商品ID”两个检索条件，并新增“下一步：筛选达人”和“进入达人库”入口；原 `KOL池` 导航和页面标题已改为 `达人库`。达人库顶部显示当前店铺来源、当前市场真实达人数量、全部真实达人数量、本地/演示达人数量、上次导入和 `从TikTok导入达人` 主按钮；CSV 入口单独命名为 `导入CSV达人`。达人导入会按所有已授权店铺逐个 `shop_cipher` 分页调用 `/api/tiktok/creators/search`，并把 `sourceShopCipher/sourceShopRegion` 写入达人记录。达人库展示不再让客户手选国家，系统按当前绑定店铺市场自动过滤；筛选项包含达人类型、TikTok 类目、粉丝量级、近30天GMV、回复率、联系方式、建联状态固定选项。达人搜索接口已接入并确认恢复响应；本地后端已修正字段映射：`creator_open_id` -> `sourceId`，`selection_region` -> 中文市场，`gmv.amount/currency` -> 可读 GMV，`avatar.url` -> 头像。侧边栏导航已从字符占位图标改为统一的内联 SVG 图标组件，并已在冒烟测试中加入防回退断言。注意达人搜索接口连续测试仍可能返回 429，下次验证不要高频请求。
+最近一次连续推进检查：2026-06-22 18:28 CST，当前分支已连接 GitHub 远端；TikTok Shop sandbox OAuth 已跑通，已读取授权店铺 `SANDBOX_VN7651055422359521044` 并同步 1 个商品。产品同步已补充商品详情读取，实测可返回真实 `imageUrl`，`rawStatus=ACTIVATE` 会在前端归一显示为 `可选`。客户主流程已明确为“第一步绑定店铺/同步商品 -> 第二步进入达人库筛选达人”。产品管理页保留“商品名 / 商品ID”两个检索条件，并新增“下一步：筛选达人”和“进入达人库”入口；原 `KOL池` 导航和页面标题已改为 `达人库`。达人库客户侧入口已收敛为“系统默认抓取 + 客户筛选建联”：客户不再看到 `从TikTok导入达人`、`导入CSV达人`、`下载KOL模板`、`手动补充达人`、`编辑达人/联系方式`。绑定/读取授权店铺后自动抓取达人；进入达人库或切换店铺时若当前市场没有真实达人也会后台自动抓取。达人抓取会按所有已授权店铺逐个 `shop_cipher` 分页调用 `/api/tiktok/creators/search`，并把 `sourceShopCipher/sourceShopRegion` 写入达人记录。达人库展示不再让客户手选国家，系统按当前绑定店铺市场自动过滤；筛选项包含达人类型、TikTok 类目、粉丝量级、近30天GMV、回复率、联系方式、建联状态固定选项。达人搜索接口已接入并确认恢复响应；本地后端已修正字段映射：`creator_open_id` -> `sourceId`，`selection_region` -> 中文市场，`gmv.amount/currency` -> 可读 GMV，`avatar.url` -> 头像。注意达人搜索接口连续测试仍可能返回 429，下次验证不要高频请求。
 
 启动：
 
@@ -165,9 +165,9 @@ P1：
    - last_sync_at
    - client_secret 不允许保存到前端 localStorage
 2. “同步日志”视图已实现，位于系统消息页；后续接真实 API 时继续复用该日志展示同步失败原因。
-3. 增加 CSV 导入 KOL / 合作记录。
-   - 已有 `importCreatorsCsv` / `importCoopsCsv`
-   - 后续增强时必须保持 `smoke-test.js` 里的 CSV 导入检查通过
+3. 合作记录保留 CSV 导入；达人库客户侧不提供 CSV 导入。
+   - 合作管理已有 `importCoopsCsv`
+   - 达人基础信息只能由 TikTok API 默认抓取或平台内部补充，不在客户侧暴露导入/新增/编辑入口
 
 P2：
 
