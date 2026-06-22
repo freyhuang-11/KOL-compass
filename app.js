@@ -429,6 +429,8 @@ function creatorFollowerTierOk(followers, tier) {
 }
 
 function creatorReplyRateOk(replyRate, tier) {
+  if (tier === "全部") return true;
+  if (replyRate === "-" || replyRate === "" || replyRate === null || replyRate === undefined) return false;
   const value = Number(String(replyRate || "0").replace("%", ""));
   if (tier === ">=60%") return value >= 60;
   if (tier === "40%-60%") return value >= 40 && value < 60;
@@ -487,6 +489,20 @@ function creatorCategoryFilterOk(selected, c) {
   if (!values.length) return true;
   const creatorValues = creatorCategoryValues(c);
   return values.some((item) => creatorValues.includes(item));
+}
+
+function resetKolFilters() {
+  state.filters.kolSearch = "";
+  state.filters.kolTypes = [];
+  state.filters.kolCategories = [];
+  state.filters.kolFollowers = "全部";
+  state.filters.kolReplyRate = "全部";
+  state.filters.kolGmv = "全部";
+  state.filters.kolContact = "全部";
+  state.filters.kolInterest = "可建联";
+  state.bulkCreatorIds = [];
+  saveState();
+  render();
 }
 
 function roi(row) {
@@ -786,7 +802,10 @@ function renderKolPool() {
   const marketCreators = currentMarket ? state.creators.filter((c) => normalizeMarketRegion(c.region) === currentMarket || c.sourceShopCipher === shopCipher(selectedShop)) : state.creators;
   const realMarketCreators = marketCreators.filter((c) => c.sourceId);
   const localCreators = marketCreators.filter((c) => !c.sourceId);
+  const typeOptions = fixedOptions(creatorTypeOptions, state.creators.map((c) => c.type));
   const categories = fixedOptions(tiktokCategoryOptions, state.creators.flatMap((c) => creatorCategoryValues(c)));
+  state.filters.kolTypes = filterValues(state.filters.kolTypes).filter((x) => typeOptions.includes(x));
+  state.filters.kolCategories = filterValues(state.filters.kolCategories).filter((x) => categories.includes(x));
   const rows = marketCreators.filter((c) => {
     const kw = state.filters.kolSearch.trim().toLowerCase();
     const typeOk = multiFilterOk(state.filters.kolTypes, c.type);
@@ -801,6 +820,7 @@ function renderKolPool() {
   });
   const availableRows = rows.filter((c) => !creatorOutreachBlockReason(c));
   const blockedRows = rows.filter((c) => creatorOutreachBlockReason(c));
+  state.bulkCreatorIds = (state.bulkCreatorIds || []).filter((id) => availableRows.some((c) => c.id === id));
   const selectedAvailableCount = (state.bulkCreatorIds || []).filter((id) => {
     const c = creator(id);
     return c && !creatorOutreachBlockReason(c);
@@ -858,7 +878,7 @@ function renderKolPool() {
             </select>
           </label>
         </div>
-        ${multiFilterChips("kolTypes", "达人类型", fixedOptions(creatorTypeOptions, state.creators.map((c) => c.type)))}
+        ${multiFilterChips("kolTypes", "达人类型", typeOptions)}
         ${multiFilterChips("kolCategories", "TikTok 类目", categories)}
         <div class="filter-chip-row"><span>当前店铺市场</span><button class="chip active" type="button">${escapeHtml(currentMarket || "绑定店铺后自动识别")}</button></div>
       </div>
@@ -868,7 +888,7 @@ function renderKolPool() {
         <button class="btn primary" onclick="openOutreachModal()">一键建联(${state.bulkCreatorIds.length})</button>
       </div>
     </div>
-    ${table(["选择", "达人", "类型", "类目/地区", "粉丝", "GMV", "回复率", "状态/标签", "操作"], rows.map((c) => {
+    ${rows.length ? table(["选择", "达人", "类型", "类目/地区", "粉丝", "GMV", "回复率", "状态/标签", "操作"], rows.map((c) => {
       const blockReason = creatorOutreachBlockReason(c);
       return [
       blockReason ? `<span class="muted">${escapeHtml(blockReason)}</span>` : `<input type="checkbox" ${state.bulkCreatorIds.includes(c.id) ? "checked" : ""} onchange="toggleCreatorSelection(${c.id}, this.checked)" aria-label="选择 @${escapeHtml(c.username)}" />`,
@@ -881,7 +901,7 @@ function renderKolPool() {
       `${c.status === "不感兴趣" ? badge("不感兴趣") : ""} ${c.tags.map((t) => `<span class="tag">${escapeHtml(t)}</span>`).join("")}`,
       `${blockReason ? "" : `<button class="btn" onclick="openOutreachModal(${c.id})">建联</button>`} <button class="btn ghost" onclick="showCreator(${c.id})">详情</button> ${c.status === "不感兴趣" ? `<button class="btn ghost" onclick="clearNotInterested(${c.id})">恢复建联</button>` : `<button class="btn ghost" onclick="markNotInterested(${c.id})">不感兴趣</button>`} <button class="btn ghost" onclick="blacklistCreator(${c.id})">拉黑</button>`,
     ];
-    }))}
+    })) : `<div class="empty-state">当前市场有 ${realMarketCreators.length} 个平台达人，但被筛选条件过滤为空。<button class="btn" onclick="resetKolFilters()">清空筛选</button></div>`}
   `;
 }
 
@@ -3454,6 +3474,7 @@ window.setPage = setPage;
 window.setFilter = setFilter;
 window.toggleMultiFilter = toggleMultiFilter;
 window.clearMultiFilter = clearMultiFilter;
+window.resetKolFilters = resetKolFilters;
 window.dashboardGo = dashboardGo;
 window.showCreator = showCreator;
 window.syncProducts = syncProducts;

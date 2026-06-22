@@ -19,6 +19,17 @@ const TOKEN_FILE = path.join(DATA_DIR, "tiktok-token.json");
 const STATE_FILE = path.join(DATA_DIR, "tiktok-oauth-state.json");
 const CREATOR_FILE = path.join(DATA_DIR, "platform-creators.json");
 const CATEGORY_FILE = path.join(DATA_DIR, "tiktok-categories.json");
+const CREATOR_JOB_FILE = path.join(DATA_DIR, "platform-creator-job.json");
+const CREATOR_MARKET_PRIORITY = (process.env.KOL_CREATOR_MARKET_PRIORITY || "SG,MY,TH,VN,PH")
+  .split(",")
+  .map((x) => x.trim().toUpperCase())
+  .filter(Boolean);
+const CREATOR_AUTO_IMPORT_ENABLED = process.env.KOL_CREATOR_AUTO_IMPORT_ENABLED !== "false";
+const CREATOR_AUTO_IMPORT_INTERVAL_MS = Number(process.env.KOL_CREATOR_AUTO_IMPORT_INTERVAL_MS || 60 * 60 * 1000);
+const CREATOR_AUTO_IMPORT_INITIAL_DELAY_MS = Number(process.env.KOL_CREATOR_AUTO_IMPORT_INITIAL_DELAY_MS || 30 * 1000);
+const CREATOR_AUTO_IMPORT_PAGE_SIZE = Number(process.env.KOL_CREATOR_AUTO_IMPORT_PAGE_SIZE || 20);
+const CREATOR_AUTO_IMPORT_PAGES_PER_RUN = Number(process.env.KOL_CREATOR_AUTO_IMPORT_PAGES_PER_RUN || 2);
+let creatorJobRunning = false;
 
 function loadEnvFile(fileName) {
   const filePath = path.join(__dirname, fileName);
@@ -70,6 +81,19 @@ function readCategoryMap() {
 
 function writeCategoryMap(map) {
   writeJson(CATEGORY_FILE, map && typeof map === "object" ? map : {});
+}
+
+function readCreatorJobState() {
+  const fallback = { markets: {}, runs: [] };
+  const state = readJson(CREATOR_JOB_FILE, fallback);
+  if (!state || typeof state !== "object") return fallback;
+  if (!state.markets || typeof state.markets !== "object") state.markets = {};
+  if (!Array.isArray(state.runs)) state.runs = [];
+  return state;
+}
+
+function writeCreatorJobState(state) {
+  writeJson(CREATOR_JOB_FILE, state || { markets: {}, runs: [] });
 }
 
 function json(res, statusCode, payload) {
@@ -634,6 +658,121 @@ async function importPlatformCreatorsFromTikTok(options = {}) {
   };
 }
 
+function marketCode(shop) {
+  const raw = String(shopRegion(shop) || "").toUpperCase();
+  const aliases = { SGP: "SG", MYS: "MY", THA: "TH", VNM: "VN", PHL: "PH" };
+  return aliases[raw] || raw;
+}
+
+function sortShopsByCreatorPriority(shops) {
+  return [...(shops || [])].sort((a, b) => {
+    const ai = CREATOR_MARKET_PRIORITY.indexOf(marketCode(a));
+    const bi = CREATOR_MARKET_PRIORITY.indexOf(marketCode(b));
+    const ar = ai === -1 ? 999 : ai;
+    const br = bi === -1 ? 999 : bi;
+    return ar - br || shopLabel(a).localeCompare(shopLabel(b));
+  });
+}
+
+async function runCreatorAutoImportOnce(reason = "scheduled") {
+  if (creatorJobRunning) return { skipped: true, reason: "job_already_running" };
+  creatorJobRunning = true;
+  const startedAt = new Date().toISOString();
+  const jobState = readCreatorJobState();
+  let imported = 0;
+  const failures = [];
+  const processed = [];
+
+  try {
+    const shops = sortShopsByCreatorPriority(await getAuthorizedShops());
+    const categoryMap = await refreshCategoryMap(shops);
+    relabelPlatformCreators(categoryMap);
+
+    for (const shop of shops) {
+      const code = marketCode(shop);
+      const cipher = shopCipher(shop);
+      if (!cipher || !CREATOR_MARKET_PRIORITY.includes(code)) continue;
+
+      const key = cipher;
+      const marketState = jobState.markets[key] || {};
+      let pageToken = marketState.nextPageToken || "";
+      let marketImported = 0;
+      let pages = 0;
+
+      try {
+        while (pages < CREATOR_AUTO_IMPORT_PAGES_PER_RUN) {
+          const upstream = await searchCreators(cipher, "", CREATOR_AUTO_IMPORT_PAGE_SIZE, pageToken);
+          const normalized = normalizeCreators(upstream, categoryMap);
+          upsertPlatformCreators(normalized, shop);
+          marketImported += normalized.length;
+          imported += normalized.length;
+          pageToken = upstream.data?.next_page_token || upstream.data?.nextPageToken || upstream.data?.pagination?.next_page_token || "";
+          pages += 1;
+          if (!pageToken) break;
+          await new Promise((resolve) => setTimeout(resolve, 1500));
+        }
+        jobState.markets[key] = {
+          market: code,
+          shop: shopLabel(shop),
+          nextPageToken: pageToken,
+          lastImported: marketImported,
+          lastRunAt: new Date().toISOString(),
+          exhausted: !pageToken,
+          lastError: "",
+        };
+        processed.push({ market: code, shop: shopLabel(shop), imported: marketImported, nextPageToken: Boolean(pageToken) });
+      } catch (error) {
+        const message = error.message || "Creator import failed";
+        jobState.markets[key] = {
+          ...marketState,
+          market: code,
+          shop: shopLabel(shop),
+          nextPageToken: pageToken || marketState.nextPageToken || "",
+          lastRunAt: new Date().toISOString(),
+          exhausted: false,
+          lastError: message,
+        };
+        failures.push({ market: code, shop: shopLabel(shop), message });
+      }
+    }
+  } finally {
+    creatorJobRunning = false;
+  }
+
+  const run = {
+    reason,
+    startedAt,
+    finishedAt: new Date().toISOString(),
+    priority: CREATOR_MARKET_PRIORITY,
+    imported,
+    processed,
+    failures,
+    total: readPlatformCreators().length,
+  };
+  jobState.lastRun = run;
+  jobState.runs = [run, ...(jobState.runs || [])].slice(0, 20);
+  writeCreatorJobState(jobState);
+  return run;
+}
+
+function startCreatorAutoImportScheduler() {
+  if (!CREATOR_AUTO_IMPORT_ENABLED) return;
+  setTimeout(() => {
+    runCreatorAutoImportOnce("startup").catch((error) => {
+      const state = readCreatorJobState();
+      state.lastRun = { reason: "startup", finishedAt: new Date().toISOString(), imported: 0, failures: [{ message: error.message }] };
+      writeCreatorJobState(state);
+    });
+  }, Math.max(0, CREATOR_AUTO_IMPORT_INITIAL_DELAY_MS));
+  setInterval(() => {
+    runCreatorAutoImportOnce("scheduled").catch((error) => {
+      const state = readCreatorJobState();
+      state.lastRun = { reason: "scheduled", finishedAt: new Date().toISOString(), imported: 0, failures: [{ message: error.message }] };
+      writeCreatorJobState(state);
+    });
+  }, Math.max(60_000, CREATOR_AUTO_IMPORT_INTERVAL_MS));
+}
+
 function formatMoney(value) {
   if (!value) return "-";
   if (typeof value === "string" || typeof value === "number") return String(value);
@@ -710,9 +849,24 @@ async function handle(req, res) {
       return json(res, 200, { ok: true, creators: readPlatformCreators() });
     }
 
+    if (requestUrl.pathname === "/api/platform/creators/job") {
+      return json(res, 200, {
+        ok: true,
+        enabled: CREATOR_AUTO_IMPORT_ENABLED,
+        running: creatorJobRunning,
+        priority: CREATOR_MARKET_PRIORITY,
+        state: readCreatorJobState(),
+      });
+    }
+
     if (requestUrl.pathname === "/api/platform/creators/import-tiktok") {
       const body = req.method === "POST" ? await readRequestBody(req) : {};
       const result = await importPlatformCreatorsFromTikTok(body);
+      return json(res, 200, { ok: true, ...result });
+    }
+
+    if (requestUrl.pathname === "/api/platform/creators/job/run") {
+      const result = await runCreatorAutoImportOnce("manual");
       return json(res, 200, { ok: true, ...result });
     }
 
@@ -745,6 +899,7 @@ if (require.main === module) {
   http.createServer(handle).listen(PORT, "127.0.0.1", () => {
     console.log(`KOL Compass TikTok API listening on http://127.0.0.1:${PORT}`);
     if (requiredConfig().length) console.log(`Missing config: ${requiredConfig().join(", ")}`);
+    startCreatorAutoImportScheduler();
   });
 }
 
