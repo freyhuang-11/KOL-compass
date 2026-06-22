@@ -73,6 +73,7 @@ async function main() {
   assert("creator contact fields editable", app.includes('field("email", "Email"') && app.includes('field("whatsapp", "WhatsApp"') && app.includes('email: get("email")'));
   assert("KOL pool multi-dimensional filters supported", ["kolCategory", "kolRegion", "kolFollowers", "kolReplyRate", "creatorFollowerTierOk", "creatorReplyRateOk"].every((name) => app.includes(name)));
   assert("KOL pool batch outreach supported", ["toggleCreatorSelection", "openOutreachModal", "saveOutreach", "renderTemplate"].every((name) => app.includes(`function ${name}`)) && app.includes("一键建联"));
+  assert("KOL pool selection summary supported", ["当前筛选", "可建联达人", "暂不可建联", "已选择", "选择当前可建联", "清空选择"].every((text) => app.includes(text)) && ["selectVisibleCreators", "clearBulkSelection"].every((name) => app.includes(`function ${name}`)));
   assert("outreach quota and safety rules enforced", ["planQuotas", "quotaRemaining", "creatorOutreachBlockReason", "markNotInterested", "clearNotInterested", "selectPlan"].every((name) => app.includes(name)) && app.includes("24小时内已建联") && app.includes("不感兴趣至"));
   assert("outreach replies supported", ["openReplyModal", "saveReply", "replyChannelOptions"].every((name) => app.includes(`function ${name}`)) && app.includes("回复达人"));
   assert("outreach filters supported", ["outreachSearch", "outreachStatus", "outreachChannel"].every((name) => app.includes(name)) && app.includes("搜索达人、产品、消息"));

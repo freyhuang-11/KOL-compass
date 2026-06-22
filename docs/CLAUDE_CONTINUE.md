@@ -31,7 +31,7 @@
 - `stop-5175.bat`
 - `smoke-test.js`
 
-最近一次心跳检查：2026-06-22 09:30 CST，当前分支已连接 GitHub 远端，已增强建联记录页状态总览：建联总数、待达人回复、待我方回复、已转合作状态卡片可直接筛选，列表展示当前显示条数；`node --check app.js` 与 `node smoke-test.js` 已通过，截图 `smoke-outreach.png` 已重新生成并目视复核，下一步小步提交推送。
+最近一次心跳检查：2026-06-22 10:31 CST，当前分支已连接 GitHub 远端，已增强 KOL 池运营入口：当前筛选、可建联达人、暂不可建联、已选择状态总览可见，并支持选择当前可建联与清空选择；`node --check app.js` 与 `node smoke-test.js` 已通过，截图 `smoke-kol-pool.png` 已重新生成并目视复核，下一步小步提交推送。
 
 启动：
 

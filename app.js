@@ -667,9 +667,22 @@ function renderKolPool() {
     const interestOk = state.filters.kolInterest === "显示不感兴趣" ? c.status !== "黑名单" : c.status !== "黑名单" && !isNotInterestedBlocked(c);
     return typeOk && categoryOk && regionOk && followersOk && replyRateOk && kwOk && interestOk;
   });
+  const availableRows = rows.filter((c) => !creatorOutreachBlockReason(c));
+  const blockedRows = rows.filter((c) => creatorOutreachBlockReason(c));
+  const selectedAvailableCount = (state.bulkCreatorIds || []).filter((id) => {
+    const c = creator(id);
+    return c && !creatorOutreachBlockReason(c);
+  }).length;
+  const visibleAvailableIds = `[${availableRows.map((c) => c.id).join(",")}]`;
   return `
     ${pageHead("KOL池", "筛选达人并发起建联。KOL 详情只看基础信息与沟通入口，不展示合作产出指标。", `<button class="btn primary" onclick="openCreatorModal()">新增达人</button>`)}
     <div class="notice" style="margin-bottom:12px">当前套餐：${escapeHtml(state.settings.planName)}，本月建联配额已用 ${quotaLabel()}。同一达人 24 小时内只能建联一次；标记不感兴趣后 30 天内不可建联。</div>
+    <div class="grid grid-4" style="margin-bottom:16px">
+      ${stat("当前筛选", rows.length, "符合筛选条件的达人")}
+      ${stat("可建联达人", availableRows.length, "未命中黑名单、冷却和不感兴趣规则")}
+      ${stat("暂不可建联", blockedRows.length, "查看表格首列的拦截原因")}
+      ${stat("已选择", selectedAvailableCount, "将进入一键建联")}
+    </div>
     <div class="toolbar">
       <div class="filters">
         <input class="input" placeholder="搜索达人、用户名、标签..." value="${escapeHtml(state.filters.kolSearch)}" oninput="setFilter('kolSearch', this.value)" />
@@ -693,6 +706,8 @@ function renderKolPool() {
         </select>
       </div>
       <div class="filters">
+        <button class="btn" onclick="selectVisibleCreators(${visibleAvailableIds})">选择当前可建联</button>
+        <button class="btn ghost" onclick="clearBulkSelection()">清空选择</button>
         <button class="btn primary" onclick="openOutreachModal()">一键建联(${state.bulkCreatorIds.length})</button>
         <button class="btn" onclick="importCreatorsCsv()">导入KOL CSV</button>
         <button class="btn" onclick="syncCreators()">同步达人数据</button>
@@ -1912,6 +1927,23 @@ function toggleCreatorSelection(id, checked) {
   if (checked) next.add(id);
   else next.delete(id);
   state.bulkCreatorIds = Array.from(next);
+  saveState();
+  render();
+}
+
+function selectVisibleCreators(ids) {
+  const next = new Set(state.bulkCreatorIds || []);
+  (ids || []).forEach((id) => {
+    const c = creator(id);
+    if (c && !creatorOutreachBlockReason(c)) next.add(id);
+  });
+  state.bulkCreatorIds = Array.from(next);
+  saveState();
+  render();
+}
+
+function clearBulkSelection() {
+  state.bulkCreatorIds = [];
   saveState();
   render();
 }
