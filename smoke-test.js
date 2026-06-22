@@ -61,6 +61,7 @@ async function main() {
   assert("cooperation has produced/unproduced metrics", app.includes("已产出达人") && app.includes("未产出达人"));
   assert("dashboard filters and drilldowns supported", ["dashboardRange", "dashboardOwner", "dashboardGo", "内容状态分布", "负责人概览"].every((name) => app.includes(name)));
   assert("dashboard separates activity and due ranges", ["inActivityRange", "inDueRange"].every((name) => app.includes(`function ${name}`)) && app.includes("活动按更新时间统计，合作按产出截止日统计"));
+  assert("refined visual layout classes supported", ["detail-shell", "creator-portrait", "chat-frame", "coop-detail-grid", "content-card-grid", "stage-list"].every((text) => app.includes(text) || read("app.css").includes(text)));
   assert("cooperation search and output filters supported", ["coopSearch", "coopOutput"].every((name) => app.includes(name)) && app.includes("搜索达人、产品、负责人、备注"));
   assert("cooperation sales review summary supported", ["visibleGmv", "visibleOrders", "visibleSpend", "visibleRoi"].every((name) => app.includes(name)) && ["当前视图GMV", "当前订单", "佣金+投流", "当前ROI"].every((text) => app.includes(text)));
   assert("product filters supported", ["productSearch", "productCategory", "productStatus", "productMode"].every((name) => app.includes(name)) && app.includes("真实商品、佣金率和合作模式应来自 TikTok Shop Partner API"));

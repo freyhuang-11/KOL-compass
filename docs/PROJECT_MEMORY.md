@@ -1,6 +1,6 @@
 # KOL Compass 项目记忆
 
-更新时间：2026-06-22 12:05 CST
+更新时间：2026-06-22 12:15 CST
 
 ## 当前工作目录
 
@@ -52,10 +52,10 @@ node smoke-test.js
 - 系统消息截图 `smoke-messages.png` 已生成并目视检查通过。
 - 产品管理截图 `smoke-products.png` 已重新生成并目视检查通过，详情、相关合作、相关建联入口可见。
 - 平台管理端截图 `smoke-admin.png` 已重新生成并目视检查通过。
-- 合作管理截图 `smoke-cooperations.png` 已重新生成并目视检查通过，当前视图 GMV、订单、佣金+投流和 ROI 复盘汇总可见。
+- 合作管理截图 `smoke-cooperations.png` 已重新生成并目视检查通过，点阵背景、生命周期侧栏、内容追踪、直播追踪和 ROI 分析模块可见。
 - 建联记录截图 `smoke-outreach.png` 已重新生成并目视检查通过，建联总数、待达人回复、待我方回复、已转合作状态总览和当前显示条数可见。
 - KOL 池截图 `smoke-kol-pool.png` 已重新生成并目视检查通过。
-- KOL 详情截图 `smoke-kol-detail.png` 已重新生成并目视检查通过。
+- KOL 详情截图 `smoke-kol-detail.png` 已重新生成并目视检查通过，左侧达人资料卡、联系方式卡、右侧沟通工作台和合作入口可见。
 - 消息模板截图 `smoke-templates.png` 已生成并目视检查通过。
 - 寄样管理截图 `smoke-samples.png` 已重新生成并目视检查通过，状态总览、搜索、状态筛选和转合作入口可见。
 - `5175` 是本项目端口。

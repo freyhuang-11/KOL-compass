@@ -906,9 +906,14 @@ function renderCooperations() {
   const visibleOrders = rows.reduce((sum, x) => sum + Number(x.orders || 0), 0);
   const visibleSpend = rows.reduce((sum, x) => sum + Number(x.commission || 0) + Number(x.adSpend || 0), 0);
   const visibleRoi = visibleSpend > 0 ? visibleGmv / visibleSpend : 0;
+  const focus = rows[0] || state.cooperations[0];
+  const focusCreator = focus ? creator(focus.creatorId) : null;
+  const focusProduct = focus ? product(focus.productId) : null;
+  const focusRoi = focus ? roi(focus) : 0;
   const allTags = Array.from(new Set([...fixedTags, ...state.cooperations.flatMap((x) => x.tags)]));
   return `
     ${pageHead("合作管理", "内容追踪唯一主入口：视频、直播、GMV、订单、佣金、ROI 都在这里管理。", `<button class="btn primary" onclick="openCoopModal()">新增合作</button>`)}
+    ${focus ? `<div class="warning-box" style="margin-bottom:14px">有 1 项内容追踪需要核对：${escapeHtml(focusCreator?.username || "-")} · ${escapeHtml(focusProduct?.name || "-")}</div>` : ""}
     <div class="grid grid-4">
       ${stat("合作总数", state.cooperations.length, "已进入履约阶段")}
       ${stat("已产出达人", produced, "已发视频或已直播")}
@@ -941,6 +946,59 @@ function renderCooperations() {
       ${stat("佣金+投流", money(visibleSpend), "佣金支出加投流支出")}
       ${stat("当前ROI", visibleRoi ? `${visibleRoi.toFixed(1)}x` : "-", "GMV / 佣金与投流支出")}
     </div>
+    ${focus ? `
+      <div class="coop-detail-grid">
+        <div class="card">
+          <h3>合作生命周期</h3>
+          <div class="stage-list">
+            ${["创建合作", "发送样品", "样品签收", "发布内容", "销售复盘"].map((name, idx) => `
+              <div class="stage-item">
+                <span class="stage-dot ${idx === 3 ? "active" : ""}"></span>
+                <div><b>${name}</b><div class="muted">${idx < 3 ? "已完成" : idx === 3 ? badge(focus.status) : "待复盘"}</div></div>
+              </div>
+            `).join("")}
+          </div>
+        </div>
+        <div class="work-panel">
+          <div class="card">
+            <div class="tabs"><span class="tab">合作概览</span><span class="tab">样品记录</span><span class="tab active">内容追踪</span><span class="tab">销售追踪</span><span class="tab">ROI分析</span></div>
+            <div class="content-card-grid">
+              <div class="card" style="box-shadow:none">
+                <h3>短视频追踪</h3>
+                <div class="media-row">
+                  <div class="media-thumb">TikTok Content</div>
+                  <div>
+                    <b>${escapeHtml(focusProduct?.name || "-")}</b>
+                    <p class="muted">视频 ${focus.videos || 0} · 截止 ${escapeHtml(focus.dueDate || "-")}</p>
+                    <div class="grid grid-3">
+                      ${stat("播放", focus.videos ? "1,204" : "-", "本地示例")}
+                      ${stat("GMV", money(focus.gmv || 0), "归因")}
+                      ${stat("订单", focus.orders || 0, "联盟订单")}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="card" style="box-shadow:none">
+                <h3>直播追踪</h3>
+                <p><b>场次：</b>${focus.lives || 0}</p>
+                <p><b>直播 GMV：</b>${money(focus.gmv || 0)}</p>
+                <p><b>在线人数：</b>${focus.lives ? "1,450" : "-"}</p>
+                <div class="notice">未授权 TikTok API 时使用本地台账，不伪造真实同步。</div>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <h3>ROI 分析</h3>
+            <div class="grid grid-4">
+              ${stat("佣金率", focus.commission ? "30%" : "-", "按台账估算")}
+              ${stat("件均成本", "$49.99", "本地参考")}
+              ${stat("佣金支出", money(focus.commission || 0), "Total")}
+              ${stat("当前 ROI", focusRoi ? `${focusRoi.toFixed(1)}x` : "-", "GMV / 支出")}
+            </div>
+          </div>
+        </div>
+      </div>
+    ` : ""}
     ${table(["达人", "产品", "合作类型", "内容状态", "内容数据", "GMV / ROI", "标签", "负责人", "操作"], rows.map((c) => {
       const r = roi(c);
       return [
@@ -1189,42 +1247,54 @@ function renderCreatorDetail() {
   const records = state.outreach.filter((x) => x.creatorId === c.id);
   const coops = state.cooperations.filter((x) => x.creatorId === c.id);
   return `
-    ${pageHead("KOL详情", "只展示基础资料、联系方式、标签备注、沟通记录和合作入口；合作履约数据请进入合作管理查看。", `<button class="btn" onclick="setPage('kol')">返回KOL池</button>`)}
-    <div class="split">
-      <div>
-        <div class="card">
-          <div class="person">
-            <span class="avatar">${c.username.slice(0, 1).toUpperCase()}</span>
-            <div>
-              <h2 style="margin:0">@${escapeHtml(c.username)}</h2>
-              <div class="muted">${escapeHtml(c.nickname)} · ${c.category} · ${c.region}</div>
-            </div>
+    ${pageHead("KOL详情", "管理并沉淀达人基础资料与沟通记录；合作履约数据请进入合作管理查看。", `<button class="btn" onclick="setPage('kol')">返回KOL池</button> <button class="btn primary" onclick="openOutreachModal(${c.id})">发起建联</button>`)}
+    <div class="detail-shell">
+      <aside class="profile-panel">
+        <div class="card creator-profile">
+          <div class="creator-portrait"></div>
+          <h3 style="margin:0">${escapeHtml(c.nickname || c.username)}</h3>
+          <div class="link">@${escapeHtml(c.username)}</div>
+          <div style="margin-top:10px">${c.tags.map((t) => `<span class="tag">${escapeHtml(t)}</span>`).join("")}</div>
+          <div class="metric-pair">
+            <div class="mini-metric"><b>${c.followers.toLocaleString()}</b><span class="muted">粉丝</span></div>
+            <div class="mini-metric"><b>${escapeHtml(c.replyRate || "-")}</b><span class="muted">回复率</span></div>
           </div>
-          <div style="margin-top:14px">${c.tags.map((t) => `<span class="tag">${escapeHtml(t)}</span>`).join("")}</div>
+        </div>
+        <div class="card">
+          <h3>联系方式</h3>
+          <p><b>TikTok站内：</b>@${escapeHtml(c.username)}</p>
+          <p><b>WhatsApp：</b>${escapeHtml(c.whatsapp || "未提供")}</p>
+          <p><b>Email：</b>${escapeHtml(c.email || "未提供")}</p>
+          <button class="btn" onclick="openCreatorModal(${c.id})">编辑联系方式</button>
+        </div>
+        <div class="card">
+          <h3>标签备注</h3>
           <p>${escapeHtml(c.notes)}</p>
         </div>
-        <div class="card" style="margin-top:16px">
-          <h3>沟通记录</h3>
+      </aside>
+      <div class="work-panel">
+        <div class="card chat-frame">
+          <div class="tabs"><span class="tab active">沟通记录</span><span class="tab">合作记录</span><span class="tab">基本信息</span></div>
+          ${records.map((r) => `<div class="message ${r.status === "待我方回复" ? "inbound" : "outbound"}"><b>${escapeHtml(r.channel)}</b> · ${badge(r.status)}<div>${escapeHtml(r.lastMessage)}</div><span class="muted">${escapeHtml(r.updatedAt)}</span><div style="margin-top:8px"><button class="btn ghost" onclick="openReplyModal(${r.id})">回复</button></div></div>`).join("") || `<div class="empty">暂无沟通记录。</div>`}
+          <div class="chat-input-bar">
+            <input class="input" style="flex:1" placeholder="输入沟通内容..." />
+            <button class="btn">选择模板</button>
+            <button class="btn primary" onclick="${records[0] ? `openReplyModal(${records[0].id})` : `openOutreachModal(${c.id})`}">发送消息</button>
+          </div>
+        </div>
+        <div class="card">
+          <h3>合作记录入口</h3>
           <div class="timeline">
-            ${records.map((r) => `<div class="message ${r.status === "待我方回复" ? "inbound" : "outbound"}"><b>${r.channel}</b> · ${badge(r.status)}<div>${escapeHtml(r.lastMessage)}</div><span class="muted">${r.updatedAt}</span><div style="margin-top:8px"><button class="btn ghost" onclick="openReplyModal(${r.id})">回复</button></div></div>`).join("") || `<div class="empty">暂无沟通记录。</div>`}
+            ${coops.map((x) => `
+              <div class="message">
+                <b>${escapeHtml(product(x.productId)?.name || "-")}</b>
+                <div style="margin-top:6px">${badge(detailCoopStage(x))} <span class="muted">负责人：${escapeHtml(x.owner || "-")}</span></div>
+                <div style="margin-top:10px"><button class="btn ghost" onclick="setPage('cooperations')">进入合作详情</button></div>
+              </div>
+            `).join("") || `<div class="empty">暂无合作记录。</div>`}
           </div>
         </div>
       </div>
-      <aside>
-        <div class="card">
-          <h3>基础信息</h3>
-          <p><b>粉丝：</b>${c.followers.toLocaleString()}</p>
-          <p><b>类型：</b>${c.type}</p>
-          <p><b>Email：</b>${c.email || "未提供"}</p>
-          <p><b>WhatsApp：</b>${c.whatsapp || "未提供"}</p>
-          <button class="btn primary" onclick="openOutreachModal(${c.id})">发起建联</button>
-          <button class="btn" onclick="openCreatorModal(${c.id})">编辑联系方式</button>
-        </div>
-        <div class="card" style="margin-top:16px">
-          <h3>合作记录入口</h3>
-          ${coops.map((x) => `<div class="message"><b>${product(x.productId)?.name || "-"}</b><br>${badge(detailCoopStage(x))}<br><button class="btn ghost" onclick="setPage('cooperations')">进入合作详情</button></div>`).join("") || `<div class="empty">暂无合作记录。</div>`}
-        </div>
-      </aside>
     </div>
   `;
 }

@@ -1,16 +1,16 @@
 ---
 name: TikTok KOL SaaS Admin
 colors:
-  background: "#f8f9fa"
+  background: "#f4f7fb"
   surface: "#ffffff"
   surface-muted: "#f3f4f6"
-  border: "#e5e7eb"
-  text-primary: "#111827"
-  text-secondary: "#4b5563"
-  text-muted: "#6b7280"
-  primary: "#3f51b5"
-  primary-strong: "#24389c"
-  sidebar: "#1e293b"
+  border: "#dfe5ef"
+  text-primary: "#0f172a"
+  text-secondary: "#475569"
+  text-muted: "#64748b"
+  primary: "#1f3faa"
+  primary-strong: "#17308a"
+  sidebar: "#172235"
   success: "#16a34a"
   warning: "#d97706"
   danger: "#dc2626"
@@ -35,11 +35,11 @@ spacing:
 
 ## Visual Direction
 
-干净、科技、克制、专业。参考 Stripe Dashboard 的数据清晰度和 Attio 的 CRM 对象管理方式。采用浅色后台，深色侧边栏，白色内容面板，低对比描边，不使用装饰性大渐变或厚重投影。
+干净、科技、克制、专业。参考 Stripe Dashboard 的数据清晰度和 Attio 的 CRM 对象管理方式，同时保留用户参考图里的点阵画布、深色侧边栏、精修详情卡片和工作台模块。采用浅色点阵后台、深色侧边栏、白色内容面板、低对比描边和轻阴影，不使用营销式大渐变或厚重投影。
 
 ## Layout
 
-后台采用固定左侧导航 + 顶部工具栏 + 主内容区。主内容区优先使用表格、筛选栏、状态标签、指标卡和右侧详情抽屉。页面宽度按 1280px 桌面后台设计，信息密度适中偏高。
+后台采用固定左侧导航 + 顶部工具栏 + 主内容区。主内容区优先使用表格、筛选栏、状态标签、指标卡和详情工作台。KOL 详情采用左侧资料卡 + 右侧沟通工作区；合作管理采用生命周期侧栏 + 内容追踪/直播追踪/ROI 分析模块。页面宽度按桌面后台设计，信息密度适中偏高。
 
 ## Components
 
