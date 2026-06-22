@@ -629,9 +629,40 @@ function renderProducts() {
     const modeOk = state.filters.productMode === "全部" || p.mode === state.filters.productMode;
     return kwOk && categoryOk && statusOk && modeOk;
   });
+  const activeCount = rows.filter((p) => String(p.status).toUpperCase() === "ACTIVATE" || p.status === "在售").length;
   return `
-    ${pageHead("产品管理", "同步和查看 TikTok Shop 商品、联盟佣金与合作模式。", `<button class="btn primary" onclick="syncProducts()">同步商品</button> <button class="btn" onclick="checkTikTokShops()">检查店铺绑定</button>`)}
-    <div class="toolbar">
+    ${pageHead("产品管理", "绑定店铺后自动读取商品；建联和定向邀约时直接从这里选择商品。", `<button class="btn primary" onclick="syncProducts()">重新同步商品</button> <button class="btn" onclick="checkTikTokShops()">刷新店铺授权</button>`)}
+    <section class="store-panel">
+      <div>
+        <div class="section-kicker">TikTok Shop 授权</div>
+        <h3>${escapeHtml(selectedShop ? shopLabel(selectedShop) : "尚未绑定店铺")}</h3>
+        <p>${shops.length ? `已授权 ${shops.length} 个店铺，当前商品源会自动用于建联、寄样和合作流程。` : "完成店铺授权后，系统会自动同步店铺、商品和后续可用的达人接口。"}</p>
+        <div class="store-meta">
+          <span>后端：${escapeHtml(state.settings.tiktokBackendStatus || "未检查")}</span>
+          <span>上次同步：${escapeHtml(state.settings.lastProductSync)}</span>
+        </div>
+      </div>
+      <div class="store-actions">
+        ${shops.length ? `
+          <select class="select" onchange="selectTikTokShop(this.value)">
+            ${shops.map((shop) => {
+              const cipher = shopCipher(shop);
+              return `<option value="${escapeHtml(cipher)}" ${cipher === state.settings.selectedTikTokShopCipher ? "selected" : ""}>${escapeHtml(shopLabel(shop))}</option>`;
+            }).join("")}
+          </select>
+        ` : ""}
+        <button class="btn" onclick="setPage('admin')">管理授权</button>
+        <button class="btn primary" onclick="syncProducts()">同步商品</button>
+      </div>
+    </section>
+    <div class="grid grid-4" style="margin-bottom:16px">
+      ${stat("已授权店铺", shops.length, "来自 TikTok OAuth")}
+      ${stat("当前商品", rows.length, "按当前筛选统计")}
+      ${stat("可售商品", activeCount, "状态为 ACTIVATE / 在售")}
+      ${stat("商品源", selectedShop ? shopRegion(selectedShop) : "-", "当前同步市场")}
+    </div>
+    <div class="surface-panel">
+    <div class="toolbar compact-toolbar">
       <div class="filters">
         <input class="input" placeholder="搜索产品名称、类目、模式..." value="${escapeHtml(state.filters.productSearch)}" oninput="setFilter('productSearch', this.value)" />
         <select class="select" onchange="setFilter('productCategory', this.value)">
@@ -645,28 +676,11 @@ function renderProducts() {
         </select>
       </div>
       <div class="filters">
-        <span class="muted">上次同步：${state.settings.lastProductSync}</span>
-        ${shops.length ? `
-          <select class="select" onchange="selectTikTokShop(this.value)">
-            ${shops.map((shop) => {
-              const cipher = shopCipher(shop);
-              return `<option value="${escapeHtml(cipher)}" ${cipher === state.settings.selectedTikTokShopCipher ? "selected" : ""}>${escapeHtml(shopLabel(shop))}</option>`;
-            }).join("")}
-          </select>
-        ` : ""}
         <button class="btn" onclick="addProduct()">商品来源说明</button>
       </div>
     </div>
-    <div class="notice" style="margin-bottom:12px">真实商品、佣金率和合作模式应来自 TikTok Shop Partner API；未绑定店铺时不会伪造同步成功。当前店铺：${escapeHtml(selectedShop ? shopLabel(selectedShop) : "未绑定")}；已授权店铺数：${shops.length}；后端：${escapeHtml(state.settings.tiktokBackendStatus || "未检查")}。</div>
-    ${table(["产品", "类目", "价格", "佣金", "合作模式", "状态", "操作"], rows.map((p) => [
-      `<b>${escapeHtml(p.name)}</b>`,
-      p.category,
-      p.price,
-      p.commission,
-      p.mode,
-      badge(p.status),
-      `<button class="btn" onclick="openProductModal(${p.id})">详情</button> <button class="btn ghost" onclick="goProductCoops(${p.id})">相关合作</button> <button class="btn ghost" onclick="goProductOutreach(${p.id})">相关建联</button>`,
-    ]))}
+    ${productList(rows)}
+    </div>
   `;
 }
 
@@ -1346,6 +1360,74 @@ function table(headers, rows) {
   `;
 }
 
+function productImage(product) {
+  return product?.imageUrl || product?.image || "";
+}
+
+function productThumb(product) {
+  const image = productImage(product);
+  if (image) return `<img src="${escapeHtml(image)}" alt="${escapeHtml(product.name)}" />`;
+  return `<span>${escapeHtml((product?.name || "P").slice(0, 1).toUpperCase())}</span>`;
+}
+
+function productList(rows) {
+  if (!rows.length) return `<div class="empty panel-empty">当前筛选下暂无商品。绑定店铺并同步后，商品会自动进入建联和邀约流程。</div>`;
+  return `
+    <div class="object-list product-object-list">
+      <div class="object-head">
+        <span>商品信息</span>
+        <span>价格</span>
+        <span>佣金</span>
+        <span>状态</span>
+        <span>操作</span>
+      </div>
+      ${rows.map((p) => `
+        <div class="object-row">
+          <div class="product-main">
+            <div class="product-thumb">${productThumb(p)}</div>
+            <div>
+              <b>${escapeHtml(p.name)}</b>
+              <div class="muted">${escapeHtml(p.sourceId || p.category || "-")}</div>
+              <div class="product-tags">
+                <span>${escapeHtml(p.category || "TikTok Shop")}</span>
+                <span>${escapeHtml(p.mode || "店铺商品")}</span>
+              </div>
+            </div>
+          </div>
+          <div>${escapeHtml(p.price || "-")}</div>
+          <div>${escapeHtml(p.commission || "-")}</div>
+          <div>${badge(p.status || "已同步")}</div>
+          <div class="row-actions">
+            <button class="btn" onclick="openProductModal(${p.id})">详情</button>
+            <button class="btn ghost" onclick="goProductCoops(${p.id})">合作</button>
+            <button class="btn ghost" onclick="goProductOutreach(${p.id})">建联</button>
+          </div>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function productPicker(selectedId = state.products[0]?.id) {
+  if (!state.products.length) {
+    return `<div class="empty panel-empty">还没有同步商品。请先完成店铺授权并同步商品，再发起建联。</div>`;
+  }
+  return `
+    <div class="product-picker">
+      ${state.products.map((p) => `
+        <label class="product-pick ${Number(selectedId) === Number(p.id) ? "selected" : ""}">
+          <input type="radio" name="outreachProductId" value="${p.id}" ${Number(selectedId) === Number(p.id) ? "checked" : ""} />
+          <span class="product-thumb">${productThumb(p)}</span>
+          <span class="product-pick-main">
+            <b>${escapeHtml(p.name)}</b>
+            <span>${escapeHtml(p.price || "-")} · 佣金 ${escapeHtml(p.commission || "-")} · ${escapeHtml(p.status || "已同步")}</span>
+          </span>
+        </label>
+      `).join("")}
+    </div>
+  `;
+}
+
 function personCell(c) {
   if (!c) return "-";
   return `
@@ -1588,6 +1670,7 @@ async function checkTikTokShops() {
     pushMessage("店铺绑定", firstShop ? `已读取 TikTok Shop 授权店铺 ${shops.length} 个；当前同步：${state.settings.tiktokShopName}` : "TikTok Shop 已授权，但未返回店铺列表。");
     saveState();
     render();
+    if (firstShop) await syncProducts({ silent: true });
   } catch (error) {
     const reason = error.message || "读取已授权店铺失败。";
     state.settings.apiStatus = "店铺读取失败";
@@ -1598,7 +1681,8 @@ async function checkTikTokShops() {
   }
 }
 
-async function syncProducts() {
+async function syncProducts(options = {}) {
+  const silent = Boolean(options.silent);
   state.settings.lastProductSync = nowText();
   try {
     const shops = state.settings.tiktokShops || [];
@@ -1614,7 +1698,7 @@ async function syncProducts() {
     state.settings.apiStatus = "商品已同步";
     state.settings.tiktokBackendStatus = "后端已连接 TikTok";
     addSyncLog("商品同步", "成功", `已从 TikTok Shop 同步 ${data.products?.length || 0} 个商品。`);
-    pushMessage("商品同步", `TikTok Shop 商品同步完成：${data.products?.length || 0} 个。`);
+    pushMessage(silent ? "店铺商品自动同步" : "商品同步", `TikTok Shop 商品同步完成：${data.products?.length || 0} 个。`);
     saveState();
     render();
   } catch (error) {
@@ -1623,7 +1707,7 @@ async function syncProducts() {
     pushMessage("商品同步失败", reason);
     saveState();
     render();
-    showApiHandoffSteps("商品同步", reason);
+    if (!silent) showApiHandoffSteps("商品同步", reason);
   }
 }
 
@@ -2258,13 +2342,21 @@ function openOutreachModal(creatorId = 0) {
     alert(`本月建联配额不足：剩余 ${quotaRemaining()}，本次选择 ${targets.length}。请升级套餐或减少选择数量。`);
     return;
   }
+  if (!state.products.length) {
+    alert("请先完成店铺授权并同步商品。建联和定向邀约必须从 TikTok 店铺商品中选择，避免手动录入造成数据不一致。");
+    state.page = "products";
+    location.hash = "#products";
+    render();
+    return;
+  }
   const channelOptions = channelOptionsForCreators(targets);
   if (!channelOptions.length) return alert("当前没有可用发送渠道，请先到平台管理端开启 TikTok 私信、Email 或 WhatsApp。");
   const defaultTemplate = state.templates[0]?.content || "Hi {KOL名称}，我们想邀请你合作 {产品名称}。";
   openModal("发起建联", `
     <div class="notice">本次将联系 ${targets.length} 位达人：${targets.slice(0, 4).map((c) => `@${escapeHtml(c.username)}`).join("、")}${targets.length > 4 ? " 等" : ""}。Email / WhatsApp 必须同时满足“平台开关已开启”和“所有目标达人已录入联系方式”才会显示。</div>
+    <div class="modal-section-title">选择建联商品</div>
+    ${productPicker(state.products[0]?.id)}
     <div class="form-grid" style="margin-top:12px">
-      ${selectField("outreachProductId", "建联产品", state.products.map((x) => [x.id, `${x.name} · ${x.commission}`]), state.products[0]?.id)}
       ${selectField("outreachChannel", "发送渠道", channelOptions, channelOptions[0][0])}
       ${selectField("outreachTemplateId", "消息模板", [["0", "不使用模板"], ...state.templates.map((x) => [x.id, x.name])], state.templates[0]?.id || "0")}
       ${selectField("outreachSendMode", "发送方式", [["立即发送", "立即发送"], ["定时发送", "定时发送"]], "立即发送")}
@@ -2285,7 +2377,9 @@ function renderTemplate(content, c, p) {
 
 function saveOutreach(idList) {
   const ids = String(idList || "").split(",").map((x) => Number(x)).filter(Boolean);
-  const p = product(Number(document.getElementById("outreachProductId").value)) || state.products[0];
+  const selectedProductInput = document.querySelector('input[name="outreachProductId"]:checked');
+  const p = product(Number(selectedProductInput?.value)) || state.products[0];
+  if (!p) return alert("请先选择一个已同步商品。");
   const templateId = Number(document.getElementById("outreachTemplateId").value);
   const template = state.templates.find((x) => x.id === templateId);
   const channel = document.getElementById("outreachChannel").value;

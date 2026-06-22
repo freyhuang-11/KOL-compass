@@ -285,6 +285,7 @@ function normalizeProducts(upstream) {
     const currency = item.price?.currency || skuPrice.currency || "";
     const price = priceValue && currency ? `${currency} ${priceValue}` : priceValue;
     const category = item.category_chains?.[0]?.local_name || item.category_name || item.category?.name || "TikTok Shop";
+    const imageUrl = item.main_images?.[0]?.urls?.[0] || item.main_images?.[0]?.url || item.images?.[0]?.url || item.cover_image?.url || "";
     return {
       id: Number(String(item.id || item.product_id || Date.now() + index).replace(/\D/g, "").slice(-9)) || Date.now() + index,
       sourceId: item.id || item.product_id || "",
@@ -294,6 +295,8 @@ function normalizeProducts(upstream) {
       commission: item.commission?.rate || item.open_collaboration?.commission_rate || "-",
       mode: item.open_collaboration ? "公开合作" : "店铺商品",
       status: item.status || item.audit_status || "已同步",
+      imageUrl,
+      salesRegions: item.sales_regions || [],
     };
   });
 }
