@@ -31,7 +31,7 @@ const CREATOR_AUTO_IMPORT_PAGE_SIZE = Number(process.env.KOL_CREATOR_AUTO_IMPORT
 const CREATOR_AUTO_IMPORT_PAGES_PER_RUN = Number(process.env.KOL_CREATOR_AUTO_IMPORT_PAGES_PER_RUN || 1);
 const CREATOR_SEARCH_PAGE_DELAY_MS = Number(process.env.KOL_CREATOR_SEARCH_PAGE_DELAY_MS || 5000);
 const CREATOR_RATE_LIMIT_BACKOFF_MS = parseDurationSchedule(process.env.KOL_CREATOR_RATE_LIMIT_BACKOFF_MS || "60000,120000,300000,600000");
-const CREATOR_FULL_REFRESH_INTERVAL_MS = Number(process.env.KOL_CREATOR_FULL_REFRESH_INTERVAL_MS || 24 * 60 * 60 * 1000);
+const CREATOR_SEARCH_REFRESH_INTERVAL_MS = Number(process.env.KOL_CREATOR_SEARCH_REFRESH_INTERVAL_MS || 10 * 60 * 1000);
 let creatorJobRunning = false;
 
 function loadEnvFile(fileName) {
@@ -787,20 +787,20 @@ async function runCreatorAutoImportOnce(reason = "scheduled", options = {}) {
 
       const key = cipher;
       const marketState = jobState.markets[key] || {};
-      const wasExhausted = marketState.exhausted === true;
-      const shouldRefreshExhausted = wasExhausted && msSinceIso(marketState.lastExhaustedAt || marketState.lastRunAt) >= CREATOR_FULL_REFRESH_INTERVAL_MS;
-      if (!force && wasExhausted && !shouldRefreshExhausted) {
-        const nextRunAt = marketState.nextRunAt || isoAfter(CREATOR_FULL_REFRESH_INTERVAL_MS - msSinceIso(marketState.lastExhaustedAt || marketState.lastRunAt));
-        jobState.markets[key] = { ...marketState, market: code, shop: shopLabel(shop), nextRunAt };
-        skippedMarkets.push({ market: code, shop: shopLabel(shop), reason: "market_exhausted", nextRunAt });
+      const wasSearchCursorExhausted = marketState.exhausted === true;
+      const shouldRefreshSearch = wasSearchCursorExhausted && msSinceIso(marketState.lastExhaustedAt || marketState.lastRunAt) >= CREATOR_SEARCH_REFRESH_INTERVAL_MS;
+      if (!force && wasSearchCursorExhausted && !shouldRefreshSearch) {
+        const nextRunAt = marketState.nextRunAt || isoAfter(CREATOR_SEARCH_REFRESH_INTERVAL_MS - msSinceIso(marketState.lastExhaustedAt || marketState.lastRunAt));
+        jobState.markets[key] = { ...marketState, market: code, shop: shopLabel(shop), nextRunAt, exhaustedReason: "search_cursor_exhausted" };
+        skippedMarkets.push({ market: code, shop: shopLabel(shop), reason: "search_cursor_exhausted", nextRunAt });
         continue;
       }
-      if (!force && isFutureIso(marketState.nextRunAt)) {
+      if (!force && !shouldRefreshSearch && isFutureIso(marketState.nextRunAt)) {
         skippedMarkets.push({ market: code, shop: shopLabel(shop), reason: "waiting_for_next_run", nextRunAt: marketState.nextRunAt });
         continue;
       }
       let pageToken = marketState.nextPageToken || "";
-      if (shouldRefreshExhausted || force) pageToken = "";
+      if (shouldRefreshSearch || force) pageToken = "";
       let marketImported = 0;
       let pages = 0;
 
@@ -817,7 +817,7 @@ async function runCreatorAutoImportOnce(reason = "scheduled", options = {}) {
           if (!pageToken) break;
         }
         const exhausted = !pageToken;
-        const nextRunAt = exhausted ? isoAfter(CREATOR_FULL_REFRESH_INTERVAL_MS) : isoAfter(CREATOR_AUTO_IMPORT_INTERVAL_MS);
+        const nextRunAt = exhausted ? isoAfter(CREATOR_SEARCH_REFRESH_INTERVAL_MS) : isoAfter(CREATOR_AUTO_IMPORT_INTERVAL_MS);
         jobState.markets[key] = {
           market: code,
           shop: shopLabel(shop),
@@ -826,6 +826,7 @@ async function runCreatorAutoImportOnce(reason = "scheduled", options = {}) {
           lastRunAt: new Date().toISOString(),
           nextRunAt,
           exhausted,
+          exhaustedReason: exhausted ? "search_cursor_exhausted" : "",
           lastExhaustedAt: exhausted ? new Date().toISOString() : marketState.lastExhaustedAt || "",
           rateLimitCount: 0,
           lastError: "",
