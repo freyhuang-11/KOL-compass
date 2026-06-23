@@ -2643,15 +2643,17 @@ function markOutreachApiSubmitted(id, apiResult = null) {
   if (!row) return;
   const target = targetCollaboration(row.targetCollaborationId);
   const targetBlocked = isTargetSchemaRequired(apiResult);
+  const officialId = targetOfficialId(apiResult);
   row.status = targetBlocked ? "定向邀约待配置" : "待回复";
   row.updatedAt = nowText();
   row.apiResult = apiResult;
   row.lastMessage = targetBlocked
     ? `[${row.updatedAt}] 触达已提交；TikTok 定向邀约未提交：Target Collaboration 请求 schema 待确认，请查看 API 结果。\n${row.lastMessage || ""}`
-    : `[${row.updatedAt}] 已提交 TikTok API / Email 队列，等待达人回复。\n${row.lastMessage || ""}`;
+    : `[${row.updatedAt}] TikTok 定向邀约/触达已提交，等待达人回复。\n${row.lastMessage || ""}`;
   if (target) {
     target.status = targetBlocked ? "定向邀约待配置" : "待达人接受";
     target.apiResult = apiResult?.target_collaboration || null;
+    if (officialId) target.officialId = officialId;
     target.updatedAt = nowText();
   }
   pushMessage("建联API状态", targetBlocked
@@ -2694,11 +2696,20 @@ function emailSmtpPayload(row, c) {
 
 function targetApiPayload(target, row, c) {
   if (!target) return null;
+  const creatorOpenIds = Array.from(new Set([
+    ...(target.creatorIds || []).map((id) => creator(id)?.sourceId).filter(Boolean),
+    c?.sourceId,
+  ].filter(Boolean)));
+  const creatorUsernames = Array.from(new Set([
+    ...(target.creatorIds || []).map((id) => creator(id)?.username).filter(Boolean),
+    c?.username,
+  ].filter(Boolean)));
   return {
     id: target.id,
+    officialId: target.officialId || "",
     name: target.name,
-    creator_open_ids: [c?.sourceId].filter(Boolean),
-    creator_usernames: [c?.username].filter(Boolean),
+    creator_open_ids: creatorOpenIds,
+    creator_usernames: creatorUsernames,
     products: target.products || row.productsSnapshot || [],
     expiresAt: target.expiresAt,
     deliverables: target.deliverables || [],
@@ -2714,6 +2725,16 @@ function isTargetSchemaRequired(apiResult) {
     && apiResult.target_collaboration.code === "TARGET_COLLABORATION_SCHEMA_REQUIRED";
 }
 
+function targetOfficialId(apiResult) {
+  const target = apiResult?.target_collaboration || apiResult || {};
+  return target.official_id
+    || target.officialId
+    || target.upstream?.data?.target_collaboration?.id
+    || target.upstream?.data?.id
+    || target.upstream?.data?.target_collaboration_id
+    || "";
+}
+
 function localTargetSchemaRequiredResult(target, row, c) {
   return {
     ok: false,
@@ -2722,6 +2743,32 @@ function localTargetSchemaRequiredResult(target, row, c) {
     message: "TikTok Target Collaboration request schema is not confirmed. Do not mark the official invite as sent.",
     payload_preview: targetApiPayload(target, row, c),
   };
+}
+
+async function submitTargetCollaborationForRow(row, c) {
+  const target = targetCollaboration(row.targetCollaborationId);
+  if (!target) return null;
+  const data = await apiRequest("/api/tiktok/outreach/submit", {
+    method: "POST",
+    body: JSON.stringify({
+      outreach: {
+        id: row.id,
+        channel: row.channel,
+        shop_cipher: outreachShopCipher(row, c),
+        creator_open_id: c.sourceId,
+        creator_username: c.username,
+        message: outreachApiMessage(row),
+        product_ids: (row.productsSnapshot || []).map((p) => p.sourceId || p.id).filter(Boolean),
+      },
+      target_collaboration: targetApiPayload(target, row, c),
+    }),
+  });
+  const officialId = targetOfficialId(data);
+  target.status = "待达人接受";
+  target.apiResult = data.target_collaboration || null;
+  if (officialId) target.officialId = officialId;
+  target.updatedAt = nowText();
+  return data.target_collaboration || null;
 }
 
 function applyTargetSchemaBlock(row, target, result) {
@@ -2780,19 +2827,21 @@ async function submitOutreachApi(id) {
       return;
     }
     try {
+      const target = targetCollaboration(row.targetCollaborationId);
+      const targetResult = target ? await submitTargetCollaborationForRow(row, c) : null;
       const data = await apiRequest("/api/email/outreach/send", {
         method: "POST",
         body: JSON.stringify(emailSmtpPayload(row, c)),
       });
-      const target = targetCollaboration(row.targetCollaborationId);
       const result = target
-        ? { email: data, target_collaboration: localTargetSchemaRequiredResult(target, row, c) }
+        ? { email: data, target_collaboration: targetResult }
         : data;
       row.status = "待回复";
       row.updatedAt = nowText();
       row.apiResult = result;
-      row.lastMessage = `[${row.updatedAt}] Email 已通过 SMTP 提交发送，等待达人回复。\n${row.lastMessage || ""}`;
-      if (target) applyTargetSchemaBlock(row, target, result);
+      row.lastMessage = target
+        ? `[${row.updatedAt}] TikTok 定向邀约已提交；Email 已通过 SMTP 提交发送，等待达人回复。\n${row.lastMessage || ""}`
+        : `[${row.updatedAt}] Email 已通过 SMTP 提交发送，等待达人回复。\n${row.lastMessage || ""}`;
       pushMessage("Email发送成功", `@${c.username} 的 Email 建联已提交 SMTP。`);
       saveState();
       render();
@@ -3238,7 +3287,7 @@ function openOutreachModal(creatorId = 0) {
       ${field("targetContactEmail", "联系邮箱", "bd@brand.com", state.settings.emailAddress || "")}
     </div>
     <div class="notice soft" style="margin-top:12px">
-      <b>API 边界：</b>当前先创建本地定向邀约草稿并记录为“待API发送”。拿到 TikTok Target Collaboration 精确请求 schema 后，再把该草稿提交到官方接口；系统不会把本地链接伪装成官方邀约。
+      <b>API 边界：</b>系统会先创建本地定向邀约草稿，点击“提交到后端发送”后按 TikTok Target Collaboration 官方字段创建定向邀约；如 TikTok 返回参数、权限、限流或冲突错误，会把原始错误写入建联记录。
     </div>
     <div class="modal-section-title">触达渠道与消息</div>
     <div class="form-grid" style="margin-top:12px">
@@ -3386,7 +3435,7 @@ function createTargetCollaborationDraft(targets, products, options) {
     contactEmail: options.contactEmail,
     createdAt: nowText(),
     updatedAt: nowText(),
-    notes: "本地定向邀约草稿。待 TikTok Target Collaboration API 精确 schema 确认后提交官方接口。",
+    notes: "本地定向邀约草稿。提交后由后端调用 TikTok Target Collaboration 官方接口创建定向邀约。",
   };
   state.targetCollaborations.unshift(row);
   return row;

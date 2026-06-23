@@ -1,5 +1,50 @@
 # Claude Continue
 
+更新时间：2026-06-23 18:05 Asia/Shanghai
+
+## 最新状态
+- 用户新上架的 2 个商品已通过实时 TikTok 商品接口验证：当前授权店铺返回 3 个商品。
+- 商品数据质量：名称缺失 0，图片缺失 0，状态分布 `可选:3`。
+- 产品页自动同步逻辑仍有效：进入产品页且已有授权店铺时，商品缓存为空或超过 60 秒会触发静默同步；手动“重新同步商品”只是兜底。
+- 3 商品建联 dry-run 已通过：Target Collaboration payload 中 `products.length=3`，达人 open id 数 1。
+- 佣金映射已修复：20%、25%、30% 分别写入 TikTok 官方字段 `target_commission_rate=2000,2500,3000`；广告佣金 5% 写入 `shop_ads_commission_rate=500`。
+- TikTok 私信 dry-run 已返回 endpoint：`POST /affiliate_seller/202412/conversations/{conversation_id}/messages`。
+- 未执行真实外部发送，避免未经用户确认触达达人或创建真实定向邀约。
+
+## 本轮改动
+- `server.js`：新增 `productTargetCommissionRate`、`productAdsCommissionRate`，在后端 Target Collaboration ingest/请求体构建阶段统一佣金归一。
+- `server.js`：新增 `isTikTokImChannel`，渠道只要包含 TikTok 就进入私信发送路径，避免中文渠道名编码差异导致 dry-run 漏掉 IM endpoint。
+- `smoke-test.js`：新增佣金映射与 TikTok 私信渠道判断断言。
+- `docs/ACCEPTANCE_REPORT.md`：记录本轮真实商品同步和 3 商品 dry-run 验收数据。
+
+## 待验证
+- 运行完整冒烟测试。
+- 若通过，提交并推送本轮小步 commit。
+
+---
+
+更新时间：2026-06-23 17:52 Asia/Shanghai
+
+## 最新状态
+- 已从 TikTok Partner 官方文档接口拿到 `Create Target Collaboration` 202508 字段，不再停留在 schema 未知状态。
+- 官方接口：`POST /affiliate_seller/202508/target_collaborations`。
+- 后端已实现真实提交路径：非 dry-run 会调用官方 Target Collaboration API；dry-run 只返回官方字段 payload preview。
+- 官方字段映射已验证：`name`、`message`、`end_time`、`products[].id`、`products[].target_commission_rate`、`products[].shop_ads_commission_rate`、`creator_user_open_ids`、`seller_contact_info`、`free_sample_rule`。
+- 多商品 dry-run 结果：真实商品 3 个，选中 2 个；`target_commission_rate` 分别为 `2000`、`2500`，第二个商品 `shop_ads_commission_rate=500`；`creator_user_open_ids.length=1`。
+- 真实外部发送未执行：避免在未明确确认具体达人/商品/消息时向 TikTok 创建真实定向邀约或私信。
+
+## 本轮改动
+- `server.js`：新增 Target Collaboration 官方请求体构造、字段校验和真实提交函数。
+- `app.js`：Email 建联选择定向邀约时会先提交 TikTok 定向邀约，再发送 Email；成功后保存官方邀约 ID，避免重复创建。
+- `smoke-test.js`：从 schema blocker 断言改为官方字段映射断言。
+
+## 本轮验证
+- 真实官方文档接口：`/api/v1/document/detail?document_id=create-target-collaboration&workspace_id=3` 返回 202508 字段表。
+- 真实商品接口：`POST /api/tiktok/products` 返回 3 个商品。
+- dry-run：`/api/tiktok/outreach/submit` 返回 200，Target Collaboration payload preview 商品数 2，IM endpoint 正确。
+
+---
+
 更新时间：2026-06-23 17:24 Asia/Shanghai
 
 ## 最新状态

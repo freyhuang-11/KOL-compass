@@ -1,5 +1,49 @@
 # Acceptance Report
 
+## 2026-06-23 商品自动同步与 3 商品建联复验
+
+### 结论
+
+- 后端实时 TikTok 商品同步接口已返回 3 个商品，说明用户新上架的 2 个商品已经进入系统可同步范围。
+- 当前 3 个商品均可用于建联：名称缺失 0，图片缺失 0，状态分布为 `可选:3`。
+- 多商品 Target Collaboration dry-run 已通过：3 个商品同时进入官方 payload。
+- 佣金映射已修复并验证：前端/接口传入 20%、25%、30%，后端写入 TikTok 官方字段为 `2000,2500,3000`；第二个商品广告佣金 5% 写入 `500`。
+- TikTok 私信 dry-run 已返回 endpoint：`POST /affiliate_seller/202412/conversations/{conversation_id}/messages`。
+- 本次没有真实发送 TikTok 私信或真实创建定向邀约，只做 dry-run，避免未经确认触达达人。
+
+### 真实数据统计
+
+- 店铺：`SANDBOX_VN7651055422359521044`
+- shop_cipher：`ROW__LZifAAAAACJT0l46EyaPAB-vLKGASpO`
+- 商品接口：`POST /api/tiktok/products`
+- 商品数：3
+- 图片缺失：0
+- 名称缺失：0
+- 状态分布：`可选:3`
+- 参与建联商品数：3
+- Target Collaboration endpoint：`POST /affiliate_seller/202508/target_collaborations`
+- payload 商品数：3
+- payload 佣金：`2000,2500,3000`
+- payload 广告佣金：第二个商品 `500`
+- creator open id 数：1
+- dry-run 达人：`enreview2`
+
+### 本轮修复
+
+- `server.js`：新增 `productTargetCommissionRate` 和 `productAdsCommissionRate`，在后端请求体构建阶段统一处理佣金字段，不在渲染层补。
+- `server.js`：TikTok 私信渠道判断改为 `isTikTokImChannel`，避免中文渠道名在测试/运行环境编码差异下无法进入私信 dry-run。
+- `smoke-test.js`：新增上述映射与渠道判断断言。
+
+### 验证命令
+
+```bat
+node --check server.js
+POST http://127.0.0.1:8015/api/tiktok/products
+POST http://127.0.0.1:8015/api/tiktok/outreach/submit
+```
+
+---
+
 ## 2026-06-23 商品同步与多商品建联复验
 
 ### 结论

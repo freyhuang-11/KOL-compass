@@ -485,23 +485,152 @@ async function sendCreatorImMessage(conversationId, message) {
   });
 }
 
+function isTikTokImChannel(channel) {
+  return String(channel || "").toLowerCase().includes("tiktok");
+}
+
+function commissionPercentToApiRate(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return 100;
+  return Math.round(Math.min(80, numeric) * 100);
+}
+
+function officialCommissionRate(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return 0;
+  if (numeric >= 100) return Math.round(Math.min(8000, numeric));
+  return commissionPercentToApiRate(numeric);
+}
+
+function productTargetCommissionRate(product = {}) {
+  const explicit = officialCommissionRate(product.target_commission_rate);
+  if (explicit) return explicit;
+  return commissionPercentToApiRate(
+    product.standardCommissionRate
+      ?? product.targetCommissionRate
+      ?? product.commissionRate
+      ?? product.commission
+  );
+}
+
+function productAdsCommissionRate(product = {}) {
+  const explicit = officialCommissionRate(product.shop_ads_commission_rate);
+  if (explicit) return explicit;
+  return commissionPercentToApiRate(
+    product.adCommissionRate
+      ?? product.adsCommissionRate
+      ?? product.shopAdsCommissionRate
+      ?? product.adsCommission
+  );
+}
+
+function unixSeconds(value) {
+  if (!value) return "";
+  if (/^\d+$/.test(String(value))) return String(value);
+  const time = new Date(`${String(value).trim()}T23:59:59+08:00`).getTime();
+  if (!Number.isFinite(time)) return "";
+  return String(Math.floor(time / 1000));
+}
+
+function freeSampleRule(sampleRule) {
+  const text = String(sampleRule || "");
+  if (text.includes("不寄样")) {
+    return { has_free_sample: false, is_sample_approval_exempt: false };
+  }
+  return {
+    has_free_sample: true,
+    is_sample_approval_exempt: text.includes("自动"),
+  };
+}
+
+function targetCollaborationRequestBody(target = {}, outreach = {}) {
+  const creatorIds = Array.from(new Set([
+    ...(target.creator_user_open_ids || []),
+    ...(target.creator_open_ids || []),
+    outreach.creator_open_id || "",
+  ].filter(Boolean))).slice(0, 50);
+  return {
+    name: String(target.name || "").slice(0, 100),
+    message: String(outreach.message || target.message || "").slice(0, 5000),
+    end_time: unixSeconds(target.expiresAt || target.end_time || target.expires_at),
+    products: (target.products || []).slice(0, 100).map((product) => {
+      const row = {
+        id: String(product.sourceId || product.product_id || product.id || ""),
+        target_commission_rate: productTargetCommissionRate(product),
+      };
+      if (
+        product.adCommissionEnabled
+        || product.adsEnabled
+        || product.shop_ads_commission_rate
+        || product.adCommissionRate
+        || product.adsCommission
+      ) {
+        row.shop_ads_commission_rate = productAdsCommissionRate(product);
+      }
+      return row;
+    }).filter((product) => product.id),
+    creator_user_open_ids: creatorIds,
+    seller_contact_info: {
+      email: target.contactEmail || target.email || "",
+      phone_number: target.phoneNumber || "",
+      whatsapp: target.whatsapp || "",
+      telegram: target.telegram || "",
+      line: target.line || "",
+    },
+    free_sample_rule: freeSampleRule(target.sampleRule),
+  };
+}
+
 function targetCollaborationPayloadPreview(target = {}, outreach = {}) {
   return {
     shop_cipher: outreach.shop_cipher || target.shop_cipher || "",
-    name: target.name || "",
-    creator_open_ids: target.creator_open_ids || [],
-    products: (target.products || []).map((product) => ({
-      product_id: product.sourceId || product.product_id || product.id,
-      standard_commission_rate: product.standardCommissionRate,
-      ads_commission_rate: product.adCommissionEnabled ? product.adCommissionRate : undefined,
-    })),
-    expires_at: target.expiresAt || "",
-    deliverables: target.deliverables || [],
-    sample_rule: target.sampleRule || "",
-    contact: {
-      name: target.contactName || "",
-      email: target.contactEmail || "",
+    endpoint: "POST /affiliate_seller/202508/target_collaborations",
+    body: targetCollaborationRequestBody(target, outreach),
+    source: {
+      deliverables: target.deliverables || [],
+      contact_name: target.contactName || "",
     },
+  };
+}
+
+function validateTargetCollaborationBody(body) {
+  const missing = [];
+  if (!body.name) missing.push("name");
+  if (!body.end_time) missing.push("end_time");
+  if (!body.products?.length) missing.push("products");
+  if (!body.creator_user_open_ids?.length) missing.push("creator_user_open_ids");
+  if (!body.seller_contact_info?.email) missing.push("seller_contact_info.email");
+  if (!body.free_sample_rule) missing.push("free_sample_rule");
+  if (missing.length) {
+    const error = new Error(`Missing target collaboration fields: ${missing.join(", ")}`);
+    error.statusCode = 400;
+    error.payload = { ok: false, code: "TARGET_COLLABORATION_PARAM_MISSING", message: error.message, missing };
+    throw error;
+  }
+}
+
+async function createTargetCollaboration(target = {}, outreach = {}) {
+  if (target.officialId || target.official_id) {
+    return {
+      ok: true,
+      skipped: true,
+      official_id: target.officialId || target.official_id,
+      message: "Target collaboration already has an official id; skipped duplicate create.",
+    };
+  }
+  const shopCipher = outreach.shop_cipher || target.shop_cipher || "";
+  const body = targetCollaborationRequestBody(target, outreach);
+  validateTargetCollaborationBody(body);
+  const upstream = await tiktokFetch("/affiliate_seller/202508/target_collaborations", {
+    method: "POST",
+    params: { shop_cipher: shopCipher },
+    body,
+  });
+  return {
+    ok: true,
+    endpoint: "POST /affiliate_seller/202508/target_collaborations",
+    request_body: body,
+    upstream,
   };
 }
 
@@ -517,16 +646,17 @@ async function submitTikTokOutreach(payload = {}) {
   };
 
   if (target) {
-    result.target_collaboration = {
-      ok: false,
-      code: "TARGET_COLLABORATION_SCHEMA_REQUIRED",
-      message: "TikTok Create Target Collaboration endpoint exists, but this build will not submit until the exact request schema is confirmed in Partner Center API Testing Tool.",
-      endpoint: "POST /affiliate_seller/202508/target_collaborations",
-      payload_preview: targetCollaborationPayloadPreview(target, outreach),
-    };
+    result.target_collaboration = payload.dry_run
+      ? {
+        ok: true,
+        dry_run: true,
+        endpoint: "POST /affiliate_seller/202508/target_collaborations",
+        payload_preview: targetCollaborationPayloadPreview(target, outreach),
+      }
+      : await createTargetCollaboration(target, outreach);
   }
 
-  if (outreach.channel === "TikTok私信") {
+  if (isTikTokImChannel(outreach.channel)) {
     if (payload.dry_run) {
       result.im = {
         ok: true,

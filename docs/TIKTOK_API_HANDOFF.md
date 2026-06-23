@@ -1,5 +1,16 @@
 # TikTok Partner API 接入交接
 
+## 2026-06-23 当前建联接口状态
+
+- 商品同步：`POST /api/tiktok/products` 已返回当前授权店铺 3 个商品；产品页会在缓存为空或超过 60 秒时自动静默同步。
+- TikTok 私信：`/api/tiktok/outreach/submit` dry-run 已返回 `POST /affiliate_seller/202412/conversations/{conversation_id}/messages`。
+- Target Collaboration：官方入口和字段已确认并接入，入口为 `POST /affiliate_seller/202508/target_collaborations`。
+- Target Collaboration 请求体字段：`name`、`message`、`end_time`、`products[].id`、`products[].target_commission_rate`、`products[].shop_ads_commission_rate`、`creator_user_open_ids`、`seller_contact_info`、`free_sample_rule`。
+- 佣金单位：系统内百分比会在后端转换为 TikTok 官方“百分之一百分比”单位，例如 20% -> `2000`，5% -> `500`。
+- 安全边界：dry-run 只返回 payload preview；非 dry-run 会真实请求 TikTok 官方接口。未明确确认达人、商品、消息内容前，不应执行真实外部发送。
+
+---
+
 本项目当前已新增本地 TikTok Shop API 后端 `server.js`。它不会伪造 TikTok Partner API 数据；未完成后端配置或 OAuth 授权前，产品、达人、内容、订单同步按钮会写入明确失败原因。
 
 ## 本地后端
