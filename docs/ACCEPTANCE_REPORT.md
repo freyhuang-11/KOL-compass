@@ -1,5 +1,64 @@
 # Acceptance Report
 
+## 2026-06-23 建联流程重构验收
+
+### 结论
+
+建联主流程已从“单商品 + 普通消息 + 本地邀请链接”调整为“定向邀约对象 + 触达渠道”的本地可用流程。当前版本支持：
+
+- 多达人发起建联。
+- 多商品选择。
+- 每个商品配置标准佣金率。
+- 每个商品可选广告佣金率。
+- 创建本地 TikTok 定向邀约草稿，状态为 `待API发送`。
+- TikTok 私信、Email 多渠道触达记录分别落库。
+- Email 未绑定时继续引导邮箱配置；达人缺少 Email 时进入联系方式补充。
+- 建联记录保留商品与佣金快照，后续转寄样/转合作时按多商品批量创建。
+
+### 真实数据验证
+
+本轮验证使用当前 sandbox/平台库真实数据，不使用 demo seed。
+
+达人样本：
+
+- 数据源：`.data/platform-creators.json`
+- 总数：406
+- 抽样：前 20 条真实平台达人
+- sourceId 缺失：0
+- avatarUrl 缺失：0
+- GMV 缺失：0
+- 类型分布：短视频达人 19，短视频+直播达人 1
+- 类目 Top：食品饮料 8，家居日用 7，时尚配饰 6，母婴用品 6，女装与内衣 5，美妆个护 5
+- GMV 格式样例：`USD 169,404`、`VND 1M+`、`USD 232,956`
+
+商品样本：
+
+- 数据源：`POST /api/tiktok/products`
+- 授权店铺：`SANDBOX_VN7651055422359521044`
+- shop_cipher：`ROW__LZifAAAAACJT0l46EyaPAB-vLKGASpO`
+- 返回商品数：3
+- 可选商品数：3
+- 图片缺失：0
+- 商品字段：名称、图片、价格、库存、状态均可读取
+- 自动同步：进入产品页时，如果已授权店铺且商品缓存为空或超过 60 秒，前端会静默触发 `syncProducts({ silent: true, auto: true })`；不会要求客户手动点击“重新同步商品”才能看到新增商品。
+- 多商品验收：当前 sandbox 已返回 3 个可选商品，可用于多商品建联和佣金配置验收。
+
+### API 边界
+
+- TikTok 私信官方能力存在独立接口，包括 `Create Conversation with creator` 和 `Send IM Message`，所需 scope 为 `seller.affiliate_messages.write`。
+- TikTok 定向邀约不是普通消息里的本地链接，应作为 Target Collaboration 对象处理。
+- 当前实现不会把本地草稿伪装为 TikTok 官方发送成功；定向邀约和 TikTok 私信记录均以 `待API发送` 状态落库。
+- 等确认 TikTok Target Collaboration 精确请求 schema 后，再把本地草稿提交到官方接口。
+
+### 本轮验证命令
+
+```bat
+node --check app.js
+node --check smoke-test.js
+node smoke-test.js
+git diff --check
+```
+
 更新时间：2026-06-22 21:05 CST
 
 ## 最近验收结论

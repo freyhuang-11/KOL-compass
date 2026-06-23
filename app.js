@@ -1,6 +1,8 @@
 const STORAGE_KEY = "kol-compass-state-v1";
 const API_BASE = "http://127.0.0.1:8015";
 let platformCreatorLibraryLoaded = false;
+let productAutoSyncInFlight = false;
+const PRODUCT_AUTO_SYNC_INTERVAL_MS = 60 * 1000;
 
 const pages = [
   ["运营", [
@@ -105,6 +107,7 @@ const seed = {
     tiktokConnected: false,
     apiStatus: "未连接",
     lastProductSync: "尚未同步",
+    lastProductSyncAt: "",
     lastCreatorSync: "尚未同步",
     tiktokClientKey: "",
     tiktokRedirectUrl: "http://localhost:8015/api/tiktok/callback",
@@ -136,6 +139,7 @@ const seed = {
   products: [],
   creators: [],
   outreach: [],
+  targetCollaborations: [],
   samples: [],
   cooperations: [],
   templates: [],
@@ -173,6 +177,7 @@ function normalizeState(next) {
   if (!Array.isArray(merged.merchantApplications)) merged.merchantApplications = [];
   if (!Array.isArray(merged.billingRecords)) merged.billingRecords = [];
   if (!Array.isArray(merged.bulkCreatorIds)) merged.bulkCreatorIds = [];
+  if (!Array.isArray(merged.targetCollaborations)) merged.targetCollaborations = [];
   if (!Array.isArray(merged.syncLogs)) merged.syncLogs = [];
   if (!Array.isArray(merged.operationLogs)) merged.operationLogs = [];
   if (Array.isArray(merged.creators)) merged.creators = merged.creators.map(normalizeCreatorRecord);
@@ -197,6 +202,7 @@ function purgeDemoData(next) {
   const productIds = new Set(next.products.map((row) => row.id));
   const creatorIds = new Set(next.creators.map((row) => row.id));
   next.outreach = (next.outreach || []).filter((row) => creatorIds.has(row.creatorId) && productIds.has(row.productId));
+  next.targetCollaborations = (next.targetCollaborations || []).filter((row) => (row.creatorIds || []).some((id) => creatorIds.has(id)) && (row.productIds || []).some((id) => productIds.has(id)));
   next.samples = (next.samples || []).filter((row) => creatorIds.has(row.creatorId) && productIds.has(row.productId));
   next.cooperations = (next.cooperations || []).filter((row) => creatorIds.has(row.creatorId) && productIds.has(row.productId));
   next.templates = [];
@@ -760,6 +766,7 @@ function renderDashboard() {
 function renderProducts() {
   const shops = state.settings.tiktokShops || [];
   const selectedShop = shops.find((shop) => shopCipher(shop) === state.settings.selectedTikTokShopCipher) || shops[0];
+  maybeAutoSyncProducts();
   const rows = state.products.filter((p) => {
     const kw = state.filters.productSearch.trim().toLowerCase();
     if (!kw) return true;
@@ -954,8 +961,10 @@ function renderKolPool() {
 
 function outreachMessageCell(o) {
   const translated = o.translatedMessage ? `<div class="muted" style="margin-top:6px">翻译稿（${escapeHtml(o.translationLanguage || "目标语言")}）：${escapeHtml(o.translatedMessage)}</div>` : "";
+  const target = targetCollaboration(o.targetCollaborationId);
+  const targetInfo = target ? `<div class="target-summary"><b>${escapeHtml(target.name)}</b><span>${escapeHtml(targetCollaborationStatusText(target))}</span><span>商品 ${target.productIds.length} 个 · 达人 ${target.creatorIds.length} 位 · ${escapeHtml((target.deliverables || []).join("+") || "-")}</span></div>` : "";
   const invite = o.inviteLink ? `<div style="margin-top:8px"><a class="link" href="${escapeHtml(o.inviteLink)}">查看邀请链接</a> <button class="btn ghost" onclick="copyInviteLink(${o.id})">复制链接</button></div>` : "";
-  return `${escapeHtml(o.lastMessage)}${translated}${invite}`;
+  return `${escapeHtml(o.lastMessage)}${targetInfo}${translated}${invite}`;
 }
 
 function renderOutreach() {
@@ -963,23 +972,23 @@ function renderOutreach() {
   const statuses = Array.from(new Set(state.outreach.map((o) => o.status).filter(Boolean)));
   const totalCount = state.outreach.length;
   const waitingCreatorCount = state.outreach.filter((o) => o.status === "待回复").length;
-  const waitingTeamCount = state.outreach.filter((o) => o.status === "待我方回复").length;
+  const pendingApiCount = state.outreach.filter((o) => o.status === "待API发送").length;
   const convertedCount = state.outreach.filter((o) => o.status === "已转合作").length;
   const rows = state.outreach.filter((o) => {
     const c = creator(o.creatorId);
-    const p = product(o.productId);
+    const productNames = outreachProductNames(o);
     const kw = state.filters.outreachSearch.trim().toLowerCase();
-    const kwOk = !kw || [c?.username, c?.nickname, p?.name, o.lastMessage].join(" ").toLowerCase().includes(kw);
+    const kwOk = !kw || [c?.username, c?.nickname, productNames, o.lastMessage].join(" ").toLowerCase().includes(kw);
     const statusOk = state.filters.outreachStatus === "全部" || o.status === state.filters.outreachStatus;
     const channelOk = state.filters.outreachChannel === "全部" || o.channel === state.filters.outreachChannel;
     return kwOk && statusOk && channelOk;
   });
   return `
-    ${pageHead("建联记录", "统一查看 TikTok 私信、Email、WhatsApp 的沟通状态和待处理消息。")}
+    ${pageHead("建联记录", "统一查看 TikTok 定向邀约、私信、Email 的沟通状态和待处理消息。")}
     <div class="grid grid-4" style="margin-bottom:16px">
       ${stat("建联总数", totalCount, "全部沟通记录", "setFilter('outreachStatus','全部')")}
       ${stat("待达人回复", waitingCreatorCount, "已发出邀请，等待达人响应", "setFilter('outreachStatus','待回复')")}
-      ${stat("待我方回复", waitingTeamCount, "达人已响应，需要 BD 处理", "setFilter('outreachStatus','待我方回复')")}
+      ${stat("待API发送", pendingApiCount, "定向邀约或 TikTok 私信尚未提交官方接口", "setFilter('outreachStatus','待API发送')")}
       ${stat("已转合作", convertedCount, "已进入合作管理履约", "setFilter('outreachStatus','已转合作')")}
     </div>
     <div class="toolbar">
@@ -996,7 +1005,7 @@ function renderOutreach() {
     </div>
     ${table(["达人", "产品", "渠道", "状态", "最后消息", "更新时间", "操作"], rows.map((o) => [
       personCell(creator(o.creatorId)),
-      product(o.productId)?.name || "-",
+      outreachProductCell(o),
       o.channel,
       badge(o.status),
       outreachMessageCell(o),
@@ -1643,6 +1652,91 @@ function productPicker(selectedId = state.products[0]?.id) {
   `;
 }
 
+function commissionDefault(product) {
+  const match = String(product?.commission || "").match(/(\d+(?:\.\d+)?)/);
+  const value = match ? Number(match[1]) : 20;
+  return Number.isFinite(value) && value > 0 ? Math.min(80, value) : 20;
+}
+
+function productMultiPicker(selectedIds = [state.products[0]?.id].filter(Boolean)) {
+  if (!state.products.length) {
+    return `<div class="empty panel-empty">还没有同步商品。请先完成店铺授权并同步商品，再发起定向邀约。</div>`;
+  }
+  const selected = new Set(selectedIds.map(Number));
+  return `
+    <div class="outreach-product-table">
+      <div class="outreach-product-head">
+        <span>选择</span>
+        <span>商品信息</span>
+        <span>价格/库存</span>
+        <span>标准佣金率</span>
+        <span>广告佣金</span>
+      </div>
+      ${state.products.map((p) => {
+        const checked = selected.has(Number(p.id));
+        const defaultRate = commissionDefault(p);
+        return `
+          <div class="outreach-product-row ${checked ? "selected" : ""}">
+            <label class="table-check">
+              <input class="outreach-product-check" type="checkbox" value="${p.id}" ${checked ? "checked" : ""} />
+            </label>
+            <div class="product-main">
+              <div class="product-thumb">${productThumb(p)}</div>
+              <div class="product-info">
+                <b class="product-title">${escapeHtml(p.name)}</b>
+                <div class="muted">ID：${escapeHtml(p.sourceId || p.id)} · ${escapeHtml(p.status || "已同步")}</div>
+              </div>
+            </div>
+            <div>
+              <b>${escapeHtml(p.price || "-")}</b>
+              <div class="muted">库存 ${Number.isFinite(Number(p.stock)) ? Number(p.stock) : "-"}</div>
+            </div>
+            <label class="commission-input">
+              <input id="standardCommission-${p.id}" class="input" type="number" min="1" max="80" value="${defaultRate}" />
+              <span>%</span>
+            </label>
+            <label class="commission-input ad-commission">
+              <input id="adCommissionEnabled-${p.id}" type="checkbox" />
+              <input id="adCommission-${p.id}" class="input" type="number" min="1" max="80" placeholder="可选" />
+              <span>%</span>
+            </label>
+          </div>
+        `;
+      }).join("")}
+    </div>
+  `;
+}
+
+function selectedOutreachProducts() {
+  return Array.from(document.querySelectorAll(".outreach-product-check:checked"))
+    .map((input) => {
+      const p = product(Number(input.value));
+      if (!p) return null;
+      const standardRate = Number(document.getElementById(`standardCommission-${p.id}`)?.value || 0);
+      const adEnabled = Boolean(document.getElementById(`adCommissionEnabled-${p.id}`)?.checked);
+      const adRate = adEnabled ? Number(document.getElementById(`adCommission-${p.id}`)?.value || 0) : 0;
+      return {
+        id: p.id,
+        sourceId: p.sourceId || "",
+        name: p.name,
+        imageUrl: productImage(p),
+        price: p.price || "-",
+        stock: Number.isFinite(Number(p.stock)) ? Number(p.stock) : null,
+        status: p.status || "已同步",
+        standardCommissionRate: Number.isFinite(standardRate) && standardRate > 0 ? standardRate : commissionDefault(p),
+        adCommissionEnabled: adEnabled,
+        adCommissionRate: Number.isFinite(adRate) && adRate > 0 ? adRate : 0,
+      };
+    })
+    .filter(Boolean);
+}
+
+function productSnapshotNames(products = []) {
+  const names = products.map((p) => p.name).filter(Boolean);
+  if (!names.length) return "-";
+  return names.length > 2 ? `${names.slice(0, 2).join("、")} 等 ${names.length} 个商品` : names.join("、");
+}
+
 function personCell(c) {
   if (!c) return "-";
   return `
@@ -2001,9 +2095,30 @@ async function checkTikTokShops() {
   }
 }
 
+function shouldAutoSyncProducts() {
+  const shops = state.settings.tiktokShops || [];
+  if (!shops.length || productAutoSyncInFlight) return false;
+  const last = Date.parse(state.settings.lastProductSyncAt || "");
+  if (!state.products.length || !Number.isFinite(last)) return true;
+  return Date.now() - last >= PRODUCT_AUTO_SYNC_INTERVAL_MS;
+}
+
+function maybeAutoSyncProducts() {
+  if (!shouldAutoSyncProducts()) return;
+  productAutoSyncInFlight = true;
+  setTimeout(async () => {
+    try {
+      await syncProducts({ silent: true, auto: true });
+    } finally {
+      productAutoSyncInFlight = false;
+    }
+  }, 0);
+}
+
 async function syncProducts(options = {}) {
   const silent = Boolean(options.silent);
   state.settings.lastProductSync = nowText();
+  state.settings.lastProductSyncAt = new Date().toISOString();
   try {
     const shops = state.settings.tiktokShops || [];
     const selected = shops.find((shop) => shopCipher(shop) === state.settings.selectedTikTokShopCipher) || shops[0];
@@ -2368,8 +2483,9 @@ function addProduct() {
 }
 
 function productUsage(productId) {
+  const hasProduct = (row) => Array.isArray(row.productIds) ? row.productIds.includes(productId) : row.productId === productId;
   return {
-    outreach: state.outreach.filter((x) => x.productId === productId),
+    outreach: state.outreach.filter(hasProduct),
     samples: state.samples.filter((x) => x.productId === productId),
     cooperations: state.cooperations.filter((x) => x.productId === productId),
   };
@@ -2495,6 +2611,10 @@ function outreachActions(o) {
   if (o.status !== "已关闭" && o.status !== "已转合作") {
     parts.push(`<button class="btn" onclick="openReplyModal(${o.id})">回复</button>`);
   }
+  if (o.status === "待API发送") {
+    parts.push(`<button class="btn" onclick="markOutreachApiSubmitted(${o.id})">标记已提交API</button>`);
+    parts.push(`<button class="btn ghost" onclick="advanceOutreach(${o.id}, '发送失败')">标记发送失败</button>`);
+  }
   if (o.status === "待回复") {
     parts.push(`<button class="btn" onclick="advanceOutreach(${o.id}, '待我方回复')">标记已回复</button>`);
   }
@@ -2508,6 +2628,22 @@ function outreachActions(o) {
   parts.push(`<button class="btn ghost" onclick="markNotInterested(${o.creatorId})">不感兴趣</button>`);
   parts.push(`<button class="btn ghost" onclick="deleteOutreach(${o.id})">删除</button>`);
   return parts.join(" ");
+}
+
+function markOutreachApiSubmitted(id) {
+  const row = state.outreach.find((x) => x.id === id);
+  if (!row) return;
+  row.status = "待回复";
+  row.updatedAt = nowText();
+  row.lastMessage = `[${row.updatedAt}] 已标记为提交 TikTok API / Email 队列，等待达人回复。\n${row.lastMessage || ""}`;
+  const target = targetCollaboration(row.targetCollaborationId);
+  if (target) {
+    target.status = "待达人接受";
+    target.updatedAt = nowText();
+  }
+  pushMessage("建联API状态", `@${creator(row.creatorId)?.username || "-"} 的建联记录已标记为已提交 API。`);
+  saveState();
+  render();
 }
 
 function sampleActions(s) {
@@ -2599,11 +2735,12 @@ function createSampleRecord(creatorId, productId, status = "待审核", tracking
 function createSampleFromOutreach(id) {
   const row = state.outreach.find((x) => x.id === id);
   if (!row) return;
-  const sample = createSampleRecord(row.creatorId, row.productId, "待审核", "");
+  const productIds = Array.isArray(row.productIds) && row.productIds.length ? row.productIds : [row.productId];
+  const samples = productIds.map((productId) => createSampleRecord(row.creatorId, productId, "待审核", ""));
   row.status = "待我方回复";
   row.updatedAt = nowText();
-  row.lastMessage = `[${row.updatedAt}] 已从建联记录安排寄样，寄样状态：${sample.status}。`;
-  pushMessage("寄样创建", `已为 @${creator(row.creatorId)?.username || "-"} 创建寄样任务。`);
+  row.lastMessage = `[${row.updatedAt}] 已从建联记录安排 ${samples.length} 个商品寄样，寄样状态：待审核。`;
+  pushMessage("寄样创建", `已为 @${creator(row.creatorId)?.username || "-"} 创建 ${samples.length} 个商品寄样任务。`);
   saveState();
   state.page = "samples";
   state.selectedCreatorId = null;
@@ -2648,11 +2785,12 @@ function createCoopRecord(creatorId, productId, source = "手动创建", inviteL
 function createCoopFromOutreach(id) {
   const row = state.outreach.find((x) => x.id === id);
   if (!row) return;
-  const coop = createCoopRecord(row.creatorId, row.productId, "由建联记录转入合作");
+  const productIds = Array.isArray(row.productIds) && row.productIds.length ? row.productIds : [row.productId];
+  const coops = productIds.map((productId) => createCoopRecord(row.creatorId, productId, "由建联记录转入合作"));
   row.status = "已转合作";
   row.updatedAt = nowText();
-  row.lastMessage = `[${row.updatedAt}] 已转入合作管理，合作截止日：${coop.dueDate}。`;
-  pushMessage("合作创建", `@${creator(row.creatorId)?.username || "-"} 已从建联记录转入合作管理。`);
+  row.lastMessage = `[${row.updatedAt}] 已转入合作管理，创建 ${coops.length} 个商品合作。`;
+  pushMessage("合作创建", `@${creator(row.creatorId)?.username || "-"} 已从建联记录转入合作管理，商品数 ${coops.length}。`);
   saveState();
   state.page = "cooperations";
   state.selectedCreatorId = null;
@@ -2864,23 +3002,49 @@ function openOutreachModal(creatorId = 0) {
     ? `Email 已绑定：${escapeHtml(state.settings.emailAddress)}`
     : `Email 尚未绑定，选择 Email 前请先完成邮箱配置。`;
   openModal("发起建联", `
-    <div class="notice">本次将联系 ${targets.length} 位达人：${targets.slice(0, 4).map((c) => `@${escapeHtml(c.username)}`).join("、")}${targets.length > 4 ? " 等" : ""}。选择 Email 时，如果达人暂未有邮箱，系统会先创建联系方式补充任务，补充完成后再发送。</div>
-    <div class="modal-section-title">选择建联商品</div>
-    ${productPicker(state.products[0]?.id)}
+    <div class="flow-steps">
+      <div class="flow-step active"><b>1</b><span>确认达人</span></div>
+      <div class="flow-step active"><b>2</b><span>配置定向邀约</span></div>
+      <div class="flow-step active"><b>3</b><span>选择触达渠道</span></div>
+    </div>
+    <div class="notice">本次将联系 ${targets.length} 位达人：${targets.slice(0, 5).map((c) => `@${escapeHtml(c.username)}`).join("、")}${targets.length > 5 ? " 等" : ""}。TikTok 私信按达人逐个会话发送；达人回复前连续消息存在平台限制，不能当成无约束群发。</div>
+    <div class="modal-section-title">建联类型</div>
+    <div class="outreach-mode-grid">
+      <label class="mode-card selected">
+        <input type="radio" name="outreachMode" value="target_collaboration" checked />
+        <b>定向邀约 + 触达通知</b>
+        <span>先创建 TikTok 定向邀约对象，包含商品、佣金和交付要求，再通过 TikTok 私信或 Email 通知达人。</span>
+      </label>
+      <label class="mode-card">
+        <input type="radio" name="outreachMode" value="message_only" />
+        <b>仅发送建联消息</b>
+        <span>不创建定向邀约，只记录 TikTok 私信 / Email 建联消息。适合先沟通意向。</span>
+      </label>
+    </div>
+    <div class="modal-section-title">选择建联商品与佣金</div>
+    ${productMultiPicker([state.products[0]?.id].filter(Boolean))}
+    <div class="form-grid" style="margin-top:12px">
+      ${field("targetCollaborationName", "邀约名称", "夏季新品达人合作", `定向邀约-${todayString()}`)}
+      ${field("targetExpiresAt", "邀约有效期", "2026-07-15", dateAfter(14))}
+      ${multiCheckField("targetDeliverables", "交付形式", [["短视频", "短视频"], ["直播", "直播"]], ["短视频"])}
+      ${selectField("sampleRule", "样品规则", [["不寄样", "不寄样"], ["达人申请后审核", "达人申请后审核"], ["自动寄样", "自动寄样"]], "达人申请后审核")}
+      ${field("targetContactName", "联系人", "BD负责人", "Sam")}
+      ${field("targetContactEmail", "联系邮箱", "bd@brand.com", state.settings.emailAddress || "")}
+    </div>
+    <div class="notice soft" style="margin-top:12px">
+      <b>API 边界：</b>当前先创建本地定向邀约草稿并记录为“待API发送”。拿到 TikTok Target Collaboration 精确请求 schema 后，再把该草稿提交到官方接口；系统不会把本地链接伪装成官方邀约。
+    </div>
+    <div class="modal-section-title">触达渠道与消息</div>
     <div class="form-grid" style="margin-top:12px">
       ${multiCheckField("outreachChannels", "发送渠道（可多选）", channelOptions, defaultChannels)}
       ${selectField("outreachTemplateId", "消息模板", [["0", "不使用模板"], ...state.templates.map((x) => [x.id, x.name])], state.templates[0]?.id || "0")}
       ${selectField("outreachSendMode", "发送方式", [["立即发送", "立即发送"], ["定时发送", "定时发送"]], "立即发送")}
       ${field("outreachScheduleAt", "定时发送时间", "2026-06-22 09:30", "")}
-      ${selectField("outreachInvite", "附加邀请链接", [["否", "不附加"], ["是", "生成邀请链接并创建待产出合作"]], "否")}
       ${selectField("outreachLanguage", "翻译目标语言", languageOptionsForTargets(targets), targetLanguageForCreator(targets[0]))}
     </div>
     <div class="notice soft" style="margin-top:12px">
       <b>Email 配置：</b>${emailNotice}
       <button class="btn ghost" type="button" onclick="openEmailSetupModal('outreach')">配置邮箱/查看教程</button>
-    </div>
-    <div class="notice soft" style="margin-top:12px">
-      <b>邀请链接说明：</b>选择“生成邀请链接”后，链接会保存到建联记录和合作记录，不会因为点击按钮而丢失。
     </div>
     <div class="form-field" style="margin-top:12px"><label>消息内容</label><textarea id="outreachMessage" class="textarea">${escapeHtml(defaultTemplate)}</textarea></div>
     <div class="translation-panel">
@@ -2890,7 +3054,7 @@ function openOutreachModal(creatorId = 0) {
       </div>
       <textarea id="outreachTranslatedMessage" class="textarea" placeholder="点击翻译后生成目标语言版本。"></textarea>
     </div>
-  `, `<button class="btn primary" onclick="saveOutreach('${selectedIds.join(",")}')">确认建联</button>`);
+  `, `<button class="btn primary" onclick="saveOutreach('${selectedIds.join(",")}')">创建建联任务</button>`);
 }
 
 function renderTemplate(content, c, p) {
@@ -2903,8 +3067,8 @@ function renderTemplate(content, c, p) {
 
 function translateOutreachDraft() {
   if (!featureEnabled("translation")) return alert("消息翻译功能已被平台管理端关闭。");
-  const selectedProductInput = document.querySelector('input[name="outreachProductId"]:checked');
-  const p = product(Number(selectedProductInput?.value)) || state.products[0];
+  const products = selectedOutreachProducts();
+  const p = products[0] || state.products[0];
   const lang = document.getElementById("outreachLanguage")?.value || "英语";
   const c = String(document.querySelector("#modalFoot .btn.primary")?.getAttribute("onclick") || "")
     .match(/saveOutreach\('([^']*)'\)/)?.[1]
@@ -2987,20 +3151,88 @@ function queueContactEnrichment(c, channel, productName) {
   pushMessage("联系方式补充", text);
 }
 
+function targetCollaboration(id) {
+  return (state.targetCollaborations || []).find((row) => row.id === id);
+}
+
+function targetCollaborationStatusText(row) {
+  if (!row) return "";
+  return `${row.status || "待API发送"}${row.officialId ? ` · TikTok ID ${row.officialId}` : ""}`;
+}
+
+function createTargetCollaborationDraft(targets, products, options) {
+  const id = Date.now();
+  const row = {
+    id,
+    officialId: "",
+    name: options.name,
+    mode: "target_collaboration",
+    status: "待API发送",
+    creatorIds: targets.map((c) => c.id),
+    creatorUsernames: targets.map((c) => c.username),
+    productIds: products.map((p) => p.id),
+    products,
+    deliverables: options.deliverables,
+    sampleRule: options.sampleRule,
+    expiresAt: options.expiresAt,
+    contactName: options.contactName,
+    contactEmail: options.contactEmail,
+    createdAt: nowText(),
+    updatedAt: nowText(),
+    notes: "本地定向邀约草稿。待 TikTok Target Collaboration API 精确 schema 确认后提交官方接口。",
+  };
+  state.targetCollaborations.unshift(row);
+  return row;
+}
+
+function outreachProductNames(o) {
+  if (Array.isArray(o.productsSnapshot) && o.productsSnapshot.length) return productSnapshotNames(o.productsSnapshot);
+  if (Array.isArray(o.productIds) && o.productIds.length) return productSnapshotNames(o.productIds.map(product).filter(Boolean));
+  return product(o.productId)?.name || "-";
+}
+
+function outreachProductCell(o) {
+  const target = targetCollaboration(o.targetCollaborationId);
+  const products = Array.isArray(o.productsSnapshot) && o.productsSnapshot.length
+    ? o.productsSnapshot
+    : (Array.isArray(o.productIds) ? o.productIds.map(product).filter(Boolean) : [product(o.productId)].filter(Boolean));
+  const names = productSnapshotNames(products);
+  const commission = products.map((p) => {
+    const rate = p.standardCommissionRate ?? commissionDefault(p);
+    const ad = p.adCommissionEnabled && p.adCommissionRate ? ` + 广告 ${p.adCommissionRate}%` : "";
+    return `${p.name}: ${rate}%${ad}`;
+  }).join("；");
+  return `
+    <div><b>${escapeHtml(names)}</b></div>
+    ${target ? `<div class="muted">${escapeHtml(target.name)} · ${escapeHtml(targetCollaborationStatusText(target))}</div>` : ""}
+    ${commission ? `<div class="muted">${escapeHtml(commission)}</div>` : ""}
+  `;
+}
+
 function saveOutreach(idList) {
   const ids = String(idList || "").split(",").map((x) => Number(x)).filter(Boolean);
-  const selectedProductInput = document.querySelector('input[name="outreachProductId"]:checked');
-  const p = product(Number(selectedProductInput?.value)) || state.products[0];
-  if (!p) return alert("请先选择一个已同步商品。");
+  const selectedProducts = selectedOutreachProducts();
+  if (!selectedProducts.length) return alert("请至少选择一个已同步商品。");
   const templateId = Number(document.getElementById("outreachTemplateId").value);
   const template = state.templates.find((x) => x.id === templateId);
   const channels = getCheckedValues("outreachChannels");
   const sendMode = document.getElementById("outreachSendMode").value;
   const scheduleAt = document.getElementById("outreachScheduleAt").value.trim();
-  const invite = document.getElementById("outreachInvite").value === "是";
+  const mode = document.querySelector('input[name="outreachMode"]:checked')?.value || "target_collaboration";
   const translationLanguage = document.getElementById("outreachLanguage")?.value || "";
   const editedTranslation = document.getElementById("outreachTranslatedMessage")?.value.trim() || "";
   const message = document.getElementById("outreachMessage").value.trim() || template?.content || "";
+  const targetOptions = {
+    name: document.getElementById("targetCollaborationName")?.value.trim() || `定向邀约-${todayString()}`,
+    expiresAt: document.getElementById("targetExpiresAt")?.value.trim() || dateAfter(14),
+    deliverables: getCheckedValues("targetDeliverables"),
+    sampleRule: document.getElementById("sampleRule")?.value || "达人申请后审核",
+    contactName: document.getElementById("targetContactName")?.value.trim() || "Sam",
+    contactEmail: document.getElementById("targetContactEmail")?.value.trim() || state.settings.emailAddress || "",
+  };
+  if (mode === "target_collaboration" && !targetOptions.deliverables.length) return alert("定向邀约至少选择一种交付形式。");
+  if (mode === "target_collaboration" && selectedProducts.some((p) => !p.standardCommissionRate || p.standardCommissionRate < 1 || p.standardCommissionRate > 80)) return alert("标准佣金率必须在 1-80% 之间。");
+  if (selectedProducts.some((p) => p.adCommissionEnabled && (!p.adCommissionRate || p.adCommissionRate < 1 || p.adCommissionRate > 80))) return alert("广告佣金率必须在 1-80% 之间，或关闭广告佣金。");
   const blocked = ids.map((id) => creator(id)).filter(Boolean).map((c) => [c, creatorOutreachBlockReason(c)]).filter(([, reason]) => reason);
   if (blocked.length) {
     alert(`以下达人暂不可建联：${blocked.map(([c, reason]) => `@${c.username}（${reason}）`).join("、")}`);
@@ -3015,42 +3247,48 @@ function saveOutreach(idList) {
     return;
   }
   if (!validateChannelsForCreators(channels, targets)) return;
+  const targetCollab = mode === "target_collaboration" ? createTargetCollaborationDraft(targets, selectedProducts, targetOptions) : null;
   let created = 0;
+  const productNames = productSnapshotNames(selectedProducts);
   ids.forEach((id, index) => {
     const c = creator(id);
     if (!c || c.status === "黑名单") return;
-    const rendered = renderTemplate(message, c, p);
+    const rendered = renderTemplate(message, c, selectedProducts[0] || {});
     const scheduledText = sendMode === "定时发送" && scheduleAt ? `定时发送：${scheduleAt}` : "立即发送";
-    const inviteLink = invite ? inviteLinkFor(c.id, p.id) : "";
     const translatedMessage = editedTranslation && targets.length === 1
       ? editedTranslation
-      : (translationLanguage ? translatedInviteDraft(translationLanguage, c, p) : "");
+      : (translationLanguage ? translatedInviteDraft(translationLanguage, c, selectedProducts[0] || {}) : "");
     channels.forEach((channel, channelIndex) => {
       const pendingContact = needsContactEnrichment(channel, c);
-      if (pendingContact) queueContactEnrichment(c, channel, p.name);
+      if (pendingContact) queueContactEnrichment(c, channel, productNames);
       const recordId = Date.now() + index * 10 + channelIndex;
-      const finalInviteLink = invite ? inviteLinkFor(c.id, p.id, recordId) : "";
-      const messageWithInvite = finalInviteLink ? `${rendered}\n邀请链接：${finalInviteLink}` : rendered;
+      const status = pendingContact ? "联系方式补充中" : (channel === "TikTok私信" || targetCollab ? "待API发送" : "待回复");
+      const officialNote = targetCollab ? `定向邀约：${targetCollab.name}（${targetCollab.status}）` : "仅建联消息";
+      const messageWithContext = `${rendered}\n${officialNote}\n商品：${productNames}`;
       state.outreach.unshift({
         id: recordId,
         creatorId: c.id,
-        productId: p.id,
+        productId: selectedProducts[0]?.id,
+        productIds: selectedProducts.map((p) => p.id),
+        productsSnapshot: selectedProducts,
+        targetCollaborationId: targetCollab?.id || null,
         channel,
-        status: pendingContact ? "联系方式补充中" : "待回复",
-        lastMessage: pendingContact ? `待补充 Email 后发送 · ${messageWithInvite}` : `${scheduledText} · ${messageWithInvite}`,
+        channels,
+        status,
+        lastMessage: pendingContact ? `待补充 Email 后发送 · ${messageWithContext}` : `${scheduledText} · ${messageWithContext}`,
         translatedMessage,
         translationLanguage,
-        inviteLink: finalInviteLink,
+        inviteLink: "",
         updatedAt: nowText(),
       });
       created += 1;
     });
     c.status = channels.includes("Email") && needsContactEnrichment("Email", c) ? "联系方式补充中" : "已发送";
-    if (invite) createCoopRecord(c.id, p.id, "建联时附加邀请链接", inviteLink);
   });
   state.bulkCreatorIds = [];
-  logOperation("建联发送", channels.join("+"), `创建 ${created} 条建联记录；产品：${p.name}；方式：${sendMode}`);
-  pushMessage("批量建联", `已创建 ${created} 条建联记录，渠道：${channels.map(channelLabel).join("+")}，产品：${p.name}。缺少 Email 的达人已进入联系方式补充。`);
+  logOperation("建联发送", channels.join("+"), `创建 ${created} 条建联记录；商品：${productNames}；模式：${mode}`);
+  if (targetCollab) pushMessage("定向邀约草稿", `已创建定向邀约草稿「${targetCollab.name}」，包含 ${selectedProducts.length} 个商品、${targets.length} 位达人，状态：待API发送。`);
+  pushMessage("批量建联", `已创建 ${created} 条建联记录，渠道：${channels.map(channelLabel).join("+")}，商品：${productNames}。缺少 Email 的达人已进入联系方式补充。`);
   closeModal();
   saveState();
   state.page = "outreach";
@@ -3800,6 +4038,7 @@ window.saveCoop = saveCoop;
 window.addCoopTag = addCoopTag;
 window.markOverdue = markOverdue;
 window.advanceOutreach = advanceOutreach;
+window.markOutreachApiSubmitted = markOutreachApiSubmitted;
 window.createSampleFromOutreach = createSampleFromOutreach;
 window.createCoopFromOutreach = createCoopFromOutreach;
 window.deleteOutreach = deleteOutreach;

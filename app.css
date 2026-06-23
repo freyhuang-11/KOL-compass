@@ -673,6 +673,137 @@ button {
   margin-top: 4px;
 }
 
+.flow-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.flow-step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #fff;
+  color: var(--subtle);
+}
+
+.flow-step b {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #e8eefc;
+  color: var(--primary-strong);
+  font-size: 12px;
+}
+
+.flow-step.active {
+  border-color: #c9d7ff;
+  background: #f7faff;
+}
+
+.outreach-mode-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.mode-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  gap: 6px 10px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.mode-card b,
+.mode-card span {
+  grid-column: 2;
+}
+
+.mode-card span {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.mode-card:has(input:checked),
+.mode-card.selected {
+  border-color: var(--primary);
+  background: #f5f8ff;
+}
+
+.outreach-product-table {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: auto;
+  background: #fff;
+}
+
+.outreach-product-head,
+.outreach-product-row {
+  display: grid;
+  grid-template-columns: 54px minmax(360px, 1fr) 130px 140px 190px;
+  gap: 12px;
+  align-items: center;
+  min-width: 920px;
+}
+
+.outreach-product-head {
+  padding: 12px 14px;
+  background: var(--surface-muted);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.outreach-product-row {
+  padding: 12px 14px;
+  border-top: 1px solid var(--border);
+}
+
+.outreach-product-row.selected,
+.outreach-product-row:has(.outreach-product-check:checked) {
+  background: #f8fbff;
+}
+
+.commission-input {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.commission-input .input {
+  width: 78px;
+}
+
+.ad-commission .input {
+  width: 82px;
+}
+
+.target-summary {
+  display: grid;
+  gap: 4px;
+  border: 1px solid #dbe6ff;
+  background: #f7faff;
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-top: 8px;
+  color: var(--subtle);
+}
+
+.target-summary b {
+  color: var(--text);
+}
+
 .table-wrap {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -1044,7 +1175,7 @@ tr:last-child td {
 .modal {
   background: #fff;
   border-radius: 12px;
-  width: min(960px, 100%);
+  width: min(1120px, 100%);
   max-height: 88vh;
   overflow: auto;
   border: 1px solid var(--border);
