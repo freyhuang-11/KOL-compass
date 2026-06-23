@@ -2610,12 +2610,18 @@ function outreachActions(o) {
   const parts = [
     `<button class="btn ghost" onclick="showCreator(${o.creatorId})">查看沟通</button>`,
   ];
+  if (o.apiResult || o.apiError) {
+    parts.push(`<button class="btn ghost" onclick="openOutreachApiResult(${o.id})">查看API结果</button>`);
+  }
   if (o.status !== "已关闭" && o.status !== "已转合作") {
     parts.push(`<button class="btn" onclick="openReplyModal(${o.id})">回复</button>`);
   }
   if (o.status === "待API发送") {
     parts.push(`<button class="btn" onclick="submitOutreachApi(${o.id})">提交到后端发送</button>`);
     parts.push(`<button class="btn ghost" onclick="advanceOutreach(${o.id}, '发送失败')">标记发送失败</button>`);
+  }
+  if (o.status === "定向邀约待配置") {
+    parts.push(`<button class="btn" onclick="openOutreachApiResult(${o.id})">查看定向邀约阻塞</button>`);
   }
   if (o.status === "待回复") {
     parts.push(`<button class="btn" onclick="advanceOutreach(${o.id}, '待我方回复')">标记已回复</button>`);
@@ -2635,17 +2641,22 @@ function outreachActions(o) {
 function markOutreachApiSubmitted(id, apiResult = null) {
   const row = state.outreach.find((x) => x.id === id);
   if (!row) return;
-  row.status = "待回复";
+  const target = targetCollaboration(row.targetCollaborationId);
+  const targetBlocked = isTargetSchemaRequired(apiResult);
+  row.status = targetBlocked ? "定向邀约待配置" : "待回复";
   row.updatedAt = nowText();
   row.apiResult = apiResult;
-  row.lastMessage = `[${row.updatedAt}] 已提交 TikTok API / Email 队列，等待达人回复。\n${row.lastMessage || ""}`;
-  const target = targetCollaboration(row.targetCollaborationId);
+  row.lastMessage = targetBlocked
+    ? `[${row.updatedAt}] 触达已提交；TikTok 定向邀约未提交：Target Collaboration 请求 schema 待确认，请查看 API 结果。\n${row.lastMessage || ""}`
+    : `[${row.updatedAt}] 已提交 TikTok API / Email 队列，等待达人回复。\n${row.lastMessage || ""}`;
   if (target) {
-    target.status = apiResult?.target_collaboration?.ok === false ? "定向邀约待确认Schema" : "待达人接受";
+    target.status = targetBlocked ? "定向邀约待配置" : "待达人接受";
     target.apiResult = apiResult?.target_collaboration || null;
     target.updatedAt = nowText();
   }
-  pushMessage("建联API状态", `@${creator(row.creatorId)?.username || "-"} 的建联记录已标记为已提交 API。`);
+  pushMessage("建联API状态", targetBlocked
+    ? `@${creator(row.creatorId)?.username || "-"} 的触达已提交，TikTok 定向邀约仍需确认官方 schema。`
+    : `@${creator(row.creatorId)?.username || "-"} 的建联记录已提交 API。`);
   saveState();
   render();
 }
@@ -2698,6 +2709,57 @@ function targetApiPayload(target, row, c) {
   };
 }
 
+function isTargetSchemaRequired(apiResult) {
+  return apiResult?.target_collaboration?.ok === false
+    && apiResult.target_collaboration.code === "TARGET_COLLABORATION_SCHEMA_REQUIRED";
+}
+
+function localTargetSchemaRequiredResult(target, row, c) {
+  return {
+    ok: false,
+    code: "TARGET_COLLABORATION_SCHEMA_REQUIRED",
+    endpoint: "POST /affiliate_seller/202508/target_collaborations",
+    message: "TikTok Target Collaboration request schema is not confirmed. Do not mark the official invite as sent.",
+    payload_preview: targetApiPayload(target, row, c),
+  };
+}
+
+function applyTargetSchemaBlock(row, target, result) {
+  if (!row || !target) return;
+  row.status = "定向邀约待配置";
+  row.apiResult = result;
+  row.updatedAt = nowText();
+  row.lastMessage = `[${row.updatedAt}] 触达已提交；TikTok 定向邀约未提交：Target Collaboration 请求 schema 待确认，请查看 API 结果。\n${row.lastMessage || ""}`;
+  target.status = "定向邀约待配置";
+  target.apiResult = result?.target_collaboration || null;
+  target.updatedAt = row.updatedAt;
+}
+
+function openOutreachApiResult(id) {
+  const row = state.outreach.find((x) => x.id === id);
+  if (!row) return;
+  const target = targetCollaboration(row.targetCollaborationId);
+  const result = row.apiResult || row.apiError || {};
+  const targetResult = result.target_collaboration || target?.apiResult || null;
+  const preview = targetResult?.payload_preview ? JSON.stringify(targetResult.payload_preview, null, 2) : "";
+  openModal("API 提交结果", `
+    <div class="notice ${isTargetSchemaRequired(result) ? "warning" : "soft"}">
+      <b>当前状态：</b>${escapeHtml(row.status || "-")}<br>
+      ${targetResult ? `TikTok 定向邀约：${escapeHtml(targetResult.code || (targetResult.ok ? "OK" : "未提交"))} · ${escapeHtml(targetResult.endpoint || "-")}` : "当前记录没有定向邀约 API 结果。"}
+    </div>
+    <div class="form-grid" style="margin-top:12px">
+      <div class="info-card"><span>触达渠道</span><b>${escapeHtml(channelLabel(row.channel))}</b></div>
+      <div class="info-card"><span>商品数</span><b>${Array.isArray(row.productsSnapshot) ? row.productsSnapshot.length : 0}</b></div>
+      <div class="info-card"><span>更新时间</span><b>${escapeHtml(row.updatedAt || "-")}</b></div>
+    </div>
+    ${target ? `<div class="modal-section-title">定向邀约草稿</div>
+      <div class="target-summary"><b>${escapeHtml(target.name)}</b><span>${escapeHtml(targetCollaborationStatusText(target))}</span><span>商品 ${target.productIds.length} 个 · 达人 ${target.creatorIds.length} 位</span></div>` : ""}
+    ${preview ? `<div class="modal-section-title">待确认 payload preview</div><pre class="api-preview">${escapeHtml(preview)}</pre>` : ""}
+    <div class="modal-section-title">原始结果</div>
+    <pre class="api-preview">${escapeHtml(JSON.stringify(result, null, 2))}</pre>
+  `);
+}
+
 async function submitOutreachApi(id) {
   const row = state.outreach.find((x) => x.id === id);
   const c = row ? creator(row.creatorId) : null;
@@ -2722,10 +2784,15 @@ async function submitOutreachApi(id) {
         method: "POST",
         body: JSON.stringify(emailSmtpPayload(row, c)),
       });
+      const target = targetCollaboration(row.targetCollaborationId);
+      const result = target
+        ? { email: data, target_collaboration: localTargetSchemaRequiredResult(target, row, c) }
+        : data;
       row.status = "待回复";
       row.updatedAt = nowText();
-      row.apiResult = data;
+      row.apiResult = result;
       row.lastMessage = `[${row.updatedAt}] Email 已通过 SMTP 提交发送，等待达人回复。\n${row.lastMessage || ""}`;
+      if (target) applyTargetSchemaBlock(row, target, result);
       pushMessage("Email发送成功", `@${c.username} 的 Email 建联已提交 SMTP。`);
       saveState();
       render();
@@ -4173,6 +4240,7 @@ window.translateOutreachDraft = translateOutreachDraft;
 window.openEmailSetupModal = openEmailSetupModal;
 window.saveEmailSettings = saveEmailSettings;
 window.copyInviteLink = copyInviteLink;
+window.openOutreachApiResult = openOutreachApiResult;
 window.openReplyModal = openReplyModal;
 window.saveReply = saveReply;
 window.openCoopModal = openCoopModal;

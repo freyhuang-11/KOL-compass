@@ -1,5 +1,41 @@
 # Acceptance Report
 
+## 2026-06-23 商品同步与多商品建联复验
+
+### 结论
+
+- 用户新增的 2 个商品已通过真实 TikTok sandbox 商品接口返回；当前授权店铺商品数从 1 增加到 3。
+- 多商品建联路径可用：真实商品中选择 2 个商品后，Target Collaboration payload preview 正确携带 2 个商品和逐商品佣金配置。
+- TikTok 私信 dry-run 返回官方消息发送 endpoint；未真实私信达人。
+- Target Collaboration 仍未实发：完整 request schema 未确认时，系统状态保持 `定向邀约待配置`，并提供 API 结果/payload preview 查看入口。
+
+### 真实数据统计
+
+- 店铺：`SANDBOX_VN7651055422359521044`
+- shop_cipher：`ROW__LZifAAAAACJT0l46EyaPAB-vLKGASpO`
+- 商品接口：`POST /api/tiktok/products`
+- HTTP：200
+- 商品数：3
+- 可选商品数：3
+- 图片缺失：0
+- 状态分布：`ACTIVATE` 3
+- 多商品 dry-run：选中商品数 2，Target Collaboration preview 商品数 2，达人 open_id 数 1
+- dry-run 达人：`enreview2`
+- TikTok IM endpoint：`POST /affiliate_seller/202412/conversations/{conversation_id}/messages`
+- Target Collaboration endpoint：`POST /affiliate_seller/202508/target_collaborations`
+- Target Collaboration 当前返回：`TARGET_COLLABORATION_SCHEMA_REQUIRED`
+
+### 本轮验证命令
+
+```bat
+node --check app.js
+node --check server.js
+node --check smoke-test.js
+node smoke-test.js
+```
+
+---
+
 ## 2026-06-23 建联流程重构验收
 
 ### 结论

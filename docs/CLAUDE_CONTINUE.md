@@ -1,5 +1,33 @@
 # Claude Continue
 
+更新时间：2026-06-23 17:24 Asia/Shanghai
+
+## 最新状态
+- 真实商品同步已验证：`POST /api/tiktok/products` 返回 3 个商品，包含用户新增的 2 个商品；3 个商品均为 `ACTIVATE/可选`，图片缺失 0。
+- 前端自动同步逻辑仍有效：进入产品页时，已授权店铺存在且商品缓存为空或超过 60 秒，会静默触发 `syncProducts({ silent: true, auto: true })`。
+- 多商品建联 dry-run 已验证：使用真实店铺、真实达人 `enreview2`、前 2 个真实商品提交 `/api/tiktok/outreach/submit` dry-run，返回 200；Target Collaboration payload preview 中 `products.length=2`、`creator_open_ids.length=1`。
+- TikTok 私信 dry-run 已验证：`im.endpoint=POST /affiliate_seller/202412/conversations/{conversation_id}/messages`。
+- Target Collaboration 仍按产品原则阻塞：接口入口已知，但完整 request schema 未确认，系统显示 `定向邀约待配置`，不再伪装为“待回复/已发成功”。
+
+## 本轮改动
+- `app.js`：新增 `isTargetSchemaRequired`、`applyTargetSchemaBlock`、`openOutreachApiResult`，定向邀约 schema 阻塞时可查看 payload preview。
+- `app.js`：TikTok 私信/Email 触达成功但 Target Collaboration 未确认 schema 时，建联记录停在 `定向邀约待配置`。
+- `app.css`：补充 API 结果预览样式。
+- `smoke-test.js`：新增 Target Collaboration schema 阻塞不可伪装成功的断言。
+
+## 本轮验收
+- `node --check app.js`：通过
+- `node --check server.js`：通过
+- `node --check smoke-test.js`：通过
+- `node smoke-test.js`：通过
+- 真实商品接口：3 条商品，选取 2 条做多商品 Target Collaboration dry-run，payload preview 商品数为 2。
+
+## 下一步
+- 如果要真正发 TikTok Target Collaboration，需要先在 Partner Center API Testing Tool 确认 `POST /affiliate_seller/202508/target_collaborations` 的完整字段 schema。
+- 当前可继续验收：商品同步、多商品选择、佣金配置、TikTok 私信 dry-run、Email 配置引导、建联记录状态。
+
+---
+
 更新时间：2026-06-23 17:55 Asia/Shanghai
 
 ## 当前状态
