@@ -24,7 +24,7 @@ const pages = [
   ["系统", [
     ["team", "账号与团队"],
     ["billing", "订阅计费"],
-    ["admin", "平台管理端"],
+    ["admin", "平台设置"],
   ]],
 ];
 
@@ -733,7 +733,7 @@ function renderDashboard() {
       ${stat(`${range}预估 GMV`, money(gmv), "仅统计合作管理中的归因 GMV", "dashboardGo('cooperations','coopStatus','全部')")}
       ${stat("已产出合作", output, "视频或直播数大于 0", "dashboardGo('cooperations','coopOutput','已产出')")}
       ${stat("逾期未产出", dashboardCoops.filter((x) => x.status === "逾期未产出").length, "需要催发或终止", "dashboardGo('cooperations','coopStatus','逾期未产出')")}
-      ${stat("API连接状态", state.settings.apiStatus, "未连接时使用本地数据", "dashboardGo('admin')")}
+      ${stat("店铺连接状态", state.settings.apiStatus, "未连接时仅显示本地台账", "dashboardGo('admin')")}
     </div>
     <div class="grid grid-2" style="margin-top:16px">
       <div class="card">
@@ -759,12 +759,12 @@ function renderDashboard() {
         ${ownerRows.map((x) => trendBar(escapeHtml(x.name), x.gmv, maxOwnerGmv, `${x.rows.length} 个合作 · 已产出 ${x.produced} 个 · ${money(x.gmv)}`, `setFilter('dashboardOwner','${escapeJs(x.name)}')`)).join("") || `<div class="empty">暂无负责人数据。</div>`}
       </div>
       <div class="card">
-        <h3>TikTok API 接入状态</h3>
+        <h3>TikTok 店铺连接状态</h3>
         <div class="notice">
-          当前版本不会假设 API 已可用。你已登录 Partner 账号时，可以从“平台管理端”查看接入前置条件；授权、scope、验证码和回调配置需要人工完成。
+          系统只展示已授权店铺返回的数据。你已登录 Partner 账号时，可以从“平台设置”查看接入前置条件；授权、权限审批、验证码和回调配置需要人工完成。
         </div>
         <div style="margin-top:12px">
-          <button class="btn primary" onclick="setPage('admin')">去平台管理端</button>
+          <button class="btn primary" onclick="setPage('admin')">去平台设置</button>
         </div>
       </div>
     </div>
@@ -790,7 +790,7 @@ function renderProducts() {
         <h3>${escapeHtml(selectedShop ? shopLabel(selectedShop) : "尚未绑定店铺")}</h3>
         <p>${shops.length ? `已授权 ${shops.length} 个店铺，当前商品源会自动用于建联、寄样和合作流程。下一步进入达人库同步并筛选 TikTok 达人。` : "完成店铺授权后，系统会自动同步店铺、商品，并开放达人库同步入口。"}</p>
         <div class="store-meta">
-          <span>后端：${escapeHtml(state.settings.tiktokBackendStatus || "未检查")}</span>
+          <span>连接状态：${escapeHtml(state.settings.tiktokBackendStatus || "未检查")}</span>
           <span>上次同步：${escapeHtml(state.settings.lastProductSync)}</span>
         </div>
       </div>
@@ -808,7 +808,7 @@ function renderProducts() {
         ` : `
           <button class="btn primary" onclick="startTikTokAuth()">绑定店铺</button>
           <button class="btn" onclick="checkTikTokShops()">读取已授权店铺</button>
-          <button class="btn" onclick="setPage('admin')">API配置</button>
+          <button class="btn" onclick="setPage('admin')">接入配置</button>
         `}
       </div>
     </section>
@@ -1274,7 +1274,7 @@ function renderOutreachWorkbench() {
                   <b>触达通知</b>
                   <span class="badge neutral">可多选</span>
                 </div>
-                ${channelOptions.length ? multiCheckField("outreachChannels", "发送渠道", channelOptions, defaultChannels) : `<div class="empty-state compact">当前没有可用触达渠道，请到平台管理端开启。</div>`}
+                ${channelOptions.length ? multiCheckField("outreachChannels", "发送渠道", channelOptions, defaultChannels) : `<div class="empty-state compact">当前没有可用触达渠道，请到平台设置开启。</div>`}
                 <div class="notice soft" style="margin-top:12px">
                   <b>Email 配置：</b>${emailNotice}
                   <button class="btn ghost" type="button" onclick="openEmailSetupModal('outreach')">配置邮箱/查看教程</button>
@@ -1528,7 +1528,7 @@ function renderCooperations() {
                 <p><b>场次：</b>${focus.lives || 0}</p>
                 <p><b>直播 GMV：</b>${money(focus.gmv || 0)}</p>
                 <p><b>在线人数：</b>${focus.lives ? "1,450" : "-"}</p>
-                <div class="notice">未授权 TikTok API 时使用本地台账，不伪造真实同步。</div>
+                <div class="notice">未完成 TikTok 授权时使用本地台账，不伪造真实同步。</div>
               </div>
             </div>
           </div>
@@ -1628,7 +1628,7 @@ function renderTeam() {
       </div>
       <div class="card">
         <h3>发送渠道</h3>
-        <p>Email / WhatsApp / TikTok 私信开关在平台管理端统一控制。</p>
+        <p>Email / WhatsApp / TikTok 私信开关在平台设置统一控制。</p>
       </div>
     </div>
     <div style="margin-top:16px">
@@ -1662,8 +1662,8 @@ function renderBilling() {
   const paid = records.filter((x) => x.status === "已支付").length;
   const pending = records.filter((x) => x.status !== "已支付").length;
   return `
-    ${pageHead("订阅计费", "查看套餐、配额和账单。支付通道由平台管理端开关控制。")}
-    <div class="notice" style="margin-bottom:16px">当前可用支付通道：支付宝、微信支付${stripeEnabled ? "、Stripe" : "。Stripe 支付已由平台管理端关闭"}。</div>
+    ${pageHead("订阅计费", "查看套餐、配额和账单。支付通道由平台设置开关控制。")}
+    <div class="notice" style="margin-bottom:16px">当前可用支付通道：支付宝、微信支付${stripeEnabled ? "、Stripe" : "。Stripe 支付已由平台设置关闭"}。</div>
     <div class="grid grid-4" style="margin-bottom:16px">
       ${stat("当前套餐", state.settings.planName, "本地配置")}
       ${stat("本月建联配额", quotaLabel(), "按建联记录计算")}
@@ -1709,12 +1709,12 @@ function renderAdmin() {
   const blocked = applications.filter((x) => ["授权阻塞", "配置不完整"].includes(x.apiStatus)).length;
   const shops = state.settings.tiktokShops || [];
   return `
-    ${pageHead("平台管理端", "功能开关、API 接入状态、商家统计和入驻审批。")}
+    ${pageHead("平台设置", "功能开关、店铺连接状态、商家统计和入驻审批。")}
     <div class="grid grid-4" style="margin-bottom:16px">
       ${stat("申请商家", applications.length, "本地入驻台账")}
       ${stat("待审批", pending, "需要平台处理")}
       ${stat("已通过", approved, "可进入本地试用")}
-      ${stat("接入阻塞", blocked + needsInfo, "资料或 API 未就绪")}
+      ${stat("接入阻塞", blocked + needsInfo, "资料或授权未就绪")}
     </div>
     <div class="grid grid-2">
       <div class="card">
@@ -1736,45 +1736,45 @@ function renderAdmin() {
         }).join("")}
       </div>
       <div class="card">
-        <h3>TikTok Partner API 接入流程</h3>
+        <h3>TikTok 店铺接入流程</h3>
         <ol>
           <li>确认 Partner Center 已登录，且店铺/商家账号有 Affiliate 权限。</li>
-          <li>创建或选择 Partner App，确认 Product、Affiliate、Messaging、Order 相关 scope。</li>
-          <li>配置 OAuth Redirect URL：后续后端服务地址，例如 <code>http://localhost:8015/api/tiktok/callback</code>。</li>
+          <li>创建或选择 Partner App，确认商品、达人、消息、订单相关权限。</li>
+          <li>配置 OAuth Redirect URL：系统回调地址，例如 <code>http://localhost:8015/api/tiktok/callback</code>。</li>
           <li>拿到 client_key / client_secret 后放入本项目环境变量或配置文件。</li>
           <li>若页面出现验证码、人机校验或 scope 审批缺失，需要你在浏览器里处理，我再继续同步。</li>
         </ol>
-        <div class="warning-box">当前版本已接入本地后端 <code>http://127.0.0.1:8015</code>。未配置 app_key/app_secret 或未完成 OAuth 时不会伪造 TikTok API 数据。</div>
+        <div class="warning-box">当前版本已接入本地服务 <code>http://127.0.0.1:8015</code>。未配置 app_key/app_secret 或未完成授权时不会伪造 TikTok 数据。</div>
       </div>
       <div class="card">
-        <h3>TikTok API 本地配置</h3>
+        <h3>TikTok 本地配置</h3>
         <div class="form-grid">
           ${field("apiClientKey", "client_key", "Partner App client_key", state.settings.tiktokClientKey || "")}
           ${field("apiRedirectUrl", "OAuth Redirect URL", "http://localhost:8015/api/tiktok/callback", state.settings.tiktokRedirectUrl || "")}
           ${multiCheckField("apiScopes", "已申请 scope", tiktokScopeOptions, state.settings.tiktokScopes || "")}
           ${field("apiLastCheck", "最近检查", "尚未检查", state.settings.tiktokLastAuthCheck || "尚未检查")}
         </div>
-        <div class="warning-box" style="margin-top:12px">client_secret 不应保存在前端 localStorage。真实接入时请放在本项目后端环境变量中；遇到 OAuth、验证码、scope 审批时需要人工在浏览器完成。</div>
+        <div class="warning-box" style="margin-top:12px">client_secret 不应保存在浏览器 localStorage。正式接入时请放在本项目服务环境变量中；遇到授权确认、验证码、权限审批时需要人工在浏览器完成。</div>
         <div style="margin-top:12px">
           <button class="btn primary" onclick="saveApiSettings()">保存配置</button>
           <button class="btn primary" onclick="startTikTokAuth()">绑定店铺</button>
-          <button class="btn" onclick="checkTikTokBackend()">检查后端</button>
+          <button class="btn" onclick="checkTikTokBackend()">检查连接服务</button>
           <button class="btn" onclick="checkTikTokShops()">读取已授权店铺</button>
           <button class="btn" onclick="refreshPlatformCreatorLibrary()">更新平台达人库</button>
           <button class="btn" onclick="markApiAuthBlocked()">标记授权阻塞</button>
-          <button class="btn ghost" onclick="showApiHandoffSteps('API接入')">查看人工处理流程</button>
+          <button class="btn ghost" onclick="showApiHandoffSteps('店铺接入')">查看人工处理流程</button>
         </div>
       </div>
       <div class="card">
         <h3>接入状态</h3>
         <p><b>当前状态：</b>${badge(state.settings.apiStatus)}</p>
-        <p><b>后端服务：</b>${escapeHtml(state.settings.tiktokBackendStatus || "未检查")}</p>
+        <p><b>连接服务：</b>${escapeHtml(state.settings.tiktokBackendStatus || "未检查")}</p>
         <p><b>已授权店铺：</b>${shops.length ? `${shops.length} 个` : "未绑定"}</p>
         <p><b>当前同步店铺：</b>${escapeHtml(state.settings.tiktokShopName || "未选择")}</p>
         <p><b>Token 保存时间：</b>${escapeHtml(state.settings.tiktokTokenSavedAt || "未保存")}</p>
         <p><b>商品同步：</b>${escapeHtml(state.settings.lastProductSync)}</p>
         <p><b>达人同步：</b>${escapeHtml(state.settings.lastCreatorSync)}</p>
-        <p class="muted">client_secret 只从后端环境变量读取；前端只负责触发授权和展示同步结果。</p>
+        <p class="muted">client_secret 只从本地服务环境变量读取；浏览器只负责触发授权和展示同步结果。</p>
         ${shops.length ? `
           <div class="divider"></div>
           <h4>授权店铺列表</h4>
@@ -1784,12 +1784,12 @@ function renderAdmin() {
             escapeHtml(shop.shop_id || shop.id || "-"),
             `<button class="btn ghost" onclick="selectTikTokShop('${escapeJs(shopCipher(shop))}')">设为同步店铺</button>`,
           ]))}
-        ` : `<div class="notice" style="margin-top:12px">当前还没有授权店铺。多国家不是在本系统里手动添加，而是每个国家/市场的真实 Seller 店铺授权后由 TikTok API 返回。</div>`}
+        ` : `<div class="notice" style="margin-top:12px">当前还没有授权店铺。多国家不是在本系统里手动添加，而是每个国家/市场的真实 Seller 店铺授权后由 TikTok 返回。</div>`}
       </div>
       <div class="card" style="grid-column: 1 / -1">
         <h3>商家入驻审批</h3>
-        <div class="notice" style="margin-bottom:12px">这是本地审批台账，用于验收平台管理流程；批准或驳回不会调用真实商户系统、支付系统或 TikTok API。</div>
-        ${table(["商家", "店铺", "联系人", "套餐", "API状态", "审批状态", "申请时间", "备注", "操作"], applications.map((row) => [
+        <div class="notice" style="margin-bottom:12px">这是本地审批台账，用于验收平台设置流程；批准或驳回不会触达真实商户系统、支付系统或 TikTok。</div>
+        ${table(["商家", "店铺", "联系人", "套餐", "接入状态", "审批状态", "申请时间", "备注", "操作"], applications.map((row) => [
           escapeHtml(row.merchant),
           escapeHtml(row.store),
           escapeHtml(row.contact),
@@ -2256,7 +2256,7 @@ function channelOptionsForCreators(targets, currentChannel = "") {
 
 function validateChannelForCreators(channel, targets) {
   if (!channelEnabled(channel)) {
-    alert(`${channel} 已被平台管理端关闭，不能用于新建联或回复。`);
+    alert(`${channel} 已被平台设置关闭，不能用于新建联或回复。`);
     return false;
   }
   if (channel === "WhatsApp" && !targets.every((c) => c?.whatsapp)) {
@@ -2419,7 +2419,7 @@ async function checkTikTokShops() {
     state.settings.tiktokShopCipher = selected ? shopCipher(selected) : "";
     state.settings.tiktokTokenSavedAt = data.token?.saved_at || state.settings.tiktokTokenSavedAt || "";
     state.settings.tiktokLastAuthCheck = nowText();
-    addSyncLog("店铺绑定", state.settings.apiStatus, firstShop ? `已读取 ${shops.length} 个授权店铺；当前同步：${state.settings.tiktokShopName}` : "TikTok API 返回成功但没有店铺列表。");
+    addSyncLog("店铺绑定", state.settings.apiStatus, firstShop ? `已读取 ${shops.length} 个授权店铺；当前同步：${state.settings.tiktokShopName}` : "TikTok 已授权，但没有返回店铺列表。");
     pushMessage("店铺绑定", firstShop ? `已读取 TikTok Shop 授权店铺 ${shops.length} 个；当前同步：${state.settings.tiktokShopName}` : "TikTok Shop 已授权，但未返回店铺列表。");
     saveState();
     render();
@@ -2701,7 +2701,7 @@ function syncCoopData() {
 function simulateConnect() {
   state.settings.tiktokConnected = true;
   state.settings.apiStatus = "待授权";
-  state.systemMessages.unshift({ id: Date.now(), type: "API状态", text: "已标记 Partner 账号登录。下一步需要配置 app scope、client_key/client_secret 和回调地址。", at: nowText(), read: false });
+  state.systemMessages.unshift({ id: Date.now(), type: "接入状态", text: "已标记 Partner 账号登录。下一步需要配置应用权限、client_key/client_secret 和回调地址。", at: nowText(), read: false });
   saveState();
   render();
 }
@@ -2717,8 +2717,8 @@ function saveApiSettings() {
   state.settings.tiktokLastAuthCheck = lastCheck;
   state.settings.tiktokConnected = Boolean(clientKey && redirectUrl && scopes);
   state.settings.apiStatus = state.settings.tiktokConnected ? "待OAuth授权" : "配置不完整";
-  addSyncLog("API配置", state.settings.apiStatus, "本地接入配置已保存；保存配置不会触发真实 API 调用。");
-  pushMessage("API配置", `TikTok API 本地配置已保存，状态：${state.settings.apiStatus}。`);
+  addSyncLog("接入配置", state.settings.apiStatus, "本地接入配置已保存；保存配置不会触发真实同步。");
+  pushMessage("接入配置", `TikTok 本地配置已保存，状态：${state.settings.apiStatus}。`);
   saveState();
   render();
 }
@@ -2726,20 +2726,20 @@ function saveApiSettings() {
 function markApiAuthBlocked() {
   state.settings.apiStatus = "授权阻塞";
   state.settings.tiktokLastAuthCheck = nowText();
-  addSyncLog("API授权", "授权阻塞", "需要人工处理 OAuth、验证码、scope 审批或 redirect URL 配置。");
-  pushMessage("API授权阻塞", "TikTok API 接入需要人工处理 OAuth、验证码、scope 审批或 redirect URL 配置。");
+  addSyncLog("店铺授权", "授权阻塞", "需要人工处理授权确认、验证码、权限审批或 redirect URL 配置。");
+  pushMessage("店铺授权阻塞", "TikTok 店铺接入需要人工处理授权确认、验证码、权限审批或 redirect URL 配置。");
   saveState();
   render();
-  showApiHandoffSteps("API授权阻塞", "需要人工处理 OAuth、验证码、scope 审批或 redirect URL 配置。");
+  showApiHandoffSteps("店铺授权阻塞", "需要人工处理授权确认、验证码、权限审批或 redirect URL 配置。");
 }
 
-function showApiHandoffSteps(module = "TikTok API", reason = "") {
+function showApiHandoffSteps(module = "TikTok 店铺接入", reason = "") {
   const steps = [
     "1. 确认 TikTok Shop Partner Center 已登录，且当前店铺有 Affiliate 权限。",
-    "2. 在 Partner App 中确认 Product、Affiliate、Messaging、Order scope 已开通或审批通过。",
-    "3. 配置 OAuth Redirect URL，后续后端建议使用 http://127.0.0.1:8015/api/tiktok/callback。",
-    "4. 将 client_key 填到平台管理端；client_secret 只放后端环境变量，不写入前端。",
-    "5. 若出现 OAuth 确认、验证码、人机校验、风控弹窗或 scope 缺失，请在浏览器完成后再回来同步。",
+    "2. 在 Partner App 中确认商品、达人、消息、订单权限已开通或审批通过。",
+    "3. 配置 OAuth Redirect URL，本地建议使用 http://127.0.0.1:8015/api/tiktok/callback。",
+    "4. 将 client_key 填到平台设置；client_secret 只放本地服务环境变量，不写入浏览器。",
+    "5. 若出现授权确认、验证码、人机校验、风控弹窗或权限缺失，请在浏览器完成后再回来同步。",
   ];
   alert(`${module} 暂不能自动完成。\n\n${reason ? `原因：${reason}\n\n` : ""}你现在需要：\n${steps.join("\n")}\n\n详细交接见 docs/TIKTOK_API_HANDOFF.md。`);
 }
@@ -2758,7 +2758,7 @@ function updateMerchantApplication(id, status, apiStatus, notePrefix) {
   row.status = status;
   row.apiStatus = apiStatus || row.apiStatus;
   row.notes = `[${nowText()}] ${notePrefix}。${row.notes ? ` ${row.notes}` : ""}`;
-  logOperation("入驻审批", row.merchant, `状态变更为：${status}；API状态：${row.apiStatus}`);
+  logOperation("入驻审批", row.merchant, `状态变更为：${status}；接入状态：${row.apiStatus}`);
   pushMessage("入驻审批", `${row.merchant} 已更新为：${status}。`);
   saveState();
   render();
@@ -2820,7 +2820,7 @@ function selectPlan(name) {
 }
 
 function addProduct() {
-  alert("产品数据应来自 TikTok Shop Partner API。本地版本不允许手动新增，避免和真实店铺商品冲突。");
+  alert("产品数据应来自 TikTok Shop 官方商品源。本地版本不允许手动新增，避免和真实店铺商品冲突。");
 }
 
 function productUsage(productId) {
@@ -2836,9 +2836,9 @@ function openProductModal(id) {
   const row = product(id);
   if (!row) return alert("产品不存在。");
   const usage = productUsage(row.id);
-  const source = state.settings.tiktokConnected ? "待 OAuth 授权后由 TikTok Partner API 同步" : "未连接真实 TikTok API，暂无真实商品源";
+  const source = state.settings.tiktokConnected ? "待授权后由 TikTok Shop 官方商品源同步" : "未完成 TikTok 授权，暂无真实商品源";
   openModal("商品详情", `
-    <div class="notice">商品、价格、佣金和合作模式应来自 TikTok Shop Partner API；当前只读展示，不支持本地手动新增或改写真实商品源。</div>
+    <div class="notice">商品、价格、佣金和合作模式应来自 TikTok Shop 官方商品源；当前只读展示，不支持本地手动新增或改写真实商品源。</div>
     <div class="grid grid-2" style="margin-top:12px">
       <div class="card">
         <h3>${escapeHtml(row.name)}</h3>
@@ -3007,7 +3007,7 @@ function markOutreachApiSubmitted(id, apiResult = null) {
         item.status = row.status;
         item.apiResult = apiResult;
         item.updatedAt = row.updatedAt;
-        item.lastMessage = `[${row.updatedAt}] 同批 TikTok 定向邀约状态已同步：${item.status}。\n${item.lastMessage || ""}`;
+        item.lastMessage = `[${row.updatedAt}] 同批 TikTok 定向邀约状态已同步：${outreachStatusLabel(item.status)}。\n${item.lastMessage || ""}`;
         return;
       }
       if (!targetReadyForNotifications(target)) return;
@@ -3394,7 +3394,7 @@ function openReplyModal(id) {
   const p = product(row.productId) || state.products[0];
   const defaultTemplate = state.templates[1]?.content || "Hi {KOL名称}，感谢回复，我们会继续推进 {产品名称} 的合作。";
   const channelOptions = replyChannelOptions(row);
-  if (!channelOptions.length) return alert("当前没有可用回复渠道，请先到平台管理端开启 TikTok 私信、Email 或 WhatsApp。");
+  if (!channelOptions.length) return alert("当前没有可用回复渠道，请先到平台设置开启 TikTok 私信、Email 或 WhatsApp。");
   const defaultChannel = channelOptions.some(([v]) => v === row.channel) ? row.channel : channelOptions[0][0];
   openModal("回复达人", `
     <div class="notice">正在回复 @${escapeHtml(c?.username || "-")}。Email / WhatsApp 必须同时满足“平台开关已开启”和“达人已录入联系方式”才会显示。</div>
@@ -3749,7 +3749,7 @@ function renderTemplate(content, c, p) {
 }
 
 function translateOutreachDraft() {
-  if (!featureEnabled("translation")) return alert("消息翻译功能已被平台管理端关闭。");
+  if (!featureEnabled("translation")) return alert("消息翻译功能已被平台设置关闭。");
   const products = selectedOutreachProducts();
   const p = products[0] || state.products[0];
   const lang = document.getElementById("outreachLanguage")?.value || "英语";
@@ -4411,7 +4411,7 @@ function openTeamMemberModal(id = 0) {
   const authorizedStores = (state.settings.tiktokShops || []).map((shop) => shopLabel(shop));
   const storeOptions = fixedOptions(["全部店铺", ...authorizedStores], currentStores).map((x) => [x, x]);
   openModal(row ? "编辑团队成员" : "新增团队成员", `
-    <div class="notice">本地版本记录团队配置和操作日志；真实邀请邮件、登录账号和权限拦截需要后端账号系统接入。</div>
+    <div class="notice">本地版本记录团队配置和操作日志；真实邀请邮件、登录账号和权限拦截需要账号系统接入。</div>
     <div class="form-grid" style="margin-top:12px">
       ${field("teamName", "姓名", "Mia", row?.name || "")}
       ${field("teamEmail", "邮箱", "mia@example.com", row?.email || "")}
@@ -4693,7 +4693,7 @@ function importCoopsCsv() {
 }
 
 function resetDemo() {
-  if (!confirm("确认清空本地数据？真实 TikTok 授权和后端平台达人库不会删除。")) return;
+  if (!confirm("确认清空本地数据？真实 TikTok 授权和平台达人库不会删除。")) return;
   localStorage.removeItem(STORAGE_KEY);
   state = loadState();
   render();

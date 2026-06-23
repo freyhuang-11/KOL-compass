@@ -1,5 +1,22 @@
 # Claude Continue
 
+更新时间：2026-06-23 20:42 Asia/Shanghai
+
+## 本轮修复
+- `app.js`：客户可见导航、控制台、产品管理、建联记录、平台设置、系统消息和弹窗文案去技术化，不再展示 `API发送`、`接口币种`、`平台管理端`、`后端：`、`TikTok API 接入状态`、`API配置` 等旧文案。
+- `app.js`：同批定向邀约状态同步消息改为使用业务状态映射，避免把内部状态值 `待API发送`、`API结果待确认` 直接拼进客户消息。
+- `smoke-test.js`：更新回归断言，按新的对客文案检查店铺接入、授权阻塞、渠道开关、商家审批和商品不可手动伪造。
+- `docs/PROJECT_MEMORY.md`：新增硬规则：对客页面、弹窗、按钮、表格、系统消息不得出现实现词，必须改成业务词。
+
+## 本轮验证
+- `node --check app.js`：通过
+- `node --check smoke-test.js`：通过
+- `node smoke-test.js`：通过
+- 静态禁用词扫描：`平台管理端`、`API连接状态`、`TikTok API 接入状态`、`API配置`、`未授权 TikTok API`、`提交到后端`、`提交全部待API发送`、`查看API结果`、`接口币种`、`Target Collaboration API`、`Conversation / Message API`、`payload preview`、`schema` 在 `app.js` / `smoke-test.js` 未命中。
+- Edge DevTools 真实页面文本检查：`#products`、`#kol`、`#outreach`、`#admin` 四个页面均未命中对客禁用词。
+
+---
+
 更新时间：2026-06-23 18:05 Asia/Shanghai
 
 ## 最新状态
