@@ -969,6 +969,46 @@ function outreachMessageCell(o) {
   return `${escapeHtml(o.lastMessage)}${targetInfo}${translated}${invite}`;
 }
 
+function deliveryPill(label, status, detail = "") {
+  const cls = status === "已提交" || status === "已发送" ? "success"
+    : status === "失败" ? "danger"
+      : status === "待确认" ? "warning"
+        : "neutral";
+  return `<span class="delivery-pill ${cls}"><b>${escapeHtml(label)}</b>${escapeHtml(status)}${detail ? `<em>${escapeHtml(detail)}</em>` : ""}</span>`;
+}
+
+function outreachDeliveryCell(o) {
+  const result = o.apiResult || {};
+  const error = o.apiError || null;
+  const target = targetCollaboration(o.targetCollaborationId);
+  const targetResult = result.target_collaboration || target?.apiResult || null;
+  const officialId = targetOfficialId(result) || target?.officialId || "";
+  const items = [];
+
+  if (target) {
+    if (officialId) items.push(deliveryPill("定向邀约", "已提交", officialId));
+    else if (targetResult?.ok === false || target?.apiError) items.push(deliveryPill("定向邀约", "失败", targetResult?.code || target?.apiError?.code || ""));
+    else if (targetResult?.ok || o.status === "API结果待确认") items.push(deliveryPill("定向邀约", "待确认", "缺少官方ID"));
+    else items.push(deliveryPill("定向邀约", "未提交"));
+  }
+
+  if (o.channel === "TikTok私信") {
+    if (result.im?.ok) items.push(deliveryPill("TikTok私信", "已发送"));
+    else if (error) items.push(deliveryPill("TikTok私信", "失败", error.code || error.message || ""));
+    else items.push(deliveryPill("TikTok私信", o.status === "待API发送" ? "未提交" : "待确认"));
+  }
+
+  if (o.channel === "Email") {
+    const emailResult = result.email || (result.ok !== undefined ? result : null);
+    if (emailResult?.ok) items.push(deliveryPill("Email", "已发送"));
+    else if (error) items.push(deliveryPill("Email", "失败", error.code || error.message || ""));
+    else if (o.status === "联系方式补充中") items.push(deliveryPill("Email", "待确认", "缺少邮箱"));
+    else items.push(deliveryPill("Email", o.status === "待API发送" ? "未提交" : "待确认"));
+  }
+
+  return `<div class="delivery-stack">${items.join("") || deliveryPill("触达", "未提交")}</div>`;
+}
+
 function renderOutreach() {
   const channels = Array.from(new Set(state.outreach.map((o) => o.channel).filter(Boolean)));
   const statuses = Array.from(new Set(state.outreach.map((o) => o.status).filter(Boolean)));
@@ -1005,11 +1045,12 @@ function renderOutreach() {
         <span class="muted">当前显示 ${rows.length} / ${totalCount} 条</span>
       </div>
     </div>
-    ${table(["达人", "产品", "渠道", "状态", "最后消息", "更新时间", "操作"], rows.map((o) => [
+    ${table(["达人", "产品", "渠道", "状态", "发送结果", "最后消息", "更新时间", "操作"], rows.map((o) => [
       personCell(creator(o.creatorId)),
       outreachProductCell(o),
       o.channel,
       badge(o.status),
+      outreachDeliveryCell(o),
       outreachMessageCell(o),
       o.updatedAt,
       outreachActions(o),

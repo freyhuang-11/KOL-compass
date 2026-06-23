@@ -906,6 +906,59 @@ tr:last-child td {
   white-space: nowrap;
 }
 
+.delivery-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 130px;
+}
+
+.delivery-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  max-width: 220px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: #fff;
+  color: var(--subtle);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.delivery-pill b {
+  color: var(--text);
+}
+
+.delivery-pill em {
+  max-width: 92px;
+  overflow: hidden;
+  color: var(--muted);
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.delivery-pill.success {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+  color: #166534;
+}
+
+.delivery-pill.warning {
+  border-color: #fde68a;
+  background: #fffbeb;
+  color: #92400e;
+}
+
+.delivery-pill.danger {
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: #991b1b;
+}
+
 .badge.success {
   color: #166534;
   background: #dcfce7;
