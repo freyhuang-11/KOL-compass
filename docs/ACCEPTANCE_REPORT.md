@@ -65,6 +65,17 @@
 - 使用真实店铺：`SANDBOX_VN7651055422359521044`
 - 本次没有实际发送 TikTok 私信，避免未经人工确认触达真实达人。
 
+Email SMTP dry-run：
+
+- endpoint：`/api/email/outreach/send`
+- HTTP：200
+- `ok`：true
+- SMTP：`smtp.gmail.com:587`
+- secure：false（587 STARTTLS）
+- dry-run 收件人：`creator@example.com`
+- 真实达人样本：`enreview2`
+- 样本达人邮箱：缺失，因此没有实际发送邮件；真实发送前必须先补齐达人 Email，并在本地邮箱配置中保存应用专用密码。
+
 ### 本轮验证命令
 
 ```bat

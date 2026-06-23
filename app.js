@@ -126,6 +126,8 @@ const seed = {
     emailSmtpPort: "587",
     emailImapHost: "imap.gmail.com",
     emailImapPort: "993",
+    emailAppPassword: "",
+    emailAppPasswordConfigured: false,
     planName: "专业版",
     featureSwitches: {
       tiktokMessaging: true,
@@ -1937,7 +1939,7 @@ function validateChannelForCreators(channel, targets) {
 }
 
 function emailAccountConfigured() {
-  return Boolean(state.settings.emailConnected && state.settings.emailAddress);
+  return Boolean(state.settings.emailConnected && state.settings.emailAddress && state.settings.emailAppPassword);
 }
 
 function channelLabel(channel) {
@@ -2661,6 +2663,24 @@ function outreachShopCipher(row, c) {
   return c?.sourceShopCipher || state.settings.tiktokShopCipher || state.settings.selectedTikTokShopCipher || "";
 }
 
+function emailSmtpPayload(row, c) {
+  return {
+    smtp: {
+      host: state.settings.emailSmtpHost,
+      port: Number(state.settings.emailSmtpPort || 587),
+      username: state.settings.emailAddress,
+      password: state.settings.emailAppPassword,
+      secure: Number(state.settings.emailSmtpPort || 587) === 465,
+    },
+    message: {
+      from: state.settings.emailAddress,
+      to: c?.email || "",
+      subject: `合作邀约：${outreachProductNames(row)}`,
+      text: outreachApiMessage(row),
+    },
+  };
+}
+
 function targetApiPayload(target, row, c) {
   if (!target) return null;
   return {
@@ -2683,12 +2703,41 @@ async function submitOutreachApi(id) {
   const c = row ? creator(row.creatorId) : null;
   if (!row || !c) return;
   if (row.channel === "Email") {
-    row.status = "待回复";
-    row.updatedAt = nowText();
-    row.lastMessage = `[${row.updatedAt}] Email 建联已进入本地发送队列；当前版本未接 SMTP 实发。\n${row.lastMessage || ""}`;
-    pushMessage("Email发送队列", `@${c.username} 的 Email 建联已进入本地发送队列。`);
-    saveState();
-    render();
+    if (!emailAccountConfigured()) {
+      openEmailSetupModal("outreach");
+      alert("Email 尚未完成 SMTP 配置。请先填写邮箱账号和应用专用密码。");
+      return;
+    }
+    if (!c.email) {
+      row.status = "联系方式补充中";
+      row.updatedAt = nowText();
+      row.lastMessage = `[${row.updatedAt}] Email 发送暂停：达人邮箱缺失，已进入联系方式补充。\n${row.lastMessage || ""}`;
+      pushMessage("联系方式补充", `@${c.username} 缺少 Email，无法发送邮件建联。`);
+      saveState();
+      render();
+      return;
+    }
+    try {
+      const data = await apiRequest("/api/email/outreach/send", {
+        method: "POST",
+        body: JSON.stringify(emailSmtpPayload(row, c)),
+      });
+      row.status = "待回复";
+      row.updatedAt = nowText();
+      row.apiResult = data;
+      row.lastMessage = `[${row.updatedAt}] Email 已通过 SMTP 提交发送，等待达人回复。\n${row.lastMessage || ""}`;
+      pushMessage("Email发送成功", `@${c.username} 的 Email 建联已提交 SMTP。`);
+      saveState();
+      render();
+    } catch (error) {
+      row.status = "发送失败";
+      row.updatedAt = nowText();
+      row.apiError = error.data || { message: error.message };
+      row.lastMessage = `[${row.updatedAt}] Email SMTP 发送失败：${error.message}\n${row.lastMessage || ""}`;
+      pushMessage("Email发送失败", `@${c.username} 的 Email 建联发送失败：${error.message}`);
+      saveState();
+      render();
+    }
     return;
   }
   const shopCipher = outreachShopCipher(row, c);
@@ -3215,6 +3264,7 @@ function saveEmailSettings() {
   state.settings.emailSmtpPort = get("emailSmtpPort");
   state.settings.emailImapHost = get("emailImapHost");
   state.settings.emailImapPort = get("emailImapPort");
+  state.settings.emailAppPassword = get("emailAppPassword");
   state.settings.emailConnected = true;
   state.settings.emailAppPasswordConfigured = true;
   addSyncLog("Email 配置", "已保存", `已绑定发信邮箱：${state.settings.emailAddress}`);

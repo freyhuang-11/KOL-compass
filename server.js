@@ -1,7 +1,9 @@
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const http = require("node:http");
+const net = require("node:net");
 const path = require("node:path");
+const tls = require("node:tls");
 const { URL } = require("node:url");
 
 loadEnvFile(".env.local");
@@ -551,6 +553,151 @@ async function submitTikTokOutreach(payload = {}) {
   }
 
   return result;
+}
+
+function smtpBase64(value) {
+  return Buffer.from(String(value || ""), "utf8").toString("base64");
+}
+
+function smtpHeader(value) {
+  const text = String(value || "");
+  return /^[\x00-\x7F]*$/.test(text) ? text : `=?UTF-8?B?${smtpBase64(text)}?=`;
+}
+
+function smtpEscapeBody(text) {
+  return String(text || "")
+    .replace(/\r?\n/g, "\r\n")
+    .split("\r\n")
+    .map((line) => line.startsWith(".") ? `.${line}` : line)
+    .join("\r\n");
+}
+
+function buildEmailMessage({ from, to, subject, text }) {
+  const now = new Date().toUTCString();
+  return [
+    `From: <${from}>`,
+    `To: <${to}>`,
+    `Subject: ${smtpHeader(subject || "KOL Compass outreach")}`,
+    `Date: ${now}`,
+    "MIME-Version: 1.0",
+    "Content-Type: text/plain; charset=UTF-8",
+    "Content-Transfer-Encoding: 8bit",
+    "",
+    smtpEscapeBody(text),
+  ].join("\r\n");
+}
+
+function smtpConnect({ host, port, secure }) {
+  return new Promise((resolve, reject) => {
+    const socket = secure
+      ? tls.connect({ host, port, servername: host, rejectUnauthorized: false })
+      : net.connect({ host, port });
+    socket.setTimeout(30_000);
+    socket.once("connect", () => resolve(socket));
+    socket.once("secureConnect", () => resolve(socket));
+    socket.once("timeout", () => {
+      socket.destroy();
+      reject(new Error("SMTP connection timed out."));
+    });
+    socket.once("error", reject);
+  });
+}
+
+function createSmtpSession(socket) {
+  let buffer = "";
+  const waiters = [];
+  socket.on("data", (chunk) => {
+    buffer += chunk.toString("utf8");
+    flush();
+  });
+  function completeReply() {
+    const lines = buffer.split(/\r?\n/);
+    const completeIndex = lines.findIndex((line) => /^\d{3} /.test(line));
+    if (completeIndex === -1) return null;
+    const reply = lines.slice(0, completeIndex + 1).join("\n");
+    buffer = lines.slice(completeIndex + 1).join("\n");
+    return reply;
+  }
+  function flush() {
+    while (waiters.length) {
+      const reply = completeReply();
+      if (!reply) return;
+      waiters.shift().resolve(reply);
+    }
+  }
+  return {
+    read() {
+      const reply = completeReply();
+      if (reply) return Promise.resolve(reply);
+      return new Promise((resolve, reject) => {
+        waiters.push({ resolve, reject });
+      });
+    },
+    async command(command, expected = [250]) {
+      socket.write(`${command}\r\n`);
+      const reply = await this.read();
+      const code = Number(reply.slice(0, 3));
+      if (!expected.includes(code)) throw new Error(`SMTP command failed: ${command} -> ${reply}`);
+      return reply;
+    },
+  };
+}
+
+async function sendSmtpEmail(payload = {}) {
+  const smtp = payload.smtp || {};
+  const message = payload.message || {};
+  const host = String(smtp.host || "").trim();
+  const port = Number(smtp.port || 587);
+  const username = String(smtp.username || message.from || "").trim();
+  const password = String(smtp.password || "").trim();
+  const from = String(message.from || username).trim();
+  const to = String(message.to || "").trim();
+  const subject = String(message.subject || "KOL Compass outreach");
+  const text = String(message.text || "").trim();
+  if (!host || !port || !username || !password || !from || !to || !text) {
+    const error = new Error("Missing SMTP host, port, username, password, from, to or message text.");
+    error.statusCode = 400;
+    error.payload = { ok: false, code: "SMTP_PARAM_MISSING", message: error.message };
+    throw error;
+  }
+  if (payload.dry_run) {
+    return {
+      ok: true,
+      dry_run: true,
+      smtp: { host, port, secure: Boolean(smtp.secure || port === 465) },
+      envelope: { from, to },
+      subject,
+    };
+  }
+
+  let socket = await smtpConnect({ host, port, secure: Boolean(smtp.secure || port === 465) });
+  let session = createSmtpSession(socket);
+  try {
+    await session.read();
+    await session.command(`EHLO ${smtp.helo || "kol-compass.local"}`);
+    if (port !== 465 && smtp.starttls !== false) {
+      await session.command("STARTTLS", [220]);
+      socket = tls.connect({ socket, servername: host, rejectUnauthorized: false });
+      session = createSmtpSession(socket);
+      await session.command(`EHLO ${smtp.helo || "kol-compass.local"}`);
+    }
+    await session.command("AUTH LOGIN", [334]);
+    await session.command(smtpBase64(username), [334]);
+    await session.command(smtpBase64(password), [235]);
+    await session.command(`MAIL FROM:<${from}>`);
+    await session.command(`RCPT TO:<${to}>`, [250, 251]);
+    await session.command("DATA", [354]);
+    socket.write(`${buildEmailMessage({ from, to, subject, text })}\r\n.\r\n`);
+    const finalReply = await session.read();
+    const finalCode = Number(finalReply.slice(0, 3));
+    if (finalCode !== 250) throw new Error(`SMTP DATA failed: ${finalReply}`);
+    await session.command("QUIT", [221, 250]).catch(() => "");
+    socket.end();
+    return { ok: true, dry_run: false, smtp: { host, port }, envelope: { from, to }, reply: finalReply };
+  } catch (error) {
+    socket.destroy();
+    throw error;
+  }
 }
 
 async function getCategories(shop) {
@@ -1132,6 +1279,12 @@ async function handle(req, res) {
     if (requestUrl.pathname === "/api/tiktok/outreach/submit") {
       const body = req.method === "POST" ? await readRequestBody(req) : {};
       const result = await submitTikTokOutreach(body);
+      return json(res, 200, result);
+    }
+
+    if (requestUrl.pathname === "/api/email/outreach/send") {
+      const body = req.method === "POST" ? await readRequestBody(req) : {};
+      const result = await sendSmtpEmail(body);
       return json(res, 200, result);
     }
 

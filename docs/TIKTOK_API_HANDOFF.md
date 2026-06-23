@@ -23,6 +23,9 @@
 - 提交建联发送任务：`/api/tiktok/outreach/submit`
   - TikTok 私信路径：先创建达人会话 `POST /affiliate_seller/202508/conversations`，再发送消息 `POST /affiliate_seller/202412/conversations/{conversation_id}/messages`
   - 定向邀约路径：官方入口为 `POST /affiliate_seller/202508/target_collaborations`；当前只生成 payload preview 并返回 `TARGET_COLLABORATION_SCHEMA_REQUIRED`，等 API Testing Tool 确认完整请求 schema 后才允许实发
+- 提交 Email 建联：`/api/email/outreach/send`
+  - 本地后端使用 SMTP AUTH LOGIN 发送文本邮件，支持 465 TLS 和 587 STARTTLS
+  - 前端只在本地保存邮箱账号和应用专用密码；生产环境必须改为后端加密保存
 
 Token 保存到 `.data/tiktok-token.json`，该目录已加入 `.gitignore`，不要提交。
 
