@@ -47,8 +47,23 @@
 
 - TikTok 私信官方能力存在独立接口，包括 `Create Conversation with creator` 和 `Send IM Message`，所需 scope 为 `seller.affiliate_messages.write`。
 - TikTok 定向邀约不是普通消息里的本地链接，应作为 Target Collaboration 对象处理。
-- 当前实现不会把本地草稿伪装为 TikTok 官方发送成功；定向邀约和 TikTok 私信记录均以 `待API发送` 状态落库。
-- 等确认 TikTok Target Collaboration 精确请求 schema 后，再把本地草稿提交到官方接口。
+- 当前实现不会把本地草稿伪装为 TikTok 官方发送成功；建联记录先以 `待API发送` 状态落库。
+- TikTok 私信后端路径已接入：`POST /affiliate_seller/202508/conversations` 创建/获取会话，再 `POST /affiliate_seller/202412/conversations/{conversation_id}/messages` 发送文本消息。
+- TikTok Target Collaboration 官方入口已确认：`POST /affiliate_seller/202508/target_collaborations`；当前生成 payload preview 并返回 `TARGET_COLLABORATION_SCHEMA_REQUIRED`，等 API Testing Tool 确认完整请求 schema 后才允许实发。
+
+### 后端发送 dry-run 验收
+
+使用当前真实授权店铺、真实达人和 3 个真实商品运行 `/api/tiktok/outreach/submit` dry-run：
+
+- HTTP：200
+- `ok`：true
+- TikTok 私信 dry-run endpoint：`POST /affiliate_seller/202412/conversations/{conversation_id}/messages`
+- 定向邀约 endpoint：`POST /affiliate_seller/202508/target_collaborations`
+- 定向邀约商品数：3
+- 定向邀约达人 open_id 数：1
+- 使用真实达人：`enreview2`
+- 使用真实店铺：`SANDBOX_VN7651055422359521044`
+- 本次没有实际发送 TikTok 私信，避免未经人工确认触达真实达人。
 
 ### 本轮验证命令
 

@@ -2612,7 +2612,7 @@ function outreachActions(o) {
     parts.push(`<button class="btn" onclick="openReplyModal(${o.id})">回复</button>`);
   }
   if (o.status === "待API发送") {
-    parts.push(`<button class="btn" onclick="markOutreachApiSubmitted(${o.id})">标记已提交API</button>`);
+    parts.push(`<button class="btn" onclick="submitOutreachApi(${o.id})">提交到后端发送</button>`);
     parts.push(`<button class="btn ghost" onclick="advanceOutreach(${o.id}, '发送失败')">标记发送失败</button>`);
   }
   if (o.status === "待回复") {
@@ -2630,20 +2630,110 @@ function outreachActions(o) {
   return parts.join(" ");
 }
 
-function markOutreachApiSubmitted(id) {
+function markOutreachApiSubmitted(id, apiResult = null) {
   const row = state.outreach.find((x) => x.id === id);
   if (!row) return;
   row.status = "待回复";
   row.updatedAt = nowText();
-  row.lastMessage = `[${row.updatedAt}] 已标记为提交 TikTok API / Email 队列，等待达人回复。\n${row.lastMessage || ""}`;
+  row.apiResult = apiResult;
+  row.lastMessage = `[${row.updatedAt}] 已提交 TikTok API / Email 队列，等待达人回复。\n${row.lastMessage || ""}`;
   const target = targetCollaboration(row.targetCollaborationId);
   if (target) {
-    target.status = "待达人接受";
+    target.status = apiResult?.target_collaboration?.ok === false ? "定向邀约待确认Schema" : "待达人接受";
+    target.apiResult = apiResult?.target_collaboration || null;
     target.updatedAt = nowText();
   }
   pushMessage("建联API状态", `@${creator(row.creatorId)?.username || "-"} 的建联记录已标记为已提交 API。`);
   saveState();
   render();
+}
+
+function outreachApiMessage(row) {
+  if (row.messageText) return row.translatedMessage || row.messageText;
+  return String(row.lastMessage || "")
+    .replace(/^.*?·\s*/, "")
+    .replace(/\n定向邀约：[\s\S]*$/m, "")
+    .replace(/\n商品：[\s\S]*$/m, "")
+    .trim();
+}
+
+function outreachShopCipher(row, c) {
+  return c?.sourceShopCipher || state.settings.tiktokShopCipher || state.settings.selectedTikTokShopCipher || "";
+}
+
+function targetApiPayload(target, row, c) {
+  if (!target) return null;
+  return {
+    id: target.id,
+    name: target.name,
+    creator_open_ids: [c?.sourceId].filter(Boolean),
+    creator_usernames: [c?.username].filter(Boolean),
+    products: target.products || row.productsSnapshot || [],
+    expiresAt: target.expiresAt,
+    deliverables: target.deliverables || [],
+    sampleRule: target.sampleRule,
+    contactName: target.contactName,
+    contactEmail: target.contactEmail,
+    shop_cipher: outreachShopCipher(row, c),
+  };
+}
+
+async function submitOutreachApi(id) {
+  const row = state.outreach.find((x) => x.id === id);
+  const c = row ? creator(row.creatorId) : null;
+  if (!row || !c) return;
+  if (row.channel === "Email") {
+    row.status = "待回复";
+    row.updatedAt = nowText();
+    row.lastMessage = `[${row.updatedAt}] Email 建联已进入本地发送队列；当前版本未接 SMTP 实发。\n${row.lastMessage || ""}`;
+    pushMessage("Email发送队列", `@${c.username} 的 Email 建联已进入本地发送队列。`);
+    saveState();
+    render();
+    return;
+  }
+  const shopCipher = outreachShopCipher(row, c);
+  if (!shopCipher || !c.sourceId) {
+    row.status = "发送失败";
+    row.updatedAt = nowText();
+    row.lastMessage = `[${row.updatedAt}] 发送失败：缺少 shop_cipher 或 creator_open_id。\n${row.lastMessage || ""}`;
+    pushMessage("建联API失败", `@${c.username} 缺少 shop_cipher 或 creator_open_id，无法提交 TikTok 私信。`);
+    saveState();
+    render();
+    return;
+  }
+  try {
+    const target = targetCollaboration(row.targetCollaborationId);
+    const data = await apiRequest("/api/tiktok/outreach/submit", {
+      method: "POST",
+      body: JSON.stringify({
+        outreach: {
+          id: row.id,
+          channel: row.channel,
+          shop_cipher: shopCipher,
+          creator_open_id: c.sourceId,
+          creator_username: c.username,
+          message: outreachApiMessage(row),
+          product_ids: (row.productsSnapshot || []).map((p) => p.sourceId || p.id).filter(Boolean),
+        },
+        target_collaboration: targetApiPayload(target, row, c),
+      }),
+    });
+    markOutreachApiSubmitted(id, data);
+  } catch (error) {
+    row.status = "发送失败";
+    row.updatedAt = nowText();
+    row.apiError = error.data || { message: error.message };
+    row.lastMessage = `[${row.updatedAt}] API提交失败：${error.message}\n${row.lastMessage || ""}`;
+    const target = targetCollaboration(row.targetCollaborationId);
+    if (target) {
+      target.status = "API提交失败";
+      target.apiError = row.apiError;
+      target.updatedAt = row.updatedAt;
+    }
+    pushMessage("建联API失败", `@${c.username} 的建联提交失败：${error.message}`);
+    saveState();
+    render();
+  }
 }
 
 function sampleActions(s) {
@@ -3275,6 +3365,7 @@ function saveOutreach(idList) {
         channel,
         channels,
         status,
+        messageText: rendered,
         lastMessage: pendingContact ? `待补充 Email 后发送 · ${messageWithContext}` : `${scheduledText} · ${messageWithContext}`,
         translatedMessage,
         translationLanguage,
@@ -3283,7 +3374,8 @@ function saveOutreach(idList) {
       });
       created += 1;
     });
-    c.status = channels.includes("Email") && needsContactEnrichment("Email", c) ? "联系方式补充中" : "已发送";
+    const hasPendingApi = channels.includes("TikTok私信") || Boolean(targetCollab);
+    c.status = channels.includes("Email") && needsContactEnrichment("Email", c) ? "联系方式补充中" : (hasPendingApi ? "待API发送" : "已发送");
   });
   state.bulkCreatorIds = [];
   logOperation("建联发送", channels.join("+"), `创建 ${created} 条建联记录；商品：${productNames}；模式：${mode}`);
@@ -4039,6 +4131,7 @@ window.addCoopTag = addCoopTag;
 window.markOverdue = markOverdue;
 window.advanceOutreach = advanceOutreach;
 window.markOutreachApiSubmitted = markOutreachApiSubmitted;
+window.submitOutreachApi = submitOutreachApi;
 window.createSampleFromOutreach = createSampleFromOutreach;
 window.createCoopFromOutreach = createCoopFromOutreach;
 window.deleteOutreach = deleteOutreach;

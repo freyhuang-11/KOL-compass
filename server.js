@@ -444,6 +444,115 @@ async function searchCreators(shopCipher, keyword = "", pageSize = 12, pageToken
   return tiktokFetch("/affiliate_seller/202508/marketplace_creators/search", { method: "POST", params, body });
 }
 
+function extractConversationId(upstream) {
+  return upstream?.data?.conversation_id
+    || upstream?.data?.conversation?.id
+    || upstream?.data?.id
+    || upstream?.conversation_id
+    || upstream?.conversation?.id
+    || "";
+}
+
+async function createCreatorConversation(shopCipher, creatorOpenId) {
+  if (!shopCipher || !creatorOpenId) {
+    const error = new Error("Missing shop_cipher or creator_open_id for TikTok IM conversation.");
+    error.statusCode = 400;
+    error.payload = { ok: false, code: "IM_PARAM_MISSING", message: error.message };
+    throw error;
+  }
+  return tiktokFetch("/affiliate_seller/202508/conversations", {
+    method: "POST",
+    params: { shop_cipher: shopCipher },
+    body: { creator_open_id: creatorOpenId },
+  });
+}
+
+async function sendCreatorImMessage(conversationId, message) {
+  if (!conversationId || !message) {
+    const error = new Error("Missing conversation_id or message for TikTok IM sending.");
+    error.statusCode = 400;
+    error.payload = { ok: false, code: "IM_MESSAGE_PARAM_MISSING", message: error.message };
+    throw error;
+  }
+  return tiktokFetch(`/affiliate_seller/202412/conversations/${conversationId}/messages`, {
+    method: "POST",
+    body: {
+      type: "TEXT",
+      content: JSON.stringify({ content: message }),
+    },
+  });
+}
+
+function targetCollaborationPayloadPreview(target = {}, outreach = {}) {
+  return {
+    shop_cipher: outreach.shop_cipher || target.shop_cipher || "",
+    name: target.name || "",
+    creator_open_ids: target.creator_open_ids || [],
+    products: (target.products || []).map((product) => ({
+      product_id: product.sourceId || product.product_id || product.id,
+      standard_commission_rate: product.standardCommissionRate,
+      ads_commission_rate: product.adCommissionEnabled ? product.adCommissionRate : undefined,
+    })),
+    expires_at: target.expiresAt || "",
+    deliverables: target.deliverables || [],
+    sample_rule: target.sampleRule || "",
+    contact: {
+      name: target.contactName || "",
+      email: target.contactEmail || "",
+    },
+  };
+}
+
+async function submitTikTokOutreach(payload = {}) {
+  const outreach = payload.outreach || {};
+  const target = payload.target_collaboration || null;
+  const result = {
+    ok: true,
+    dry_run: Boolean(payload.dry_run),
+    channel: outreach.channel || "",
+    target_collaboration: null,
+    im: null,
+  };
+
+  if (target) {
+    result.target_collaboration = {
+      ok: false,
+      code: "TARGET_COLLABORATION_SCHEMA_REQUIRED",
+      message: "TikTok Create Target Collaboration endpoint exists, but this build will not submit until the exact request schema is confirmed in Partner Center API Testing Tool.",
+      endpoint: "POST /affiliate_seller/202508/target_collaborations",
+      payload_preview: targetCollaborationPayloadPreview(target, outreach),
+    };
+  }
+
+  if (outreach.channel === "TikTok私信") {
+    if (payload.dry_run) {
+      result.im = {
+        ok: true,
+        dry_run: true,
+        endpoint: "POST /affiliate_seller/202412/conversations/{conversation_id}/messages",
+      };
+    } else {
+      const conversation = await createCreatorConversation(outreach.shop_cipher, outreach.creator_open_id);
+      const conversationId = extractConversationId(conversation);
+      if (!conversationId) {
+        const error = new Error("TikTok did not return conversation_id after creating creator conversation.");
+        error.statusCode = 502;
+        error.payload = { ok: false, code: "CONVERSATION_ID_MISSING", message: error.message, upstream: conversation };
+        throw error;
+      }
+      const sent = await sendCreatorImMessage(conversationId, outreach.message);
+      result.im = {
+        ok: true,
+        conversation_id: conversationId,
+        create_conversation: conversation,
+        send_message: sent,
+      };
+    }
+  }
+
+  return result;
+}
+
 async function getCategories(shop) {
   const params = {};
   const cipher = shopCipher(shop);
@@ -1018,6 +1127,12 @@ async function handle(req, res) {
       const pageToken = body.page_token || requestUrl.searchParams.get("page_token") || "";
       const upstream = await searchCreators(shopCipher, keyword, pageSize, pageToken);
       return json(res, 200, { ok: true, upstream, creators: normalizeCreators(upstream) });
+    }
+
+    if (requestUrl.pathname === "/api/tiktok/outreach/submit") {
+      const body = req.method === "POST" ? await readRequestBody(req) : {};
+      const result = await submitTikTokOutreach(body);
+      return json(res, 200, result);
     }
 
     return json(res, 404, { ok: false, code: "NOT_FOUND", message: "API route not found" });
