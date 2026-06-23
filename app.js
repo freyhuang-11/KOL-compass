@@ -2620,8 +2620,8 @@ function outreachActions(o) {
     parts.push(`<button class="btn" onclick="submitOutreachApi(${o.id})">提交到后端发送</button>`);
     parts.push(`<button class="btn ghost" onclick="advanceOutreach(${o.id}, '发送失败')">标记发送失败</button>`);
   }
-  if (o.status === "定向邀约待配置") {
-    parts.push(`<button class="btn" onclick="openOutreachApiResult(${o.id})">查看定向邀约阻塞</button>`);
+  if (o.status === "定向邀约待配置" || o.status === "API结果待确认") {
+    parts.push(`<button class="btn" onclick="openOutreachApiResult(${o.id})">查看API结果</button>`);
   }
   if (o.status === "待回复") {
     parts.push(`<button class="btn" onclick="advanceOutreach(${o.id}, '待我方回复')">标记已回复</button>`);
@@ -2644,21 +2644,26 @@ function markOutreachApiSubmitted(id, apiResult = null) {
   const target = targetCollaboration(row.targetCollaborationId);
   const targetBlocked = isTargetSchemaRequired(apiResult);
   const officialId = targetOfficialId(apiResult);
-  row.status = targetBlocked ? "定向邀约待配置" : "待回复";
+  const targetNeedsConfirmation = target && !targetBlocked && !officialId;
+  row.status = targetBlocked ? "定向邀约待配置" : (targetNeedsConfirmation ? "API结果待确认" : "待回复");
   row.updatedAt = nowText();
   row.apiResult = apiResult;
   row.lastMessage = targetBlocked
     ? `[${row.updatedAt}] 触达已提交；TikTok 定向邀约未提交：Target Collaboration 请求 schema 待确认，请查看 API 结果。\n${row.lastMessage || ""}`
+    : targetNeedsConfirmation
+      ? `[${row.updatedAt}] TikTok API 已返回，但未拿到官方定向邀约 ID；请查看 API 结果确认是否存在冲突、无效达人或权限限制。\n${row.lastMessage || ""}`
     : `[${row.updatedAt}] TikTok 定向邀约/触达已提交，等待达人回复。\n${row.lastMessage || ""}`;
   if (target) {
-    target.status = targetBlocked ? "定向邀约待配置" : "待达人接受";
+    target.status = targetBlocked ? "定向邀约待配置" : (targetNeedsConfirmation ? "API结果待确认" : "待达人接受");
     target.apiResult = apiResult?.target_collaboration || null;
     if (officialId) target.officialId = officialId;
     target.updatedAt = nowText();
   }
   pushMessage("建联API状态", targetBlocked
     ? `@${creator(row.creatorId)?.username || "-"} 的触达已提交，TikTok 定向邀约仍需确认官方 schema。`
-    : `@${creator(row.creatorId)?.username || "-"} 的建联记录已提交 API。`);
+    : targetNeedsConfirmation
+      ? `@${creator(row.creatorId)?.username || "-"} 的定向邀约 API 结果缺少官方 ID，请检查 API 结果。`
+      : `@${creator(row.creatorId)?.username || "-"} 的建联记录已提交 API。`);
   saveState();
   render();
 }
@@ -2764,7 +2769,7 @@ async function submitTargetCollaborationForRow(row, c) {
     }),
   });
   const officialId = targetOfficialId(data);
-  target.status = "待达人接受";
+  target.status = officialId ? "待达人接受" : "API结果待确认";
   target.apiResult = data.target_collaboration || null;
   if (officialId) target.officialId = officialId;
   target.updatedAt = nowText();
