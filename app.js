@@ -1035,8 +1035,11 @@ function renderOutreach() {
     const channelOk = state.filters.outreachChannel === "全部" || o.channel === state.filters.outreachChannel;
     return kwOk && statusOk && channelOk;
   });
+  const headActions = pendingApiCount
+    ? `<button class="btn primary" onclick="submitPendingOutreachBatch()">提交全部待API发送(${pendingApiCount})</button>`
+    : "";
   return `
-    ${pageHead("建联记录", "统一查看 TikTok 定向邀约、私信、Email 的沟通状态和待处理消息。")}
+    ${pageHead("建联记录", "统一查看 TikTok 定向邀约、私信、Email 的沟通状态和待处理消息。", headActions)}
     <div class="grid grid-4" style="margin-bottom:16px">
       ${stat("建联总数", totalCount, "全部沟通记录", "setFilter('outreachStatus','全部')")}
       ${stat("待达人回复", waitingCreatorCount, "已发出邀请，等待达人响应", "setFilter('outreachStatus','待回复')")}
@@ -3196,6 +3199,57 @@ async function submitOutreachApi(id) {
   }
 }
 
+async function submitPendingOutreachBatch() {
+  const pending = state.outreach.filter((row) => row.status === "待API发送");
+  if (!pending.length) return alert("当前没有待API发送的建联记录。");
+  let submitted = 0;
+  let skipped = 0;
+  let contactQueued = 0;
+  let failed = 0;
+  let emailConfigBlocked = false;
+
+  for (const row of pending) {
+    const c = creator(row.creatorId);
+    if (!c) {
+      skipped += 1;
+      continue;
+    }
+    if (row.channel === "Email" && !emailAccountConfigured()) {
+      emailConfigBlocked = true;
+      skipped += 1;
+      continue;
+    }
+    if (row.channel === "Email" && !c.email) {
+      row.status = "联系方式补充中";
+      row.updatedAt = nowText();
+      row.lastMessage = `[${row.updatedAt}] 批量提交跳过 Email：达人邮箱缺失，已进入联系方式补充。\n${row.lastMessage || ""}`;
+      contactQueued += 1;
+      continue;
+    }
+
+    const beforeStatus = row.status;
+    await submitOutreachApi(row.id);
+    const current = state.outreach.find((item) => item.id === row.id);
+    if (!current) {
+      skipped += 1;
+    } else if (current.status === "发送失败") {
+      failed += 1;
+    } else if (current.status !== beforeStatus || current.apiResult || current.apiError) {
+      submitted += 1;
+    } else {
+      skipped += 1;
+    }
+  }
+
+  if (emailConfigBlocked) {
+    openEmailSetupModal("outreach");
+  }
+  pushMessage("批量提交建联", `已处理待API发送记录：提交 ${submitted} 条，失败 ${failed} 条，联系方式补充 ${contactQueued} 条，跳过 ${skipped} 条。`);
+  saveState();
+  render();
+  alert(`批量提交完成：提交 ${submitted} 条，失败 ${failed} 条，联系方式补充 ${contactQueued} 条，跳过 ${skipped} 条。`);
+}
+
 function sampleActions(s) {
   const parts = [
     `<button class="btn" onclick="openSampleModal(${s.id})">更新</button>`,
@@ -4597,6 +4651,7 @@ window.markOverdue = markOverdue;
 window.advanceOutreach = advanceOutreach;
 window.markOutreachApiSubmitted = markOutreachApiSubmitted;
 window.submitOutreachApi = submitOutreachApi;
+window.submitPendingOutreachBatch = submitPendingOutreachBatch;
 window.createSampleFromOutreach = createSampleFromOutreach;
 window.createCoopFromOutreach = createCoopFromOutreach;
 window.deleteOutreach = deleteOutreach;

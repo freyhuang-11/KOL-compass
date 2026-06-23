@@ -145,3 +145,29 @@
 
 ## 下一步
 - 继续补建联工作台的业务细节，不再重复做大范围审计：优先完善 Email 已配置后的同时发送路径、定向邀约 API schema 确认后的正式发送、建联记录到合作/寄样的多商品后续动作。
+
+---
+
+更新时间：2026-06-23 19:48 Asia/Shanghai
+
+## 当前状态
+- 建联工作台已能生成三类独立待发送记录：TikTok定向邀约、TikTok私信、Email。
+- 建联记录页新增“提交全部待API发送”入口，避免客户逐条点击提交。
+
+## 本轮改动
+- `app.js`：建联记录页标题右侧在存在待发送记录时显示 `提交全部待API发送(n)`。
+- `app.js`：新增 `submitPendingOutreachBatch()`，批量处理待发送队列；缺达人邮箱的 Email 会转入 `联系方式补充中`，邮箱系统未配置时跳过并引导配置。
+- `smoke-test.js`：增加批量提交待 API 发送记录的断言。
+
+## 本轮验证
+- `node --check app.js`：通过
+- `node --check server.js`：通过
+- `node --check smoke-test.js`：通过
+- `node smoke-test.js`：通过
+- Chrome DevTools 路径：通过
+  - 先从建联工作台生成 `Email`、`TikTok私信`、`TikTok定向邀约` 三条记录。
+  - 将后端 API stub 为成功返回，调用 `submitPendingOutreachBatch()`。
+  - 三条记录均流转为 `待回复`；定向邀约写入模拟官方 ID `tc_test`。
+
+## 下一步
+- 继续打通正式发送后的异常分支：Target Collaboration schema 缺失/官方 ID 缺失/私信失败/Email SMTP 失败时，建联记录页必须按渠道显示清楚，不互相覆盖。
