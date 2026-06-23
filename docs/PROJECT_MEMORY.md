@@ -1,5 +1,13 @@
 # KOL Compass Project Memory
 
+## Codex 工作铁律
+
+- 后续开发和验收必须遵守 `docs/CODEX_WORK_RULES.md`。
+- 涉及数据归一、字段映射、列表展示、统计聚合时，`smoke-test.js` 不能代替真实数据验证；完成前必须拉不少于 20 条真实 production/sandbox 数据跑真实代码路径并输出统计。
+- 数据归一必须在 ingest 阶段完成，渲染层只显示 normalized 字段。
+- scheduler / worker / batch job 必须暴露 run metric 和 `GET /api/jobs/health`。
+- 修 bug 必须先复现、写清根因，再做最小修复和复测。
+
 更新时间：2026-06-22 21:05 CST
 
 ## 工作边界

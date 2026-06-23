@@ -1,5 +1,11 @@
 # Agent Continue
 
+## 必读工作铁律
+
+- 每次继续前先读 `docs/CODEX_WORK_RULES.md`。
+- 数据归一、字段映射、列表展示、统计聚合类改动，完成前必须跑不少于 20 条真实 production/sandbox 数据并输出统计；不能只用 `smoke-test.js`。
+- 修 bug 先复现、找根因、最小修复、按复现路径复测。
+
 更新时间：2026-06-22 21:05 CST
 
 ## 每次继续前先确认
