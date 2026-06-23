@@ -485,8 +485,20 @@ async function sendCreatorImMessage(conversationId, message) {
   });
 }
 
-function isTikTokImChannel(channel) {
-  return String(channel || "") === "TikTok私信";
+function outreachChannelType(outreachOrChannel) {
+  if (outreachOrChannel && typeof outreachOrChannel === "object") {
+    const explicit = String(outreachOrChannel.channel_type || outreachOrChannel.channelType || "");
+    if (explicit) return explicit;
+    return outreachChannelType(outreachOrChannel.channel);
+  }
+  const channel = String(outreachOrChannel || "");
+  if (channel === "TikTok\u79c1\u4fe1" || channel.includes("\u79c1\u4fe1")) return "tiktok_im";
+  if (channel === "TikTok\u5b9a\u5411\u9080\u7ea6" || channel.includes("\u5b9a\u5411\u9080\u7ea6")) return "target_invite";
+  return channel;
+}
+
+function isTikTokImChannel(outreachOrChannel) {
+  return outreachChannelType(outreachOrChannel) === "tiktok_im";
 }
 
 function commissionPercentToApiRate(value) {
@@ -656,7 +668,7 @@ async function submitTikTokOutreach(payload = {}) {
       : await createTargetCollaboration(target, outreach);
   }
 
-  if (isTikTokImChannel(outreach.channel)) {
+  if (isTikTokImChannel(outreach)) {
     if (payload.dry_run) {
       result.im = {
         ok: true,

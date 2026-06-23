@@ -2234,6 +2234,12 @@ function isTargetInviteChannel(channel) {
   return channel === "TikTok定向邀约";
 }
 
+function tiktokChannelType(channel) {
+  if (isTargetInviteChannel(channel)) return "target_invite";
+  if (channel === "TikTok私信") return "tiktok_im";
+  return "";
+}
+
 function validateChannelsForCreators(channels, targets) {
   if (!channels.length) {
     alert("请至少选择一个发送渠道。");
@@ -3089,6 +3095,7 @@ async function submitTargetCollaborationForRow(row, c) {
       outreach: {
         id: row.id,
         channel: row.channel,
+        channel_type: tiktokChannelType(row.channel),
         shop_cipher: outreachShopCipher(row, c),
         creator_open_id: c.sourceId,
         creator_username: c.username,
@@ -3212,6 +3219,7 @@ async function submitOutreachApi(id) {
         outreach: {
           id: row.id,
           channel: row.channel,
+          channel_type: tiktokChannelType(row.channel),
           shop_cipher: shopCipher,
           creator_open_id: c.sourceId,
           creator_username: c.username,

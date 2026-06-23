@@ -224,3 +224,21 @@
   - 选择 1 位达人 + 2 个商品，生成 `Email`、`TikTok私信`、`TikTok定向邀约` 三条记录，三条均保留 2 个商品和同一个 `targetCollaborationId`。
   - 模拟定向邀约失败：实际只调用 `/api/tiktok/outreach/submit` 一次，channel 为 `TikTok定向邀约`；Email 和 TikTok 私信均变为 `等待定向邀约`，没有提前发送。
   - 模拟定向邀约成功并返回官方 ID `tc_201`：随后批量提交 Email 和 TikTok 私信，三条记录最终均为 `待回复`。
+
+---
+
+更新时间：2026-06-23 20:43 Asia/Shanghai
+
+## 本轮修复
+- `app.js`：提交 TikTok 建联 API 时新增 ASCII 字段 `channel_type`，定向邀约传 `target_invite`，TikTok 私信传 `tiktok_im`。
+- `server.js`：新增 `outreachChannelType()`，后端优先使用 `channel_type` 分流，避免中文 channel 在 Windows/终端编码下被误判。
+- `smoke-test.js`：更新建联 API 断言，要求前端传 `channel_type`、后端存在 `outreachChannelType`。
+
+## 本轮验证
+- `node --check app.js`：通过
+- `node --check server.js`：通过
+- `node --check smoke-test.js`：通过
+- `node smoke-test.js`：通过
+- 重启 8015 后端后验证 dry-run：
+  - `target_invite`：返回 `target_collaboration.payload_preview`，包含 2 个商品、20% 佣金映射为 `target_commission_rate: 2000`、1 个 `creator_user_open_id`、联系人邮箱；`im` 为 `null`。
+  - `tiktok_im`：返回 `im.ok=true` 和 `POST /affiliate_seller/202412/conversations/{conversation_id}/messages` dry-run；`target_collaboration` 为 `null`。
