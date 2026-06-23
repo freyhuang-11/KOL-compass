@@ -118,3 +118,30 @@
 ## 下一步
 - 提交并推送本轮可验证阶段。
 - 后续接 TikTok 官方发送时，先确认私信和 Target Collaboration 的正式 scope、请求体、限流和错误码，再从 `待API发送` 队列对接。
+
+---
+
+更新时间：2026-06-23 19:30 Asia/Shanghai
+
+## 当前状态
+- 建联流程已改为独立工作台：达人库点击“建联”进入 `#outreachWorkbench`，不再使用长滚动弹窗。
+- 工作台已区分三条链路：TikTok 定向邀约、TikTok 私信、Email；定向邀约和触达通知独立生成记录。
+- 多商品选择与佣金配置已前置到建联提交前；提交后建联记录会保留 `productIds` 和 `productsSnapshot`。
+
+## 本轮改动
+- `app.js`：商品选择区增加稳定容器 `selectedOutreachProducts`，便于测试和后续迭代。
+- `app.js`：商品勾选、标准佣金、广告佣金、定向邀约开关、发送渠道变化时，实时刷新右侧商品数量和提交预览。
+- `app.js`：提交预览增加 `previewTargetCount`、`previewImCount`、`previewEmailCount`，让客户能看到每个渠道会生成多少条记录。
+
+## 本轮验证
+- `node --check app.js`：通过
+- `node --check server.js`：通过
+- `node --check smoke-test.js`：通过
+- `node smoke-test.js`：通过
+- Chrome DevTools 真实点击路径：通过
+  - 注入 2 个商品、2 个达人；从达人库点击单个达人“建联”进入工作台。
+  - 工作台显示已选商品数 2；关闭 TikTok 定向邀约后预览变为 0 条。
+  - 提交后进入 `#outreach`，生成 1 个 `targetCollaboration`，2 条建联记录，渠道为 `TikTok私信`、`TikTok定向邀约`，两条记录均保留 2 个商品。
+
+## 下一步
+- 继续补建联工作台的业务细节，不再重复做大范围审计：优先完善 Email 已配置后的同时发送路径、定向邀约 API schema 确认后的正式发送、建联记录到合作/寄样的多商品后续动作。

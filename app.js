@@ -1095,8 +1095,8 @@ function outreachTargetPreview(targets) {
   `;
 }
 
-function outreachWorkbenchSummary(targets, availableTargets) {
-  const selectedProducts = Math.max(1, Math.min(state.products.length, 3));
+function outreachWorkbenchSummary(targets, availableTargets, selectedProductIds = []) {
+  const selectedProducts = selectedProductIds.length || Math.max(1, Math.min(state.products.length, 3));
   const emailReady = availableTargets.filter((c) => c.email).length;
   const missingEmail = Math.max(0, availableTargets.length - emailReady);
   return `
@@ -1206,7 +1206,7 @@ function renderOutreachWorkbench() {
             <div class="action-grid">
               <div class="action-panel">
                 <div class="action-title">
-                  <label class="switch-row"><input type="checkbox" id="createTargetCollaboration" checked /> 创建 TikTok 定向邀约</label>
+                  <label class="switch-row"><input type="checkbox" id="createTargetCollaboration" checked onchange="updateOutreachPreview()" /> 创建 TikTok 定向邀约</label>
                   <span class="badge info">官方邀约</span>
                 </div>
                 <div class="form-grid">
@@ -1260,14 +1260,14 @@ function renderOutreachWorkbench() {
               </div>
             </div>
             <div class="submit-preview">
-              <div><b>TikTok 定向邀约</b><span>${availableTargets.length} 条 · Target Collaboration API</span></div>
-              <div><b>TikTok 私信</b><span>${availableTargets.length} 条 · Conversation / Message API</span></div>
-              <div><b>Email</b><span>${availableTargets.filter((c) => c.email).length} 条 · SMTP 发送，缺邮箱进入补充任务</span></div>
+              <div><b>TikTok 定向邀约</b><span id="previewTargetCount">${availableTargets.length} 条 · Target Collaboration API</span></div>
+              <div><b>TikTok 私信</b><span id="previewImCount">${availableTargets.length} 条 · Conversation / Message API</span></div>
+              <div><b>Email</b><span id="previewEmailCount">0 条 · SMTP 发送，缺邮箱进入补充任务</span></div>
             </div>
           </section>
         </main>
 
-        ${outreachWorkbenchSummary(targets, availableTargets)}
+        ${outreachWorkbenchSummary(targets, availableTargets, selectedProductIds)}
       </div>
     </div>
   `;
@@ -1922,7 +1922,7 @@ function productMultiPicker(selectedIds = [state.products[0]?.id].filter(Boolean
   }
   const selected = new Set(selectedIds.map(Number));
   return `
-    <div class="outreach-product-table">
+    <div id="selectedOutreachProducts" class="outreach-product-table">
       <div class="outreach-product-head">
         <span>选择</span>
         <span>商品信息</span>
@@ -1936,7 +1936,7 @@ function productMultiPicker(selectedIds = [state.products[0]?.id].filter(Boolean
         return `
           <div class="outreach-product-row ${checked ? "selected" : ""}">
             <label class="table-check">
-              <input class="outreach-product-check" type="checkbox" value="${p.id}" ${checked ? "checked" : ""} />
+              <input class="outreach-product-check" type="checkbox" value="${p.id}" ${checked ? "checked" : ""} onchange="updateOutreachPreview()" />
             </label>
             <div class="product-main">
               <div class="product-thumb">${productThumb(p)}</div>
@@ -1950,12 +1950,12 @@ function productMultiPicker(selectedIds = [state.products[0]?.id].filter(Boolean
               <div class="muted">库存 ${Number.isFinite(Number(p.stock)) ? Number(p.stock) : "-"}</div>
             </div>
             <label class="commission-input">
-              <input id="standardCommission-${p.id}" class="input" type="number" min="1" max="80" value="${defaultRate}" />
+              <input id="standardCommission-${p.id}" class="input" type="number" min="1" max="80" value="${defaultRate}" oninput="updateOutreachPreview()" />
               <span>%</span>
             </label>
             <label class="commission-input ad-commission">
-              <input id="adCommissionEnabled-${p.id}" type="checkbox" />
-              <input id="adCommission-${p.id}" class="input" type="number" min="1" max="80" placeholder="可选" />
+              <input id="adCommissionEnabled-${p.id}" type="checkbox" onchange="updateOutreachPreview()" />
+              <input id="adCommission-${p.id}" class="input" type="number" min="1" max="80" placeholder="可选" oninput="updateOutreachPreview()" />
               <span>%</span>
             </label>
           </div>
@@ -1993,6 +1993,26 @@ function productSnapshotNames(products = []) {
   const names = products.map((p) => p.name).filter(Boolean);
   if (!names.length) return "-";
   return names.length > 2 ? `${names.slice(0, 2).join("、")} 等 ${names.length} 个商品` : names.join("、");
+}
+
+function updateOutreachPreview() {
+  if (state.page !== "outreachWorkbench") return;
+  const targets = outreachDraftTargets().filter((c) => !creatorOutreachBlockReason(c));
+  const products = selectedOutreachProducts();
+  const channels = getCheckedValues("outreachChannels");
+  const createTarget = document.getElementById("createTargetCollaboration")?.checked !== false;
+  const emailReady = targets.filter((c) => c.email).length;
+  const productCount = document.getElementById("summaryProductCount");
+  if (productCount) productCount.textContent = String(products.length);
+  const targetPreview = document.getElementById("previewTargetCount");
+  if (targetPreview) targetPreview.textContent = `${createTarget ? targets.length : 0} 条 · Target Collaboration API`;
+  const imPreview = document.getElementById("previewImCount");
+  if (imPreview) imPreview.textContent = `${channels.includes("TikTok私信") ? targets.length : 0} 条 · Conversation / Message API`;
+  const emailPreview = document.getElementById("previewEmailCount");
+  if (emailPreview) emailPreview.textContent = `${channels.includes("Email") ? emailReady : 0} 条 · SMTP 发送，缺邮箱进入补充任务`;
+  document.querySelectorAll(".outreach-product-row").forEach((row) => {
+    row.classList.toggle("selected", Boolean(row.querySelector(".outreach-product-check")?.checked));
+  });
 }
 
 function personCell(c) {
@@ -3866,7 +3886,7 @@ function multiCheckField(id, label, options, selected = []) {
       <div class="check-grid" id="${escapeHtml(id)}">
         ${options.map(([value, text]) => `
           <label class="check-option">
-            <input type="checkbox" value="${escapeHtml(value)}" ${values.includes(String(value)) || values.includes(String(text)) ? "checked" : ""} />
+            <input type="checkbox" value="${escapeHtml(value)}" ${values.includes(String(value)) || values.includes(String(text)) ? "checked" : ""} onchange="updateOutreachPreview()" />
             <span>${escapeHtml(text)}</span>
           </label>
         `).join("")}
@@ -4562,6 +4582,7 @@ window.openOutreachModal = openOutreachModal;
 window.saveOutreachDraft = saveOutreachDraft;
 window.bulkSetCommission = bulkSetCommission;
 window.saveOutreach = saveOutreach;
+window.updateOutreachPreview = updateOutreachPreview;
 window.translateOutreachDraft = translateOutreachDraft;
 window.openEmailSetupModal = openEmailSetupModal;
 window.saveEmailSettings = saveEmailSettings;
