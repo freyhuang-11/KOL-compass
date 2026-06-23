@@ -1189,6 +1189,25 @@ tr:last-child td {
   color: #991b1b;
 }
 
+.next-step {
+  display: grid;
+  gap: 3px;
+  min-width: 150px;
+  max-width: 220px;
+}
+
+.next-step b {
+  color: var(--text);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.next-step span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 17px;
+}
+
 .badge.success {
   color: #166534;
   background: #dcfce7;

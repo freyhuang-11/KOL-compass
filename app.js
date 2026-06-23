@@ -947,7 +947,7 @@ function renderKolPool() {
           <button class="btn primary" onclick="openOutreachModal()">一键建联(${state.bulkCreatorIds.length})</button>
         </div>
       </div>
-      ${table([`<label class="table-check"><input type="checkbox" ${pageAllSelected ? "checked" : ""} onchange="toggleCreatorPageSelection(${pageAvailableIds}, this.checked)" /> 本页</label>`, "达人", "类型", "类目/地区", "粉丝", "TikTok GMV（接口币种）", "内容表现", "回复率", "状态/标签", "操作"], pagedRows.map((c) => {
+      ${table([`<label class="table-check"><input type="checkbox" ${pageAllSelected ? "checked" : ""} onchange="toggleCreatorPageSelection(${pageAvailableIds}, this.checked)" /> 本页</label>`, "达人", "类型", "类目/地区", "粉丝", "TikTok GMV（当地币种）", "内容表现", "回复率", "状态/标签", "操作"], pagedRows.map((c) => {
       const blockReason = creatorOutreachBlockReason(c);
       return [
       blockReason ? `<span class="muted">${escapeHtml(blockReason)}</span>` : `<input type="checkbox" ${state.bulkCreatorIds.includes(c.id) ? "checked" : ""} onchange="toggleCreatorSelection(${c.id}, this.checked)" aria-label="选择 @${escapeHtml(c.username)}" />`,
@@ -983,6 +983,16 @@ function deliveryPill(label, status, detail = "") {
   return `<span class="delivery-pill ${cls}"><b>${escapeHtml(label)}</b>${escapeHtml(status)}${detail ? `<em>${escapeHtml(detail)}</em>` : ""}</span>`;
 }
 
+function outreachStatusLabel(status) {
+  const labels = {
+    "待API发送": "待提交",
+    "API结果待确认": "待确认",
+    "API提交失败": "提交失败",
+    "定向邀约待配置": "邀约待确认",
+  };
+  return labels[status] || status || "-";
+}
+
 function outreachDeliveryCell(o) {
   const result = o.apiResult || {};
   const error = o.apiError || null;
@@ -992,9 +1002,9 @@ function outreachDeliveryCell(o) {
   const items = [];
 
   if (target) {
-    if (officialId) items.push(deliveryPill("定向邀约", "已提交", officialId));
+    if (officialId) items.push(deliveryPill("定向邀约", "已提交"));
     else if (targetResult?.ok === false || target?.apiError) items.push(deliveryPill("定向邀约", "失败", targetResult?.code || target?.apiError?.code || ""));
-    else if (targetResult?.ok || o.status === "API结果待确认") items.push(deliveryPill("定向邀约", "待确认", "缺少官方ID"));
+    else if (targetResult?.ok || o.status === "API结果待确认") items.push(deliveryPill("定向邀约", "待确认", "需确认"));
     else items.push(deliveryPill("定向邀约", "未提交"));
   }
 
@@ -1019,13 +1029,49 @@ function outreachDeliveryCell(o) {
   return `<div class="delivery-stack">${items.join("") || deliveryPill("触达", "未提交")}</div>`;
 }
 
+function outreachNextStepCell(o) {
+  const target = targetCollaboration(o.targetCollaborationId);
+  let title = "查看记录";
+  let desc = "按当前状态继续跟进。";
+  if (o.status === "待API发送" && isTargetInviteChannel(o.channel)) {
+    title = "提交官方定向邀约";
+    desc = "先创建 TikTok 官方邀约，成功后再通知达人。";
+  } else if (o.status === "待API发送") {
+    title = `提交${channelLabel(o.channel)}`;
+    desc = target ? "同批定向邀约已就绪，可以发送通知。" : "直接提交当前触达渠道。";
+  } else if (o.status === "等待定向邀约") {
+    title = "等待定向邀约成功";
+    desc = "先重试同批 TikTok 定向邀约，成功后再发通知。";
+  } else if (o.status === "联系方式补充中") {
+    title = "补充达人邮箱";
+    desc = "补齐 Email 后再重新提交邮件建联。";
+  } else if (o.status === "发送失败") {
+    title = "查看原因并重试";
+    desc = "先看提交结果，再重新提交该渠道。";
+  } else if (o.status === "定向邀约待配置" || o.status === "API结果待确认") {
+    title = "确认官方返回";
+    desc = "查看提交结果，确认字段、权限或邀约编号。";
+  } else if (o.status === "待回复") {
+    title = "等待达人回复";
+    desc = "已发出建联，后续在沟通记录中跟进。";
+  } else if (o.status === "待我方回复") {
+    title = "处理达人回复";
+    desc = "可回复、安排寄样或转入合作管理。";
+  } else if (o.status === "已转合作") {
+    title = "进入合作管理";
+    desc = "后续跟进履约、内容和 ROI。";
+  }
+  return `<div class="next-step"><b>${escapeHtml(title)}</b><span>${escapeHtml(desc)}</span></div>`;
+}
+
 function renderOutreach() {
   const channels = Array.from(new Set(state.outreach.map((o) => o.channel).filter(Boolean)));
   const statuses = Array.from(new Set(state.outreach.map((o) => o.status).filter(Boolean)));
   const totalCount = state.outreach.length;
   const waitingCreatorCount = state.outreach.filter((o) => o.status === "待回复").length;
   const pendingApiCount = state.outreach.filter((o) => o.status === "待API发送").length;
-  const convertedCount = state.outreach.filter((o) => o.status === "已转合作").length;
+  const waitingTargetCount = state.outreach.filter((o) => o.status === "等待定向邀约" || o.status === "定向邀约待配置" || o.status === "API结果待确认").length;
+  const failedCount = state.outreach.filter((o) => o.status === "发送失败").length;
   const rows = state.outreach.filter((o) => {
     const c = creator(o.creatorId);
     const productNames = outreachProductNames(o);
@@ -1036,21 +1082,22 @@ function renderOutreach() {
     return kwOk && statusOk && channelOk;
   });
   const headActions = pendingApiCount
-    ? `<button class="btn primary" onclick="submitPendingOutreachBatch()">提交全部待API发送(${pendingApiCount})</button>`
+    ? `<button class="btn primary" onclick="submitPendingOutreachBatch()">提交全部待发送(${pendingApiCount})</button>`
     : "";
   return `
     ${pageHead("建联记录", "统一查看 TikTok 定向邀约、私信、Email 的沟通状态和待处理消息。", headActions)}
     <div class="grid grid-4" style="margin-bottom:16px">
       ${stat("建联总数", totalCount, "全部沟通记录", "setFilter('outreachStatus','全部')")}
       ${stat("待达人回复", waitingCreatorCount, "已发出邀请，等待达人响应", "setFilter('outreachStatus','待回复')")}
-      ${stat("待API发送", pendingApiCount, "定向邀约或 TikTok 私信尚未提交官方接口", "setFilter('outreachStatus','待API发送')")}
-      ${stat("已转合作", convertedCount, "已进入合作管理履约", "setFilter('outreachStatus','已转合作')")}
+      ${stat("待提交", pendingApiCount, "定向邀约、私信或 Email 尚未提交发送", "setFilter('outreachStatus','待API发送')")}
+      ${stat("待定向邀约", waitingTargetCount, "通知渠道正在等待官方邀约结果", "setFilter('outreachStatus','等待定向邀约')")}
+      ${stat("发送失败", failedCount, "查看提交结果后可重新提交", "setFilter('outreachStatus','发送失败')")}
     </div>
     <div class="toolbar">
       <div class="filters">
         <input class="input" placeholder="搜索达人、产品、消息..." value="${escapeHtml(state.filters.outreachSearch)}" oninput="setFilter('outreachSearch', this.value)" />
         <select class="select" onchange="setFilter('outreachStatus', this.value)">
-          ${["全部", ...statuses].map((x) => `<option ${state.filters.outreachStatus === x ? "selected" : ""}>${escapeHtml(x)}</option>`).join("")}
+          ${["全部", ...statuses].map((x) => `<option value="${escapeHtml(x)}" ${state.filters.outreachStatus === x ? "selected" : ""}>${escapeHtml(outreachStatusLabel(x))}</option>`).join("")}
         </select>
         <select class="select" onchange="setFilter('outreachChannel', this.value)">
           ${["全部", ...channels].map((x) => `<option ${state.filters.outreachChannel === x ? "selected" : ""}>${escapeHtml(x)}</option>`).join("")}
@@ -1058,12 +1105,13 @@ function renderOutreach() {
         <span class="muted">当前显示 ${rows.length} / ${totalCount} 条</span>
       </div>
     </div>
-    ${table(["达人", "产品", "渠道", "状态", "发送结果", "最后消息", "更新时间", "操作"], rows.map((o) => [
+    ${table(["达人", "产品", "渠道", "状态", "触达状态", "下一步", "最后消息", "更新时间", "操作"], rows.map((o) => [
       personCell(creator(o.creatorId)),
       outreachProductCell(o),
       o.channel,
-      badge(o.status),
+      badge(outreachStatusLabel(o.status)),
       outreachDeliveryCell(o),
+      outreachNextStepCell(o),
       outreachMessageCell(o),
       o.updatedAt,
       outreachActions(o),
@@ -1263,9 +1311,9 @@ function renderOutreachWorkbench() {
               </div>
             </div>
             <div class="submit-preview">
-              <div><b>TikTok 定向邀约</b><span id="previewTargetCount">${availableTargets.length} 条 · Target Collaboration API</span></div>
-              <div><b>TikTok 私信</b><span id="previewImCount">${availableTargets.length} 条 · Conversation / Message API</span></div>
-              <div><b>Email</b><span id="previewEmailCount">0 条 · SMTP 发送，缺邮箱进入补充任务</span></div>
+              <div><b>TikTok 定向邀约</b><span id="previewTargetCount">${availableTargets.length} 条 · 创建官方邀约</span></div>
+              <div><b>TikTok 私信</b><span id="previewImCount">${availableTargets.length} 条 · 站内私信通知</span></div>
+              <div><b>Email</b><span id="previewEmailCount">0 条 · 邮件发送，缺邮箱进入补充任务</span></div>
             </div>
           </section>
         </main>
@@ -1415,7 +1463,7 @@ function renderCooperations() {
       ${stat("合作总数", state.cooperations.length, "已进入履约阶段")}
       ${stat("已产出达人", produced, "已发视频或已直播")}
       ${stat("未产出达人", unproduced, "待产出/逾期/待匹配")}
-      ${stat("归因 GMV", money(gmv), "来自合作台账或 API 同步")}
+      ${stat("归因 GMV", money(gmv), "来自合作台账或系统同步")}
     </div>
     <div class="toolbar">
       <div class="filters">
@@ -2008,11 +2056,11 @@ function updateOutreachPreview() {
   const productCount = document.getElementById("summaryProductCount");
   if (productCount) productCount.textContent = String(products.length);
   const targetPreview = document.getElementById("previewTargetCount");
-  if (targetPreview) targetPreview.textContent = `${createTarget ? targets.length : 0} 条 · Target Collaboration API`;
+  if (targetPreview) targetPreview.textContent = `${createTarget ? targets.length : 0} 条 · 创建官方邀约`;
   const imPreview = document.getElementById("previewImCount");
-  if (imPreview) imPreview.textContent = `${channels.includes("TikTok私信") ? targets.length : 0} 条 · Conversation / Message API`;
+  if (imPreview) imPreview.textContent = `${channels.includes("TikTok私信") ? targets.length : 0} 条 · 站内私信通知`;
   const emailPreview = document.getElementById("previewEmailCount");
-  if (emailPreview) emailPreview.textContent = `${channels.includes("Email") ? emailReady : 0} 条 · SMTP 发送，缺邮箱进入补充任务`;
+  if (emailPreview) emailPreview.textContent = `${channels.includes("Email") ? emailReady : 0} 条 · 邮件发送，缺邮箱进入补充任务`;
   document.querySelectorAll(".outreach-product-row").forEach((row) => {
     row.classList.toggle("selected", Boolean(row.querySelector(".outreach-product-check")?.checked));
   });
@@ -2902,17 +2950,17 @@ function outreachActions(o) {
     `<button class="btn ghost" onclick="showCreator(${o.creatorId})">查看沟通</button>`,
   ];
   if (o.apiResult || o.apiError) {
-    parts.push(`<button class="btn ghost" onclick="openOutreachApiResult(${o.id})">查看API结果</button>`);
+    parts.push(`<button class="btn ghost" onclick="openOutreachApiResult(${o.id})">查看提交结果</button>`);
   }
   if (!isTargetInviteChannel(o.channel) && o.status !== "已关闭" && o.status !== "已转合作") {
     parts.push(`<button class="btn" onclick="openReplyModal(${o.id})">回复</button>`);
   }
   if (["待API发送", "发送失败", "等待定向邀约"].includes(o.status)) {
-    parts.push(`<button class="btn" onclick="submitOutreachApi(${o.id})">${o.status === "待API发送" ? "提交到后端发送" : "重新提交"}</button>`);
+    parts.push(`<button class="btn" onclick="submitOutreachApi(${o.id})">${o.status === "待API发送" ? "提交发送" : "重新提交"}</button>`);
     parts.push(`<button class="btn ghost" onclick="advanceOutreach(${o.id}, '发送失败')">标记发送失败</button>`);
   }
   if (o.status === "定向邀约待配置" || o.status === "API结果待确认") {
-    parts.push(`<button class="btn" onclick="openOutreachApiResult(${o.id})">查看API结果</button>`);
+    parts.push(`<button class="btn" onclick="openOutreachApiResult(${o.id})">查看提交结果</button>`);
   }
   if (o.status === "待回复") {
     parts.push(`<button class="btn" onclick="advanceOutreach(${o.id}, '待我方回复')">标记已回复</button>`);
@@ -2942,9 +2990,9 @@ function markOutreachApiSubmitted(id, apiResult = null) {
   row.apiResult = apiResult;
   row.lastMessage = targetRow
     ? (targetBlocked
-      ? `[${row.updatedAt}] TikTok 定向邀约未提交：Target Collaboration 请求 schema 待确认，请查看 API 结果。\n${row.lastMessage || ""}`
+      ? `[${row.updatedAt}] TikTok 定向邀约未提交：官方邀约字段待确认，请查看提交结果。\n${row.lastMessage || ""}`
       : targetNeedsConfirmation
-        ? `[${row.updatedAt}] TikTok API 已返回，但未拿到官方定向邀约 ID；请查看 API 结果确认是否存在冲突、无效达人或权限限制。\n${row.lastMessage || ""}`
+        ? `[${row.updatedAt}] TikTok 已返回结果，但未拿到官方定向邀约编号；请查看提交结果确认是否存在冲突、无效达人或权限限制。\n${row.lastMessage || ""}`
         : `[${row.updatedAt}] TikTok 定向邀约已提交，等待达人接受。\n${row.lastMessage || ""}`)
     : `[${row.updatedAt}] ${channelLabel(row.channel)} 已提交，等待达人回复。\n${row.lastMessage || ""}`;
   if (target && targetRow) {
@@ -2970,11 +3018,11 @@ function markOutreachApiSubmitted(id, apiResult = null) {
       }
     });
   }
-  pushMessage("建联API状态", targetBlocked
-    ? `@${creator(row.creatorId)?.username || "-"} 的 TikTok 定向邀约仍需确认官方 schema。`
+  pushMessage("建联提交状态", targetBlocked
+    ? `@${creator(row.creatorId)?.username || "-"} 的 TikTok 定向邀约仍需确认官方字段。`
     : targetNeedsConfirmation
-      ? `@${creator(row.creatorId)?.username || "-"} 的定向邀约 API 结果缺少官方 ID，请检查 API 结果。`
-      : `@${creator(row.creatorId)?.username || "-"} 的${channelLabel(row.channel)}记录已提交 API。`);
+      ? `@${creator(row.creatorId)?.username || "-"} 的定向邀约结果缺少官方编号，请检查提交结果。`
+      : `@${creator(row.creatorId)?.username || "-"} 的${channelLabel(row.channel)}记录已提交。`);
   saveState();
   render();
 }
@@ -3060,9 +3108,9 @@ function targetNotificationBlockReason(row) {
   if (!row || isTargetInviteChannel(row.channel)) return "";
   const target = targetCollaboration(row.targetCollaborationId);
   if (!target || targetReadyForNotifications(target)) return "";
-  if (target.status === "定向邀约待配置") return "TikTok 定向邀约 schema 待确认";
+  if (target.status === "定向邀约待配置") return "TikTok 定向邀约字段待确认";
   if (target.status === "API提交失败" || target.status === "发送失败") return "TikTok 定向邀约提交失败";
-  if (target.status === "API结果待确认") return "TikTok 定向邀约结果缺少官方 ID";
+  if (target.status === "API结果待确认") return "TikTok 定向邀约结果缺少官方编号";
   return "TikTok 定向邀约尚未成功提交";
 }
 
@@ -3081,7 +3129,7 @@ function localTargetSchemaRequiredResult(target, row, c) {
     ok: false,
     code: "TARGET_COLLABORATION_SCHEMA_REQUIRED",
     endpoint: "POST /affiliate_seller/202508/target_collaborations",
-    message: "TikTok Target Collaboration request schema is not confirmed. Do not mark the official invite as sent.",
+    message: "TikTok 官方邀约字段待确认，不能标记为已发送。",
     payload_preview: targetApiPayload(target, row, c),
   };
 }
@@ -3118,7 +3166,7 @@ function applyTargetSchemaBlock(row, target, result) {
   row.status = "定向邀约待配置";
   row.apiResult = result;
   row.updatedAt = nowText();
-  row.lastMessage = `[${row.updatedAt}] 触达已提交；TikTok 定向邀约未提交：Target Collaboration 请求 schema 待确认，请查看 API 结果。\n${row.lastMessage || ""}`;
+  row.lastMessage = `[${row.updatedAt}] TikTok 定向邀约未提交：官方邀约字段待确认，请查看提交结果。\n${row.lastMessage || ""}`;
   target.status = "定向邀约待配置";
   target.apiResult = result?.target_collaboration || null;
   target.updatedAt = row.updatedAt;
@@ -3130,11 +3178,12 @@ function openOutreachApiResult(id) {
   const target = targetCollaboration(row.targetCollaborationId);
   const result = row.apiResult || row.apiError || {};
   const targetResult = result.target_collaboration || target?.apiResult || null;
-  const preview = targetResult?.payload_preview ? JSON.stringify(targetResult.payload_preview, null, 2) : "";
-  openModal("API 提交结果", `
+  const targetMessage = targetResult?.message || result?.message || row.apiError?.message || "";
+  const targetCode = targetResult?.code || result?.code || row.apiError?.code || "";
+  openModal("提交结果", `
     <div class="notice ${isTargetSchemaRequired(result) ? "warning" : "soft"}">
-      <b>当前状态：</b>${escapeHtml(row.status || "-")}<br>
-      ${targetResult ? `TikTok 定向邀约：${escapeHtml(targetResult.code || (targetResult.ok ? "OK" : "未提交"))} · ${escapeHtml(targetResult.endpoint || "-")}` : "当前记录没有定向邀约 API 结果。"}
+      <b>当前状态：</b>${escapeHtml(outreachStatusLabel(row.status) || "-")}<br>
+      ${targetResult ? `TikTok 定向邀约：${escapeHtml(targetResult.ok ? "已返回" : "需要处理")}` : "当前记录还没有定向邀约提交结果。"}
     </div>
     <div class="form-grid" style="margin-top:12px">
       <div class="info-card"><span>触达渠道</span><b>${escapeHtml(channelLabel(row.channel))}</b></div>
@@ -3143,9 +3192,11 @@ function openOutreachApiResult(id) {
     </div>
     ${target ? `<div class="modal-section-title">定向邀约草稿</div>
       <div class="target-summary"><b>${escapeHtml(target.name)}</b><span>${escapeHtml(targetCollaborationStatusText(target))}</span><span>商品 ${target.productIds.length} 个 · 达人 ${target.creatorIds.length} 位</span></div>` : ""}
-    ${preview ? `<div class="modal-section-title">待确认 payload preview</div><pre class="api-preview">${escapeHtml(preview)}</pre>` : ""}
-    <div class="modal-section-title">原始结果</div>
-    <pre class="api-preview">${escapeHtml(JSON.stringify(result, null, 2))}</pre>
+    <div class="modal-section-title">处理建议</div>
+    <div class="notice soft">
+      ${targetCode ? `<div><b>返回码：</b>${escapeHtml(targetCode)}</div>` : ""}
+      ${targetMessage ? `<div><b>说明：</b>${escapeHtml(targetMessage)}</div>` : "<div>暂无额外说明。若提交失败，请检查店铺授权、达人是否可邀约、商品佣金和有效期。</div>"}
+    </div>
   `);
 }
 
@@ -3156,7 +3207,7 @@ async function submitOutreachApi(id) {
   if (row.channel === "Email") {
     if (!emailAccountConfigured()) {
       openEmailSetupModal("outreach");
-      alert("Email 尚未完成 SMTP 配置。请先填写邮箱账号和应用专用密码。");
+      alert("Email 尚未完成发信邮箱配置。请先填写邮箱账号和应用专用密码。");
       return;
     }
     if (!c.email) {
@@ -3181,15 +3232,15 @@ async function submitOutreachApi(id) {
       row.status = "待回复";
       row.updatedAt = nowText();
       row.apiResult = data;
-      row.lastMessage = `[${row.updatedAt}] Email 已通过 SMTP 提交发送，等待达人回复。\n${row.lastMessage || ""}`;
-      pushMessage("Email发送成功", `@${c.username} 的 Email 建联已提交 SMTP。`);
+      row.lastMessage = `[${row.updatedAt}] Email 已提交发送，等待达人回复。\n${row.lastMessage || ""}`;
+      pushMessage("Email发送成功", `@${c.username} 的 Email 建联已提交发送。`);
       saveState();
       render();
     } catch (error) {
       row.status = "发送失败";
       row.updatedAt = nowText();
       row.apiError = error.data || { message: error.message };
-      row.lastMessage = `[${row.updatedAt}] Email SMTP 发送失败：${error.message}\n${row.lastMessage || ""}`;
+      row.lastMessage = `[${row.updatedAt}] Email 发送失败：${error.message}\n${row.lastMessage || ""}`;
       pushMessage("Email发送失败", `@${c.username} 的 Email 建联发送失败：${error.message}`);
       saveState();
       render();
@@ -3200,8 +3251,8 @@ async function submitOutreachApi(id) {
   if (!shopCipher || !c.sourceId) {
     row.status = "发送失败";
     row.updatedAt = nowText();
-    row.lastMessage = `[${row.updatedAt}] 发送失败：缺少 shop_cipher 或 creator_open_id。\n${row.lastMessage || ""}`;
-    pushMessage("建联API失败", `@${c.username} 缺少 shop_cipher 或 creator_open_id，无法提交 TikTok 私信。`);
+    row.lastMessage = `[${row.updatedAt}] 发送失败：缺少店铺授权或达人官方标识。\n${row.lastMessage || ""}`;
+    pushMessage("建联提交失败", `@${c.username} 缺少店铺授权或达人官方标识，无法提交 TikTok 私信。`);
     saveState();
     render();
     return;
@@ -3234,14 +3285,14 @@ async function submitOutreachApi(id) {
     row.status = "发送失败";
     row.updatedAt = nowText();
     row.apiError = error.data || { message: error.message };
-    row.lastMessage = `[${row.updatedAt}] API提交失败：${error.message}\n${row.lastMessage || ""}`;
+    row.lastMessage = `[${row.updatedAt}] 提交失败：${error.message}\n${row.lastMessage || ""}`;
     const target = targetCollaboration(row.targetCollaborationId);
     if (target) {
       target.status = "API提交失败";
       target.apiError = row.apiError;
       target.updatedAt = row.updatedAt;
     }
-    pushMessage("建联API失败", `@${c.username} 的建联提交失败：${error.message}`);
+    pushMessage("建联提交失败", `@${c.username} 的建联提交失败：${error.message}`);
     saveState();
     render();
   }
@@ -3251,7 +3302,7 @@ async function submitPendingOutreachBatch() {
   const pending = state.outreach
     .filter((row) => row.status === "待API发送")
     .sort((a, b) => Number(!isTargetInviteChannel(a.channel)) - Number(!isTargetInviteChannel(b.channel)));
-  if (!pending.length) return alert("当前没有待API发送的建联记录。");
+  if (!pending.length) return alert("当前没有待发送的建联记录。");
   let submitted = 0;
   let skipped = 0;
   let contactQueued = 0;
@@ -3297,7 +3348,7 @@ async function submitPendingOutreachBatch() {
     }
   }
 
-  pushMessage("批量提交建联", `已处理待API发送记录：提交 ${submitted} 条，失败 ${failed} 条，联系方式补充 ${contactQueued} 条，跳过 ${skipped} 条。`);
+  pushMessage("批量提交建联", `已处理待发送记录：提交 ${submitted} 条，失败 ${failed} 条，联系方式补充 ${contactQueued} 条，跳过 ${skipped} 条。`);
   saveState();
   render();
   if (emailConfigBlocked) {
@@ -3502,7 +3553,7 @@ function openCreatorModal(id = 0) {
       ${selectField("category", "TikTok 类目", categoryOptions, row?.category || "美妆个护")}
       ${selectField("region", "市场地区", regionOptions, row?.region || "新加坡")}
       ${field("followers", "粉丝数", "100000", row?.followers ?? "")}
-      ${field("gmv", "TikTok GMV（接口币种）", "接口返回值，例如 VND 1000000", creatorGmvDisplay(row?.gmv || ""))}
+      ${field("gmv", "TikTok GMV（当地币种）", "例如 VND 1000000", creatorGmvDisplay(row?.gmv || ""))}
       ${field("replyRate", "回复率", "35%", row?.replyRate || "")}
       ${field("email", "Email", "creator@example.com", row?.email || "")}
       ${field("whatsapp", "WhatsApp", "+62812345678", row?.whatsapp || "")}
@@ -3716,7 +3767,7 @@ function openEmailSetupModal(origin = "") {
   const provider = state.settings.emailProvider || "Gmail";
   const tabs = ["Gmail+Lark", "Gmail", "Outlook/Hotmail", "其他"];
   openModal("绑定发信邮箱", `
-    <div class="notice">Email 建联需要先配置发信邮箱。这里保存的是本地连接配置；真实生产环境应由后端加密保存应用专用密码。</div>
+    <div class="notice">Email 建联需要先配置发信邮箱。这里保存的是本地连接配置；真实生产环境应由系统加密保存应用专用密码。</div>
     <div class="email-guide-layout">
       <div>
         <div class="form-grid">
@@ -3791,7 +3842,7 @@ function targetCollaboration(id) {
 
 function targetCollaborationStatusText(row) {
   if (!row) return "";
-  return `${row.status || "待API发送"}${row.officialId ? ` · TikTok ID ${row.officialId}` : ""}`;
+  return `${outreachStatusLabel(row.status || "待API发送")}${row.officialId ? " · 已生成邀约编号" : ""}`;
 }
 
 function createTargetCollaborationDraft(targets, products, options) {
@@ -3813,7 +3864,7 @@ function createTargetCollaborationDraft(targets, products, options) {
     contactEmail: options.contactEmail,
     createdAt: nowText(),
     updatedAt: nowText(),
-    notes: "本地定向邀约草稿。提交后由后端调用 TikTok Target Collaboration 官方接口创建定向邀约。",
+    notes: "本地定向邀约草稿。提交后会在 TikTok 创建官方定向邀约。",
   };
   state.targetCollaborations.unshift(row);
   return row;
@@ -3898,7 +3949,7 @@ function saveOutreach(idList) {
 
     if (targetCollab) {
       const targetRecordId = Date.now() + index * 100;
-      const targetMessage = `${rendered}\n定向邀约：${targetCollab.name}（${targetCollab.status}）\n商品：${productNames}`;
+      const targetMessage = `${rendered}\n定向邀约：${targetCollab.name}（${outreachStatusLabel(targetCollab.status)}）\n商品：${productNames}`;
       state.outreach.unshift({
         id: targetRecordId,
         creatorId: c.id,
@@ -3924,7 +3975,7 @@ function saveOutreach(idList) {
       if (pendingContact) queueContactEnrichment(c, channel, productNames);
       const recordId = Date.now() + index * 100 + channelIndex + 1;
       const status = pendingContact ? "联系方式补充中" : (channel === "TikTok私信" || channel === "Email" ? "待API发送" : "待回复");
-      const officialNote = targetCollab ? `定向邀约：${targetCollab.name}（${targetCollab.status}）` : "仅建联消息";
+      const officialNote = targetCollab ? `定向邀约：${targetCollab.name}（${outreachStatusLabel(targetCollab.status)}）` : "仅建联消息";
       const messageWithContext = `${rendered}\n${officialNote}\n商品：${productNames}`;
       state.outreach.unshift({
         id: recordId,
@@ -3946,11 +3997,11 @@ function saveOutreach(idList) {
       created += 1;
     });
     const hasPendingApi = channels.includes("TikTok私信") || channels.includes("Email") || Boolean(targetCollab);
-    c.status = channels.includes("Email") && needsContactEnrichment("Email", c) ? "联系方式补充中" : (hasPendingApi ? "待API发送" : "已发送");
+    c.status = channels.includes("Email") && needsContactEnrichment("Email", c) ? "联系方式补充中" : (hasPendingApi ? "待提交" : "已发送");
   });
   state.bulkCreatorIds = [];
   logOperation("建联发送", channels.join("+"), `创建 ${created} 条建联记录；商品：${productNames}；模式：${mode}`);
-  if (targetCollab) pushMessage("定向邀约草稿", `已创建定向邀约草稿「${targetCollab.name}」，包含 ${selectedProducts.length} 个商品、${targets.length} 位达人，状态：待API发送。`);
+  if (targetCollab) pushMessage("定向邀约草稿", `已创建定向邀约草稿「${targetCollab.name}」，包含 ${selectedProducts.length} 个商品、${targets.length} 位达人，状态：待提交。`);
   pushMessage("批量建联", `已创建 ${created} 条建联记录，渠道：${channels.map(channelLabel).join("+")}，商品：${productNames}。缺少 Email 的达人已进入联系方式补充。`);
   closeModal();
   saveState();

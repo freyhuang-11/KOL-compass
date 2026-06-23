@@ -242,3 +242,26 @@
 - 重启 8015 后端后验证 dry-run：
   - `target_invite`：返回 `target_collaboration.payload_preview`，包含 2 个商品、20% 佣金映射为 `target_commission_rate: 2000`、1 个 `creator_user_open_id`、联系人邮箱；`im` 为 `null`。
   - `tiktok_im`：返回 `im.ok=true` 和 `POST /affiliate_seller/202412/conversations/{conversation_id}/messages` dry-run；`target_collaboration` 为 `null`。
+
+---
+
+更新时间：2026-06-23 21:03 Asia/Shanghai
+
+## 本轮修复
+- `app.js`：建联记录页新增“下一步”列，把内部状态转成 BD 可执行动作，例如“提交官方定向邀约”“提交 TikTok 私信”“补充达人邮箱”“查看原因并重试”。
+- `app.js`：对客状态统一显示为 `待提交`、`待确认`、`邀约待确认` 等业务词，不再直接展示 `待API发送`、`API结果待确认`。
+- `app.js`：清理建联工作台、建联记录页、提交结果弹窗里的 `API发送`、`后端`、`schema`、`payload`、`Target Collaboration API`、`Conversation / Message API` 等内部词。
+- `app.js`：达人库 GMV 列从“接口币种”改为“当地币种”。
+- `app.css`：新增 `.next-step` 样式，保持记录页信息密度和可读性。
+- `smoke-test.js`：更新回归断言，检查新客户文案和“下一步”列。
+
+## 本轮验证
+- `rg` 禁用词扫描：建联客户路径未命中 `提交到后端发送`、`提交全部待API发送`、`查看API结果`、`Target Collaboration API`、`Conversation / Message API`、`schema`、`payload preview` 等旧文案。
+- `node --check app.js`：通过
+- `node --check smoke-test.js`：通过
+- `node smoke-test.js`：通过
+- Chrome DevTools 真实页面路径：通过
+  - 从 8015 后端读取当前 TikTok 商品，共 3 个真实同步商品。
+  - 使用 1 位平台达人 + 3 个商品创建建联，生成 `Email`、`TikTok私信`、`TikTok定向邀约` 三条记录。
+  - 三条记录均保留 3 个商品，并关联同一个 `targetCollaborationId`。
+  - 工作台和建联记录页均未出现禁用的内部技术词；记录页显示 `待提交`、`触达状态`、`下一步` 和 `提交官方定向邀约`。
