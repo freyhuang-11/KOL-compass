@@ -3241,12 +3241,12 @@ async function submitPendingOutreachBatch() {
     }
   }
 
-  if (emailConfigBlocked) {
-    openEmailSetupModal("outreach");
-  }
   pushMessage("批量提交建联", `已处理待API发送记录：提交 ${submitted} 条，失败 ${failed} 条，联系方式补充 ${contactQueued} 条，跳过 ${skipped} 条。`);
   saveState();
   render();
+  if (emailConfigBlocked) {
+    openEmailSetupModal("outreach");
+  }
   alert(`批量提交完成：提交 ${submitted} 条，失败 ${failed} 条，联系方式补充 ${contactQueued} 条，跳过 ${skipped} 条。`);
 }
 

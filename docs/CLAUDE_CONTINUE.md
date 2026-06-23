@@ -171,3 +171,18 @@
 
 ## 下一步
 - 继续打通正式发送后的异常分支：Target Collaboration schema 缺失/官方 ID 缺失/私信失败/Email SMTP 失败时，建联记录页必须按渠道显示清楚，不互相覆盖。
+
+---
+
+更新时间：2026-06-23 20:03 Asia/Shanghai
+
+## 本轮修复
+- `app.js`：修复批量提交时 Email 未配置的引导弹窗被 `render()` 刷掉的问题。现在先保存并刷新页面，再打开“绑定发信邮箱”弹窗。
+
+## 本轮验证
+- `node --check app.js`：通过
+- `node smoke-test.js`：通过
+- Chrome DevTools 路径：通过
+  - 使用真实工作台先生成 `Email`、`TikTok私信`、`TikTok定向邀约` 三条待发送记录。
+  - 随后关闭邮箱配置并调用 `submitPendingOutreachBatch()`。
+  - 页面保持打开 `绑定发信邮箱` 弹窗，证明客户能看到配置引导，不会被刷新吞掉。
