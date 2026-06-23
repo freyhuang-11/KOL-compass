@@ -410,7 +410,15 @@ function creatorGmvRangeOk(gmv, range) {
 function creatorGmvDisplay(gmv) {
   const text = String(gmv || "-").trim();
   if (!text || text === "-") return "-";
-  return text.replace(/\s*\/\s*月/g, "").replace(/\/月/g, "");
+  return normalizeGmvDisplay(text);
+}
+
+function normalizeGmvDisplay(value) {
+  const text = String(value || "-").trim().replace(/\s*\/\s*月/g, "").replace(/\/月/g, "");
+  if (!text || text === "-") return "-";
+  return text
+    .replace(/^(\d+(?:[.,]\d+)?)([KMB]?)\s*[₫đ]\+?$/i, (_, amount, unit) => `VND ${amount}${unit.toUpperCase()}+`)
+    .replace(/\s+/g, " ");
 }
 
 function metricNumber(value) {
@@ -484,8 +492,22 @@ function multiFilterOk(selected, value) {
 }
 
 function creatorCategoryValues(c) {
-  const values = Array.isArray(c?.categoryLabels) && c.categoryLabels.length ? c.categoryLabels : [c?.category];
-  return values.map((x) => String(x || "").trim()).filter(Boolean);
+  const values = [c?.category, ...(Array.isArray(c?.categoryLabels) ? c.categoryLabels : [])];
+  return Array.from(new Set(values.map(normalizeCreatorCategoryLabel).filter(Boolean)));
+}
+
+function normalizeCreatorCategoryLabel(value) {
+  const text = String(value || "").trim();
+  const map = {
+    "Sửa chữa nhà cửa": "家装维修",
+    "Sữa chữa nhà cửa": "家装维修",
+    "Công cụ & Phần cứng": "工具五金",
+    "Máy tính & Thiết bị Văn phòng": "电脑办公",
+    "Bộ sưu tập": "收藏品",
+    "Thời trang Hồi giáo": "穆斯林时尚",
+    "Phụ kiện trang sức & Phái sinh": "珠宝配饰",
+  };
+  return map[text] || text;
 }
 
 function creatorCategoryFilterOk(selected, c) {
@@ -2671,7 +2693,7 @@ function coopActions(c) {
 
 function openCreatorModal(id = 0) {
   const row = id ? creator(id) : null;
-  const categoryOptions = fixedOptions(tiktokCategoryOptions, state.creators.map((c) => c.category)).map((x) => [x, x]);
+  const categoryOptions = fixedOptions(tiktokCategoryOptions, state.creators.flatMap((c) => creatorCategoryValues(c))).map((x) => [x, x]);
   const regionOptions = fixedOptions(marketOptions, state.creators.map((c) => c.region)).map((x) => [x, x]);
   const typeOptions = creatorTypeOptions.map((x) => [x, x]);
   openModal(row ? "编辑达人" : "新增达人", `

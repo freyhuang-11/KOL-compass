@@ -144,6 +144,8 @@ function normalizeStoredCreator(row = {}) {
     type: normalizeCreatorType(row.type, { avgVideoViews, avgLiveUv }),
     avgVideoViews,
     avgLiveUv,
+    category: normalizeCategoryLabel(row.category),
+    categoryLabels: Array.isArray(row.categoryLabels) ? row.categoryLabels.map(normalizeCategoryLabel).filter(Boolean) : [],
     gmv: sanitizeGmvValue(row.gmv || "-"),
     tags: normalizeCreatorTags(row.tags),
   };
@@ -633,6 +635,13 @@ function normalizeCategoryLabel(name) {
     "Ô tô & xe máy": "汽车摩托",
     "Đồ chơi & sở thích": "玩具爱好",
     "Hàng dệt & Đồ nội thất mềm": "家纺布艺",
+    "Sửa chữa nhà cửa": "家装维修",
+    "Sữa chữa nhà cửa": "家装维修",
+    "Công cụ & Phần cứng": "工具五金",
+    "Máy tính & Thiết bị Văn phòng": "电脑办公",
+    "Bộ sưu tập": "收藏品",
+    "Thời trang Hồi giáo": "穆斯林时尚",
+    "Phụ kiện trang sức & Phái sinh": "珠宝配饰",
   };
   return map[text] || text;
 }
@@ -909,7 +918,11 @@ function formatMoney(value) {
 
 function sanitizeGmvValue(value) {
   const text = String(value || "-").trim();
-  return text ? text.replace(/\s*\/\s*月/g, "").replace(/\/月/g, "") : "-";
+  if (!text) return "-";
+  return text
+    .replace(/\s*\/\s*月/g, "")
+    .replace(/\/月/g, "")
+    .replace(/^(\d+(?:[.,]\d+)?)([KMB]?)\s*[₫đ]\+?$/i, (_, amount, unit) => `VND ${amount}${unit.toUpperCase()}+`);
 }
 
 async function handle(req, res) {
