@@ -28,7 +28,7 @@ const pages = [
   ]],
 ];
 
-const pageKeys = new Set(pages.flatMap(([, items]) => items.map(([key]) => key)));
+const pageKeys = new Set([...pages.flatMap(([, items]) => items.map(([key]) => key)), "outreachWorkbench"]);
 const fixedTags = ["高ROI", "可复投", "需催发", "内容优质", "低效合作"];
 const outputStatuses = ["全部", "待产出", "已发视频", "已直播", "视频+直播", "逾期未产出", "有订单未匹配内容", "合作结束"];
 const creatorTypeOptions = ["短视频达人", "直播达人", "短视频+直播达人"];
@@ -74,6 +74,10 @@ const seed = {
   page: "dashboard",
   selectedCreatorId: null,
   bulkCreatorIds: [],
+  outreachDraft: {
+    creatorIds: [],
+    updatedAt: "",
+  },
   filters: {
     productSearch: "",
     productSearchField: "商品名",
@@ -179,6 +183,8 @@ function normalizeState(next) {
   if (!Array.isArray(merged.merchantApplications)) merged.merchantApplications = [];
   if (!Array.isArray(merged.billingRecords)) merged.billingRecords = [];
   if (!Array.isArray(merged.bulkCreatorIds)) merged.bulkCreatorIds = [];
+  if (!merged.outreachDraft || typeof merged.outreachDraft !== "object") merged.outreachDraft = { creatorIds: [], updatedAt: "" };
+  if (!Array.isArray(merged.outreachDraft.creatorIds)) merged.outreachDraft.creatorIds = [];
   if (!Array.isArray(merged.targetCollaborations)) merged.targetCollaborations = [];
   if (!Array.isArray(merged.syncLogs)) merged.syncLogs = [];
   if (!Array.isArray(merged.operationLogs)) merged.operationLogs = [];
@@ -1062,6 +1068,211 @@ function renderOutreach() {
   `;
 }
 
+function outreachDraftTargets() {
+  return (state.outreachDraft?.creatorIds || [])
+    .map((id) => creator(id))
+    .filter(Boolean);
+}
+
+function outreachTargetPreview(targets) {
+  if (!targets.length) {
+    return `<div class="empty-state compact">还没有选择达人。请返回达人库选择可建联达人。</div>`;
+  }
+  return `
+    <div class="workbench-creator-list">
+      ${targets.slice(0, 4).map((c) => {
+        const reason = creatorOutreachBlockReason(c);
+        return `
+          <div class="workbench-creator ${reason ? "blocked" : ""}">
+            ${personCell(c)}
+            <span>${reason ? badge("不可建联") : badge("可建联")}</span>
+            ${reason ? `<small>${escapeHtml(reason)}</small>` : `<small>${escapeHtml(c.region || "-")} · ${escapeHtml(normalizeCreatorType(c.type, c))}</small>`}
+          </div>
+        `;
+      }).join("")}
+      ${targets.length > 4 ? `<div class="muted">还有 ${targets.length - 4} 位达人将在提交时一起处理。</div>` : ""}
+    </div>
+  `;
+}
+
+function outreachWorkbenchSummary(targets, availableTargets) {
+  const selectedProducts = Math.max(1, Math.min(state.products.length, 3));
+  const emailReady = availableTargets.filter((c) => c.email).length;
+  const missingEmail = Math.max(0, availableTargets.length - emailReady);
+  return `
+    <aside class="workbench-summary">
+      <div class="summary-card">
+        <span>已选达人</span>
+        <b>${targets.length}</b>
+        <small>可建联 ${availableTargets.length} 位 · 不可建联 ${Math.max(0, targets.length - availableTargets.length)} 位</small>
+      </div>
+      <div class="summary-card">
+        <span>已选商品</span>
+        <b id="summaryProductCount">${selectedProducts}</b>
+        <small>佣金随商品单独配置</small>
+      </div>
+      <div class="summary-card">
+        <span>预计生成记录</span>
+        <ul>
+          <li>TikTok 定向邀约：${availableTargets.length} 条</li>
+          <li>TikTok 私信：${availableTargets.length} 条</li>
+          <li>Email：${emailReady} 条</li>
+        </ul>
+      </div>
+      <div class="summary-card warning">
+        <span>风险提示</span>
+        <b>${missingEmail}</b>
+        <small>位达人缺少 Email，将进入联系方式补充中。</small>
+      </div>
+    </aside>
+  `;
+}
+
+function renderOutreachWorkbench() {
+  const targets = outreachDraftTargets();
+  const availableTargets = targets.filter((c) => !creatorOutreachBlockReason(c));
+  const channelOptions = availableTargets.length ? channelOptionsForCreators(availableTargets) : [];
+  const defaultChannels = channelOptions.some(([value]) => value === "TikTok私信") ? ["TikTok私信"] : (channelOptions[0] ? [channelOptions[0][0]] : []);
+  const defaultTemplate = state.templates[0]?.content || "Hi {KOL名称}，我们想邀请你合作 {产品名称}。";
+  const emailNotice = emailAccountConfigured()
+    ? `邮箱已绑定：${escapeHtml(state.settings.emailAddress)}`
+    : `Email 尚未绑定，选择 Email 前请先完成邮箱配置。`;
+  const selectedProductIds = state.products.slice(0, 3).map((p) => p.id);
+
+  return `
+    <div class="workbench-page">
+      <div class="workbench-top">
+        <div>
+          <div class="breadcrumb">达人库 / 建联工作台</div>
+          <h1 class="page-title">发起建联</h1>
+          <div class="page-desc">按商品配置佣金，分别创建 TikTok 定向邀约、TikTok 私信和 Email 建联记录。</div>
+        </div>
+        <div class="filters">
+          <button class="btn" onclick="saveOutreachDraft()">保存草稿</button>
+          <button class="btn primary" onclick="saveOutreach('${availableTargets.map((c) => c.id).join(",")}')">提交建联</button>
+        </div>
+      </div>
+
+      <div class="workbench-layout">
+        <aside class="workbench-steps">
+          ${[
+            ["确认达人", "已完成"],
+            ["商品与佣金", "当前"],
+            ["建联动作", "当前"],
+            ["消息与翻译", "待处理"],
+            ["提交预览", "待处理"],
+          ].map(([label, status], index) => `
+            <div class="workbench-step ${status === "当前" ? "active" : status === "已完成" ? "done" : ""}">
+              <b>${index + 1}</b>
+              <span>${label}</span>
+              <small>${status}</small>
+            </div>
+          `).join("")}
+        </aside>
+
+        <main class="workbench-main">
+          <section class="workbench-section">
+            <div class="section-head">
+              <div>
+                <h2>确认达人</h2>
+                <p>不可建联达人会被拦截，不进入提交。</p>
+              </div>
+              <button class="btn" onclick="setPage('kol')">返回达人库</button>
+            </div>
+            ${outreachTargetPreview(targets)}
+          </section>
+
+          <section class="workbench-section">
+            <div class="section-head">
+              <div>
+                <h2>商品与佣金</h2>
+                <p>商品来自当前绑定店铺；佣金必须在提交前按商品确认。</p>
+              </div>
+              <div class="filters">
+                <button class="btn" onclick="bulkSetCommission('standard')">批量修改标准佣金</button>
+                <button class="btn" onclick="bulkSetCommission('ad')">批量修改广告佣金</button>
+              </div>
+            </div>
+            ${productMultiPicker(selectedProductIds)}
+          </section>
+
+          <section class="workbench-section">
+            <div class="section-head">
+              <div>
+                <h2>建联动作</h2>
+                <p>官方邀约和触达通知分开配置，失败时互不影响。</p>
+              </div>
+            </div>
+            <div class="action-grid">
+              <div class="action-panel">
+                <div class="action-title">
+                  <label class="switch-row"><input type="checkbox" id="createTargetCollaboration" checked /> 创建 TikTok 定向邀约</label>
+                  <span class="badge info">官方邀约</span>
+                </div>
+                <div class="form-grid">
+                  ${field("targetCollaborationName", "邀约名称", "夏季新品达人合作", `定向邀约-${todayString()}`)}
+                  ${field("targetExpiresAt", "有效期", "2026-07-15", dateAfter(14))}
+                  ${multiCheckField("targetDeliverables", "交付形式", [["短视频", "短视频"], ["直播", "直播"]], ["短视频"])}
+                  ${selectField("sampleRule", "样品规则", [["不寄样", "不寄样"], ["达人申请后审核", "达人申请后审核"], ["自动寄样", "自动寄样"]], "达人申请后审核")}
+                  ${field("targetContactName", "联系人", "BD负责人", "Sam")}
+                  ${field("targetContactEmail", "联系人邮箱", "bd@brand.com", state.settings.emailAddress || "")}
+                </div>
+              </div>
+              <div class="action-panel">
+                <div class="action-title">
+                  <b>触达通知</b>
+                  <span class="badge neutral">可多选</span>
+                </div>
+                ${channelOptions.length ? multiCheckField("outreachChannels", "发送渠道", channelOptions, defaultChannels) : `<div class="empty-state compact">当前没有可用触达渠道，请到平台管理端开启。</div>`}
+                <div class="notice soft" style="margin-top:12px">
+                  <b>Email 配置：</b>${emailNotice}
+                  <button class="btn ghost" type="button" onclick="openEmailSetupModal('outreach')">配置邮箱/查看教程</button>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="workbench-section">
+            <div class="section-head">
+              <div>
+                <h2>消息与翻译</h2>
+                <p>消息用于 TikTok 私信和 Email，定向邀约会携带同一段说明。</p>
+              </div>
+              <button class="btn" type="button" onclick="translateOutreachDraft()">翻译成达人语言</button>
+            </div>
+            <div class="form-grid">
+              ${selectField("outreachTemplateId", "消息模板", [["0", "不使用模板"], ...state.templates.map((x) => [x.id, x.name])], state.templates[0]?.id || "0")}
+              ${selectField("outreachSendMode", "发送方式", [["立即发送", "立即发送"], ["定时发送", "定时发送"]], "立即发送")}
+              ${field("outreachScheduleAt", "定时发送时间", "2026-06-22 09:30", "")}
+              ${selectField("outreachLanguage", "翻译目标语言", languageOptionsForTargets(availableTargets), targetLanguageForCreator(availableTargets[0]))}
+            </div>
+            <div class="message-grid">
+              <div class="form-field"><label>中文原文</label><textarea id="outreachMessage" class="textarea">${escapeHtml(defaultTemplate)}</textarea></div>
+              <div class="form-field"><label>翻译预览</label><textarea id="outreachTranslatedMessage" class="textarea" placeholder="点击翻译后生成目标语言版本。"></textarea></div>
+            </div>
+          </section>
+
+          <section class="workbench-section">
+            <div class="section-head">
+              <div>
+                <h2>提交预览</h2>
+                <p>提交后会生成三类独立记录，任何一个渠道失败都不会覆盖其他渠道结果。</p>
+              </div>
+            </div>
+            <div class="submit-preview">
+              <div><b>TikTok 定向邀约</b><span>${availableTargets.length} 条 · Target Collaboration API</span></div>
+              <div><b>TikTok 私信</b><span>${availableTargets.length} 条 · Conversation / Message API</span></div>
+              <div><b>Email</b><span>${availableTargets.filter((c) => c.email).length} 条 · SMTP 发送，缺邮箱进入补充任务</span></div>
+            </div>
+          </section>
+        </main>
+
+        ${outreachWorkbenchSummary(targets, availableTargets)}
+      </div>
+    </div>
+  `;
+}
+
 function renderAutoReply() {
   const enabledCount = state.autoReplies.filter((r) => r.enabled).length;
   return `
@@ -1826,6 +2037,7 @@ function render() {
     products: renderProducts,
     kol: renderKolPool,
     outreach: renderOutreach,
+    outreachWorkbench: renderOutreachWorkbench,
     autoReply: renderAutoReply,
     templates: renderTemplates,
     blacklist: renderBlacklist,
@@ -3312,67 +3524,39 @@ function openOutreachModal(creatorId = 0) {
     render();
     return;
   }
-  const channelOptions = channelOptionsForCreators(targets);
-  if (!channelOptions.length) return alert("当前没有可用发送渠道，请先到平台管理端开启 TikTok 私信、Email 或 WhatsApp。");
-  const defaultTemplate = state.templates[0]?.content || "Hi {KOL名称}，我们想邀请你合作 {产品名称}。";
-  const defaultChannels = channelOptions.some(([value]) => value === "TikTok私信") ? ["TikTok私信"] : [channelOptions[0][0]];
-  const emailNotice = emailAccountConfigured()
-    ? `Email 已绑定：${escapeHtml(state.settings.emailAddress)}`
-    : `Email 尚未绑定，选择 Email 前请先完成邮箱配置。`;
-  openModal("发起建联", `
-    <div class="flow-steps">
-      <div class="flow-step active"><b>1</b><span>确认达人</span></div>
-      <div class="flow-step active"><b>2</b><span>配置定向邀约</span></div>
-      <div class="flow-step active"><b>3</b><span>选择触达渠道</span></div>
-    </div>
-    <div class="notice">本次将联系 ${targets.length} 位达人：${targets.slice(0, 5).map((c) => `@${escapeHtml(c.username)}`).join("、")}${targets.length > 5 ? " 等" : ""}。TikTok 私信按达人逐个会话发送；达人回复前连续消息存在平台限制，不能当成无约束群发。</div>
-    <div class="modal-section-title">建联类型</div>
-    <div class="outreach-mode-grid">
-      <label class="mode-card selected">
-        <input type="radio" name="outreachMode" value="target_collaboration" checked />
-        <b>定向邀约 + 触达通知</b>
-        <span>先创建 TikTok 定向邀约对象，包含商品、佣金和交付要求，再通过 TikTok 私信或 Email 通知达人。</span>
-      </label>
-      <label class="mode-card">
-        <input type="radio" name="outreachMode" value="message_only" />
-        <b>仅发送建联消息</b>
-        <span>不创建定向邀约，只记录 TikTok 私信 / Email 建联消息。适合先沟通意向。</span>
-      </label>
-    </div>
-    <div class="modal-section-title">选择建联商品与佣金</div>
-    ${productMultiPicker([state.products[0]?.id].filter(Boolean))}
-    <div class="form-grid" style="margin-top:12px">
-      ${field("targetCollaborationName", "邀约名称", "夏季新品达人合作", `定向邀约-${todayString()}`)}
-      ${field("targetExpiresAt", "邀约有效期", "2026-07-15", dateAfter(14))}
-      ${multiCheckField("targetDeliverables", "交付形式", [["短视频", "短视频"], ["直播", "直播"]], ["短视频"])}
-      ${selectField("sampleRule", "样品规则", [["不寄样", "不寄样"], ["达人申请后审核", "达人申请后审核"], ["自动寄样", "自动寄样"]], "达人申请后审核")}
-      ${field("targetContactName", "联系人", "BD负责人", "Sam")}
-      ${field("targetContactEmail", "联系邮箱", "bd@brand.com", state.settings.emailAddress || "")}
-    </div>
-    <div class="notice soft" style="margin-top:12px">
-      <b>API 边界：</b>系统会先创建本地定向邀约草稿，点击“提交到后端发送”后按 TikTok Target Collaboration 官方字段创建定向邀约；如 TikTok 返回参数、权限、限流或冲突错误，会把原始错误写入建联记录。
-    </div>
-    <div class="modal-section-title">触达渠道与消息</div>
-    <div class="form-grid" style="margin-top:12px">
-      ${multiCheckField("outreachChannels", "发送渠道（可多选）", channelOptions, defaultChannels)}
-      ${selectField("outreachTemplateId", "消息模板", [["0", "不使用模板"], ...state.templates.map((x) => [x.id, x.name])], state.templates[0]?.id || "0")}
-      ${selectField("outreachSendMode", "发送方式", [["立即发送", "立即发送"], ["定时发送", "定时发送"]], "立即发送")}
-      ${field("outreachScheduleAt", "定时发送时间", "2026-06-22 09:30", "")}
-      ${selectField("outreachLanguage", "翻译目标语言", languageOptionsForTargets(targets), targetLanguageForCreator(targets[0]))}
-    </div>
-    <div class="notice soft" style="margin-top:12px">
-      <b>Email 配置：</b>${emailNotice}
-      <button class="btn ghost" type="button" onclick="openEmailSetupModal('outreach')">配置邮箱/查看教程</button>
-    </div>
-    <div class="form-field" style="margin-top:12px"><label>消息内容</label><textarea id="outreachMessage" class="textarea">${escapeHtml(defaultTemplate)}</textarea></div>
-    <div class="translation-panel">
-      <div class="toolbar" style="margin:0 0 8px">
-        <div><b>翻译稿</b><div class="muted">用于 Email 或私信发送前预览，保存后进入建联记录。</div></div>
-        <button class="btn" type="button" onclick="translateOutreachDraft()">翻译成达人语言</button>
-      </div>
-      <textarea id="outreachTranslatedMessage" class="textarea" placeholder="点击翻译后生成目标语言版本。"></textarea>
-    </div>
-  `, `<button class="btn primary" onclick="saveOutreach('${selectedIds.join(",")}')">创建建联任务</button>`);
+  state.outreachDraft = { creatorIds: selectedIds, updatedAt: nowText() };
+  state.selectedCreatorId = null;
+  saveState();
+  navigateHash("outreachWorkbench");
+}
+
+function saveOutreachDraft() {
+  state.outreachDraft = {
+    ...(state.outreachDraft || {}),
+    updatedAt: nowText(),
+  };
+  saveState();
+  pushMessage("建联草稿", "建联工作台草稿已保存。");
+  alert("建联草稿已保存。");
+}
+
+function bulkSetCommission(type) {
+  const value = prompt(type === "ad" ? "批量设置广告佣金率（1-80）" : "批量设置标准佣金率（1-80）", type === "ad" ? "5" : "20");
+  if (value == null) return;
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric < 1 || numeric > 80) return alert("佣金率必须在 1-80% 之间。");
+  document.querySelectorAll(".outreach-product-check:checked").forEach((input) => {
+    const id = input.value;
+    if (type === "ad") {
+      const enabled = document.getElementById(`adCommissionEnabled-${id}`);
+      const rate = document.getElementById(`adCommission-${id}`);
+      if (enabled) enabled.checked = true;
+      if (rate) rate.value = numeric;
+    } else {
+      const standard = document.getElementById(`standardCommission-${id}`);
+      if (standard) standard.value = numeric;
+    }
+  });
 }
 
 function renderTemplate(content, c, p) {
@@ -3388,7 +3572,8 @@ function translateOutreachDraft() {
   const products = selectedOutreachProducts();
   const p = products[0] || state.products[0];
   const lang = document.getElementById("outreachLanguage")?.value || "英语";
-  const c = String(document.querySelector("#modalFoot .btn.primary")?.getAttribute("onclick") || "")
+  const draftCreator = (state.outreachDraft?.creatorIds || []).map((id) => creator(id)).filter(Boolean)[0];
+  const c = draftCreator || String(document.querySelector("#modalFoot .btn.primary")?.getAttribute("onclick") || "")
     .match(/saveOutreach\('([^']*)'\)/)?.[1]
     ?.split(",")
     .map((id) => creator(Number(id)))
@@ -3537,7 +3722,8 @@ function saveOutreach(idList) {
   const channels = getCheckedValues("outreachChannels");
   const sendMode = document.getElementById("outreachSendMode").value;
   const scheduleAt = document.getElementById("outreachScheduleAt").value.trim();
-  const mode = document.querySelector('input[name="outreachMode"]:checked')?.value || "target_collaboration";
+  const createTarget = document.getElementById("createTargetCollaboration")?.checked !== false;
+  const mode = createTarget ? "target_collaboration" : "message_only";
   const translationLanguage = document.getElementById("outreachLanguage")?.value || "";
   const editedTranslation = document.getElementById("outreachTranslatedMessage")?.value.trim() || "";
   const message = document.getElementById("outreachMessage").value.trim() || template?.content || "";
@@ -3558,6 +3744,7 @@ function saveOutreach(idList) {
     return;
   }
   const targets = ids.map((id) => creator(id)).filter(Boolean);
+  if (!targets.length) return alert("没有可建联达人，请返回达人库重新选择。");
   if (Number.isFinite(quotaRemaining()) && quotaRemaining() < targets.length) {
     alert(`本月建联配额不足：剩余 ${quotaRemaining()}，本次需要 ${targets.length}。请升级套餐或减少选择数量。`);
     state.page = "billing";
@@ -3565,7 +3752,8 @@ function saveOutreach(idList) {
     render();
     return;
   }
-  if (!validateChannelsForCreators(channels, targets)) return;
+  if (!createTarget && !channels.length) return alert("请至少创建 TikTok 定向邀约，或选择一个触达通知渠道。");
+  if (channels.length && !validateChannelsForCreators(channels, targets)) return;
   const targetCollab = mode === "target_collaboration" ? createTargetCollaborationDraft(targets, selectedProducts, targetOptions) : null;
   let created = 0;
   const productNames = productSnapshotNames(selectedProducts);
@@ -4371,6 +4559,8 @@ window.toggleCreatorPageSelection = toggleCreatorPageSelection;
 window.setKolPage = setKolPage;
 window.setKolPageSize = setKolPageSize;
 window.openOutreachModal = openOutreachModal;
+window.saveOutreachDraft = saveOutreachDraft;
+window.bulkSetCommission = bulkSetCommission;
 window.saveOutreach = saveOutreach;
 window.translateOutreachDraft = translateOutreachDraft;
 window.openEmailSetupModal = openEmailSetupModal;
