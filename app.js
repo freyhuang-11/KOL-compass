@@ -989,6 +989,7 @@ function outreachStatusLabel(status) {
     "API结果待确认": "待确认",
     "API提交失败": "提交失败",
     "定向邀约待配置": "邀约待确认",
+    "邮箱配置待完成": "邮箱配置待完成",
   };
   return labels[status] || status || "-";
 }
@@ -1022,6 +1023,7 @@ function outreachDeliveryCell(o) {
     const emailResult = result.email || (result.ok !== undefined ? result : null);
     if (emailResult?.ok) items.push(deliveryPill("Email", "已发送"));
     else if (error) items.push(deliveryPill("Email", "失败", error.code || error.message || ""));
+    else if (o.status === "邮箱配置待完成") items.push(deliveryPill("Email", "待确认", "未配置邮箱"));
     else if (o.status === "联系方式补充中") items.push(deliveryPill("Email", "待确认", "缺少邮箱"));
     else items.push(deliveryPill("Email", o.status === "待API发送" ? "未提交" : "待确认"));
   }
@@ -1045,6 +1047,9 @@ function outreachNextStepCell(o) {
   } else if (o.status === "联系方式补充中") {
     title = "补充达人邮箱";
     desc = "补齐 Email 后再重新提交邮件建联。";
+  } else if (o.status === "邮箱配置待完成") {
+    title = "配置发信邮箱";
+    desc = "完成邮箱配置后，该 Email 建联会回到待提交。";
   } else if (o.status === "发送失败") {
     title = "查看原因并重试";
     desc = "先看提交结果，再重新提交该渠道。";
@@ -2295,11 +2300,6 @@ function validateChannelsForCreators(channels, targets) {
   }
   for (const channel of channels) {
     if (!validateChannelForCreators(channel, targets)) return false;
-    if (channel === "Email" && !emailAccountConfigured()) {
-      openEmailSetupModal("outreach");
-      alert("Email 尚未绑定。请先完成邮箱配置，再用 Email 发送建联消息。");
-      return false;
-    }
   }
   return true;
 }
@@ -2952,6 +2952,9 @@ function outreachActions(o) {
   if (o.apiResult || o.apiError) {
     parts.push(`<button class="btn ghost" onclick="openOutreachApiResult(${o.id})">查看提交结果</button>`);
   }
+  if (o.channel === "Email" && o.status === "邮箱配置待完成") {
+    parts.push(`<button class="btn" onclick="openEmailSetupModal('outreach')">配置邮箱</button>`);
+  }
   if (!isTargetInviteChannel(o.channel) && o.status !== "已关闭" && o.status !== "已转合作") {
     parts.push(`<button class="btn" onclick="openReplyModal(${o.id})">回复</button>`);
   }
@@ -3206,6 +3209,12 @@ async function submitOutreachApi(id) {
   if (!row || !c) return;
   if (row.channel === "Email") {
     if (!emailAccountConfigured()) {
+      row.status = "邮箱配置待完成";
+      row.updatedAt = nowText();
+      row.lastMessage = `[${row.updatedAt}] Email 发送暂停：请先完成发信邮箱配置。\n${row.lastMessage || ""}`;
+      pushMessage("邮箱配置", "Email 建联已保存，完成发信邮箱配置后可继续提交。");
+      saveState();
+      render();
       openEmailSetupModal("outreach");
       alert("Email 尚未完成发信邮箱配置。请先填写邮箱账号和应用专用密码。");
       return;
@@ -3320,6 +3329,9 @@ async function submitPendingOutreachBatch() {
       continue;
     }
     if (row.channel === "Email" && !emailAccountConfigured()) {
+      row.status = "邮箱配置待完成";
+      row.updatedAt = nowText();
+      row.lastMessage = `[${row.updatedAt}] 批量提交跳过 Email：请先完成发信邮箱配置。\n${row.lastMessage || ""}`;
       emailConfigBlocked = true;
       skipped += 1;
       continue;
@@ -3812,8 +3824,16 @@ function saveEmailSettings() {
   state.settings.emailAppPassword = get("emailAppPassword");
   state.settings.emailConnected = true;
   state.settings.emailAppPasswordConfigured = true;
+  let unlocked = 0;
+  state.outreach.forEach((row) => {
+    if (row.channel !== "Email" || row.status !== "邮箱配置待完成") return;
+    row.status = "待API发送";
+    row.updatedAt = nowText();
+    row.lastMessage = `[${row.updatedAt}] 发信邮箱已配置，可继续提交 Email 建联。\n${row.lastMessage || ""}`;
+    unlocked += 1;
+  });
   addSyncLog("Email 配置", "已保存", `已绑定发信邮箱：${state.settings.emailAddress}`);
-  pushMessage("Email 配置", `已绑定发信邮箱：${state.settings.emailAddress}。`);
+  pushMessage("Email 配置", `已绑定发信邮箱：${state.settings.emailAddress}。${unlocked ? ` 已解锁 ${unlocked} 条待提交 Email 建联。` : ""}`);
   saveState();
   closeModal();
   render();
@@ -3971,10 +3991,11 @@ function saveOutreach(idList) {
     }
 
     channels.forEach((channel, channelIndex) => {
-      const pendingContact = needsContactEnrichment(channel, c);
+      const pendingEmailConfig = channel === "Email" && !emailAccountConfigured();
+      const pendingContact = !pendingEmailConfig && needsContactEnrichment(channel, c);
       if (pendingContact) queueContactEnrichment(c, channel, productNames);
       const recordId = Date.now() + index * 100 + channelIndex + 1;
-      const status = pendingContact ? "联系方式补充中" : (channel === "TikTok私信" || channel === "Email" ? "待API发送" : "待回复");
+      const status = pendingEmailConfig ? "邮箱配置待完成" : (pendingContact ? "联系方式补充中" : (channel === "TikTok私信" || channel === "Email" ? "待API发送" : "待回复"));
       const officialNote = targetCollab ? `定向邀约：${targetCollab.name}（${outreachStatusLabel(targetCollab.status)}）` : "仅建联消息";
       const messageWithContext = `${rendered}\n${officialNote}\n商品：${productNames}`;
       state.outreach.unshift({
@@ -3997,18 +4018,24 @@ function saveOutreach(idList) {
       created += 1;
     });
     const hasPendingApi = channels.includes("TikTok私信") || channels.includes("Email") || Boolean(targetCollab);
-    c.status = channels.includes("Email") && needsContactEnrichment("Email", c) ? "联系方式补充中" : (hasPendingApi ? "待提交" : "已发送");
+    c.status = channels.includes("Email") && !emailAccountConfigured()
+      ? "邮箱配置待完成"
+      : (channels.includes("Email") && needsContactEnrichment("Email", c) ? "联系方式补充中" : (hasPendingApi ? "待提交" : "已发送"));
   });
   state.bulkCreatorIds = [];
   logOperation("建联发送", channels.join("+"), `创建 ${created} 条建联记录；商品：${productNames}；模式：${mode}`);
   if (targetCollab) pushMessage("定向邀约草稿", `已创建定向邀约草稿「${targetCollab.name}」，包含 ${selectedProducts.length} 个商品、${targets.length} 位达人，状态：待提交。`);
-  pushMessage("批量建联", `已创建 ${created} 条建联记录，渠道：${channels.map(channelLabel).join("+")}，商品：${productNames}。缺少 Email 的达人已进入联系方式补充。`);
+  const emailConfigMissing = channels.includes("Email") && !emailAccountConfigured();
+  pushMessage("批量建联", `已创建 ${created} 条建联记录，渠道：${channels.map(channelLabel).join("+")}，商品：${productNames}。${emailConfigMissing ? "Email 将在邮箱配置完成后继续提交。" : "缺少 Email 的达人已进入联系方式补充。"}`);
   closeModal();
   saveState();
   state.page = "outreach";
   state.selectedCreatorId = null;
   location.hash = "#outreach";
   render();
+  if (emailConfigMissing) {
+    openEmailSetupModal("outreach");
+  }
 }
 
 function openCoopModal(id) {

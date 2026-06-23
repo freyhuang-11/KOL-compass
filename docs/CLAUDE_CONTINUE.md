@@ -1,5 +1,21 @@
 # Claude Continue
 
+更新时间：2026-06-23 20:58 Asia/Shanghai
+
+## 本轮修复
+- `app.js`：修正建联工作台 Email 未配置时的流程。选择 Email 不再中断整单创建，TikTok 定向邀约和 TikTok 私信会照常生成。
+- `app.js`：新增 Email 状态 `邮箱配置待完成`。未配置发信邮箱时，Email 建联记录先保存为该状态，并打开邮箱配置教程；保存邮箱配置后自动把这些记录转回 `待提交`。
+- `app.js`：建联记录页对 `邮箱配置待完成` 显示“配置发信邮箱”下一步，并提供“配置邮箱”操作。
+- `smoke-test.js`：新增回归断言，确保 Email 未配置不会阻断 TikTok 建联记录创建。
+
+## 本轮验证
+- `node --check app.js`：通过
+- `node --check smoke-test.js`：通过
+- `node smoke-test.js`：通过
+- Edge DevTools 真实页面流程：从当前 8015 返回的 3 个真实商品进入建联工作台，选中 TikTok 私信 + Email、创建 TikTok 定向邀约，模拟未配置发信邮箱。结果：生成 3 条记录，分别为 `Email`、`TikTok私信`、`TikTok定向邀约`；三条记录都保留 3 个商品，并共享同一个 `targetCollaborationId`；Email 状态为 `邮箱配置待完成`，TikTok 私信和定向邀约状态为 `待提交`。
+
+---
+
 更新时间：2026-06-23 20:42 Asia/Shanghai
 
 ## 本轮修复
