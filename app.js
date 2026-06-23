@@ -3200,7 +3200,9 @@ async function submitOutreachApi(id) {
 }
 
 async function submitPendingOutreachBatch() {
-  const pending = state.outreach.filter((row) => row.status === "待API发送");
+  const pending = state.outreach
+    .filter((row) => row.status === "待API发送")
+    .sort((a, b) => Number(!isTargetInviteChannel(a.channel)) - Number(!isTargetInviteChannel(b.channel)));
   if (!pending.length) return alert("当前没有待API发送的建联记录。");
   let submitted = 0;
   let skipped = 0;
@@ -3209,6 +3211,10 @@ async function submitPendingOutreachBatch() {
   let emailConfigBlocked = false;
 
   for (const row of pending) {
+    if (row.status !== "待API发送") {
+      skipped += 1;
+      continue;
+    }
     const c = creator(row.creatorId);
     if (!c) {
       skipped += 1;

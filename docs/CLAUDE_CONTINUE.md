@@ -186,3 +186,21 @@
   - 使用真实工作台先生成 `Email`、`TikTok私信`、`TikTok定向邀约` 三条待发送记录。
   - 随后关闭邮箱配置并调用 `submitPendingOutreachBatch()`。
   - 页面保持打开 `绑定发信邮箱` 弹窗，证明客户能看到配置引导，不会被刷新吞掉。
+
+---
+
+更新时间：2026-06-23 20:22 Asia/Shanghai
+
+## 本轮修复
+- `app.js`：批量提交待 API 发送记录时，改为优先提交 `TikTok定向邀约`，再提交 Email/TikTok 私信，避免客户先通知达人但官方邀约尚未创建。
+- `app.js`：同一批次中已被定向邀约同步更新过的记录会被跳过，避免重复提交。
+- `smoke-test.js`：补充批量提交需要包含定向邀约优先排序的断言。
+
+## 本轮验证
+- `node --check app.js`：通过
+- `node --check smoke-test.js`：通过
+- `node smoke-test.js`：通过
+- Chrome DevTools 路径：通过
+  - 工作台生成顺序：`Email`、`TikTok私信`、`TikTok定向邀约`。
+  - 批量提交实际调用顺序：`TikTok定向邀约` -> `Email` -> `TikTok私信`。
+  - 三条记录最终均进入 `待回复`，定向邀约写入模拟官方 ID `tc_test`。
