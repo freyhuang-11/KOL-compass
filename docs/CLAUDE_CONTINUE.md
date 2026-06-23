@@ -204,3 +204,23 @@
   - 工作台生成顺序：`Email`、`TikTok私信`、`TikTok定向邀约`。
   - 批量提交实际调用顺序：`TikTok定向邀约` -> `Email` -> `TikTok私信`。
   - 三条记录最终均进入 `待回复`，定向邀约写入模拟官方 ID `tc_test`。
+
+---
+
+更新时间：2026-06-23 20:33 Asia/Shanghai
+
+## 本轮修复
+- `app.js`：通知记录（TikTok 私信 / Email）现在会关联同一个 TikTok 定向邀约草稿，不再是孤立记录。
+- `app.js`：批量提交时，如果官方定向邀约失败或未拿到官方 ID，私信和 Email 会进入 `等待定向邀约`，不会提前通知达人。
+- `app.js`：定向邀约成功后，同批等待中的私信和 Email 会恢复为 `待API发送`，客户可以继续批量提交。
+- `app.js`：`发送失败`、`等待定向邀约` 状态支持重新提交，避免客户只能删除重建。
+- `smoke-test.js`：新增“通知必须等待定向邀约成功”的回归断言。
+
+## 本轮验证
+- `node --check app.js`：通过
+- `node --check smoke-test.js`：通过
+- `node smoke-test.js`：通过
+- Chrome DevTools 真实页面路径：通过
+  - 选择 1 位达人 + 2 个商品，生成 `Email`、`TikTok私信`、`TikTok定向邀约` 三条记录，三条均保留 2 个商品和同一个 `targetCollaborationId`。
+  - 模拟定向邀约失败：实际只调用 `/api/tiktok/outreach/submit` 一次，channel 为 `TikTok定向邀约`；Email 和 TikTok 私信均变为 `等待定向邀约`，没有提前发送。
+  - 模拟定向邀约成功并返回官方 ID `tc_201`：随后批量提交 Email 和 TikTok 私信，三条记录最终均为 `待回复`。

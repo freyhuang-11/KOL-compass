@@ -2901,8 +2901,8 @@ function outreachActions(o) {
   if (!isTargetInviteChannel(o.channel) && o.status !== "已关闭" && o.status !== "已转合作") {
     parts.push(`<button class="btn" onclick="openReplyModal(${o.id})">回复</button>`);
   }
-  if (o.status === "待API发送") {
-    parts.push(`<button class="btn" onclick="submitOutreachApi(${o.id})">提交到后端发送</button>`);
+  if (["待API发送", "发送失败", "等待定向邀约"].includes(o.status)) {
+    parts.push(`<button class="btn" onclick="submitOutreachApi(${o.id})">${o.status === "待API发送" ? "提交到后端发送" : "重新提交"}</button>`);
     parts.push(`<button class="btn ghost" onclick="advanceOutreach(${o.id}, '发送失败')">标记发送失败</button>`);
   }
   if (o.status === "定向邀约待配置" || o.status === "API结果待确认") {
@@ -2927,36 +2927,48 @@ function markOutreachApiSubmitted(id, apiResult = null) {
   const row = state.outreach.find((x) => x.id === id);
   if (!row) return;
   const target = targetCollaboration(row.targetCollaborationId);
-  const targetBlocked = isTargetSchemaRequired(apiResult);
-  const officialId = targetOfficialId(apiResult);
-  const targetNeedsConfirmation = target && !targetBlocked && !officialId;
+  const targetRow = isTargetInviteChannel(row.channel);
+  const targetBlocked = targetRow && isTargetSchemaRequired(apiResult);
+  const officialId = targetRow ? targetOfficialId(apiResult) : "";
+  const targetNeedsConfirmation = targetRow && target && !targetBlocked && !officialId;
   row.status = targetBlocked ? "定向邀约待配置" : (targetNeedsConfirmation ? "API结果待确认" : "待回复");
   row.updatedAt = nowText();
   row.apiResult = apiResult;
-  row.lastMessage = targetBlocked
-    ? `[${row.updatedAt}] 触达已提交；TikTok 定向邀约未提交：Target Collaboration 请求 schema 待确认，请查看 API 结果。\n${row.lastMessage || ""}`
-    : targetNeedsConfirmation
-      ? `[${row.updatedAt}] TikTok API 已返回，但未拿到官方定向邀约 ID；请查看 API 结果确认是否存在冲突、无效达人或权限限制。\n${row.lastMessage || ""}`
-    : `[${row.updatedAt}] TikTok 定向邀约/触达已提交，等待达人回复。\n${row.lastMessage || ""}`;
-  if (target) {
+  row.lastMessage = targetRow
+    ? (targetBlocked
+      ? `[${row.updatedAt}] TikTok 定向邀约未提交：Target Collaboration 请求 schema 待确认，请查看 API 结果。\n${row.lastMessage || ""}`
+      : targetNeedsConfirmation
+        ? `[${row.updatedAt}] TikTok API 已返回，但未拿到官方定向邀约 ID；请查看 API 结果确认是否存在冲突、无效达人或权限限制。\n${row.lastMessage || ""}`
+        : `[${row.updatedAt}] TikTok 定向邀约已提交，等待达人接受。\n${row.lastMessage || ""}`)
+    : `[${row.updatedAt}] ${channelLabel(row.channel)} 已提交，等待达人回复。\n${row.lastMessage || ""}`;
+  if (target && targetRow) {
     target.status = targetBlocked ? "定向邀约待配置" : (targetNeedsConfirmation ? "API结果待确认" : "待达人接受");
     target.apiResult = apiResult?.target_collaboration || null;
     if (officialId) target.officialId = officialId;
     target.updatedAt = nowText();
     state.outreach.forEach((item) => {
-      if (item.id === row.id || item.targetCollaborationId !== target.id || !isTargetInviteChannel(item.channel)) return;
-      if (!["待API发送", "API结果待确认"].includes(item.status)) return;
-      item.status = row.status;
-      item.apiResult = apiResult;
-      item.updatedAt = row.updatedAt;
-      item.lastMessage = `[${row.updatedAt}] 同批 TikTok 定向邀约状态已同步：${item.status}。\n${item.lastMessage || ""}`;
+      if (item.id === row.id || item.targetCollaborationId !== target.id) return;
+      if (isTargetInviteChannel(item.channel)) {
+        if (!["待API发送", "API结果待确认"].includes(item.status)) return;
+        item.status = row.status;
+        item.apiResult = apiResult;
+        item.updatedAt = row.updatedAt;
+        item.lastMessage = `[${row.updatedAt}] 同批 TikTok 定向邀约状态已同步：${item.status}。\n${item.lastMessage || ""}`;
+        return;
+      }
+      if (!targetReadyForNotifications(target)) return;
+      if (item.status === "等待定向邀约") {
+        item.status = "待API发送";
+        item.updatedAt = row.updatedAt;
+        item.lastMessage = `[${row.updatedAt}] TikTok 定向邀约已成功，可继续提交 ${channelLabel(item.channel)}。\n${item.lastMessage || ""}`;
+      }
     });
   }
   pushMessage("建联API状态", targetBlocked
-    ? `@${creator(row.creatorId)?.username || "-"} 的触达已提交，TikTok 定向邀约仍需确认官方 schema。`
+    ? `@${creator(row.creatorId)?.username || "-"} 的 TikTok 定向邀约仍需确认官方 schema。`
     : targetNeedsConfirmation
       ? `@${creator(row.creatorId)?.username || "-"} 的定向邀约 API 结果缺少官方 ID，请检查 API 结果。`
-      : `@${creator(row.creatorId)?.username || "-"} 的建联记录已提交 API。`);
+      : `@${creator(row.creatorId)?.username || "-"} 的${channelLabel(row.channel)}记录已提交 API。`);
   saveState();
   render();
 }
@@ -3031,6 +3043,31 @@ function targetOfficialId(apiResult) {
     || target.upstream?.data?.id
     || target.upstream?.data?.target_collaboration_id
     || "";
+}
+
+function targetReadyForNotifications(target) {
+  if (!target) return true;
+  return Boolean(target.officialId || target.status === "待达人接受");
+}
+
+function targetNotificationBlockReason(row) {
+  if (!row || isTargetInviteChannel(row.channel)) return "";
+  const target = targetCollaboration(row.targetCollaborationId);
+  if (!target || targetReadyForNotifications(target)) return "";
+  if (target.status === "定向邀约待配置") return "TikTok 定向邀约 schema 待确认";
+  if (target.status === "API提交失败" || target.status === "发送失败") return "TikTok 定向邀约提交失败";
+  if (target.status === "API结果待确认") return "TikTok 定向邀约结果缺少官方 ID";
+  return "TikTok 定向邀约尚未成功提交";
+}
+
+function markRowWaitingForTarget(row, reason) {
+  if (!row) return;
+  row.status = "等待定向邀约";
+  row.updatedAt = nowText();
+  row.lastMessage = `[${row.updatedAt}] ${channelLabel(row.channel)} 暂停发送：${reason}。请先完成同批 TikTok 定向邀约。\n${row.lastMessage || ""}`;
+  pushMessage("建联发送暂停", `@${creator(row.creatorId)?.username || "-"} 的 ${channelLabel(row.channel)} 已暂停：${reason}。`);
+  saveState();
+  render();
 }
 
 function localTargetSchemaRequiredResult(target, row, c) {
@@ -3124,22 +3161,20 @@ async function submitOutreachApi(id) {
       render();
       return;
     }
+    const targetBlockReason = targetNotificationBlockReason(row);
+    if (targetBlockReason) {
+      markRowWaitingForTarget(row, targetBlockReason);
+      return;
+    }
     try {
-      const target = targetCollaboration(row.targetCollaborationId);
-      const targetResult = target ? await submitTargetCollaborationForRow(row, c) : null;
       const data = await apiRequest("/api/email/outreach/send", {
         method: "POST",
         body: JSON.stringify(emailSmtpPayload(row, c)),
       });
-      const result = target
-        ? { email: data, target_collaboration: targetResult }
-        : data;
       row.status = "待回复";
       row.updatedAt = nowText();
-      row.apiResult = result;
-      row.lastMessage = target
-        ? `[${row.updatedAt}] TikTok 定向邀约已提交；Email 已通过 SMTP 提交发送，等待达人回复。\n${row.lastMessage || ""}`
-        : `[${row.updatedAt}] Email 已通过 SMTP 提交发送，等待达人回复。\n${row.lastMessage || ""}`;
+      row.apiResult = data;
+      row.lastMessage = `[${row.updatedAt}] Email 已通过 SMTP 提交发送，等待达人回复。\n${row.lastMessage || ""}`;
       pushMessage("Email发送成功", `@${c.username} 的 Email 建联已提交 SMTP。`);
       saveState();
       render();
@@ -3164,8 +3199,13 @@ async function submitOutreachApi(id) {
     render();
     return;
   }
+  const targetBlockReason = targetNotificationBlockReason(row);
+  if (targetBlockReason) {
+    markRowWaitingForTarget(row, targetBlockReason);
+    return;
+  }
   try {
-    const target = targetCollaboration(row.targetCollaborationId);
+    const target = isTargetInviteChannel(row.channel) ? targetCollaboration(row.targetCollaborationId) : null;
     const data = await apiRequest("/api/tiktok/outreach/submit", {
       method: "POST",
       body: JSON.stringify({
@@ -3240,6 +3280,8 @@ async function submitPendingOutreachBatch() {
       skipped += 1;
     } else if (current.status === "发送失败") {
       failed += 1;
+    } else if (current.status === "等待定向邀约") {
+      skipped += 1;
     } else if (current.status !== beforeStatus || current.apiResult || current.apiError) {
       submitted += 1;
     } else {
@@ -3882,7 +3924,7 @@ function saveOutreach(idList) {
         productId: selectedProducts[0]?.id,
         productIds: selectedProducts.map((p) => p.id),
         productsSnapshot: selectedProducts,
-        targetCollaborationId: null,
+        targetCollaborationId: targetCollab ? targetCollab.id : null,
         channel,
         channels,
         status,
