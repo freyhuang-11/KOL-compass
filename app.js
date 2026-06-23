@@ -992,6 +992,10 @@ function outreachDeliveryCell(o) {
     else items.push(deliveryPill("定向邀约", "未提交"));
   }
 
+  if (isTargetInviteChannel(o.channel) && !target) {
+    items.push(deliveryPill("定向邀约", "未提交"));
+  }
+
   if (o.channel === "TikTok私信") {
     if (result.im?.ok) items.push(deliveryPill("TikTok私信", "已发送"));
     else if (error) items.push(deliveryPill("TikTok私信", "失败", error.code || error.message || ""));
@@ -1984,10 +1988,15 @@ function emailAccountConfigured() {
 }
 
 function channelLabel(channel) {
+  if (channel === "TikTok定向邀约") return "TikTok定向邀约";
   if (channel === "TikTok私信") return "TikTok私信";
   if (channel === "Email") return "Email";
   if (channel === "WhatsApp") return "WhatsApp";
   return channel || "-";
+}
+
+function isTargetInviteChannel(channel) {
+  return channel === "TikTok定向邀约";
 }
 
 function validateChannelsForCreators(channels, targets) {
@@ -2654,7 +2663,7 @@ function outreachActions(o) {
   if (o.apiResult || o.apiError) {
     parts.push(`<button class="btn ghost" onclick="openOutreachApiResult(${o.id})">查看API结果</button>`);
   }
-  if (o.status !== "已关闭" && o.status !== "已转合作") {
+  if (!isTargetInviteChannel(o.channel) && o.status !== "已关闭" && o.status !== "已转合作") {
     parts.push(`<button class="btn" onclick="openReplyModal(${o.id})">回复</button>`);
   }
   if (o.status === "待API发送") {
@@ -2699,6 +2708,14 @@ function markOutreachApiSubmitted(id, apiResult = null) {
     target.apiResult = apiResult?.target_collaboration || null;
     if (officialId) target.officialId = officialId;
     target.updatedAt = nowText();
+    state.outreach.forEach((item) => {
+      if (item.id === row.id || item.targetCollaborationId !== target.id || !isTargetInviteChannel(item.channel)) return;
+      if (!["待API发送", "API结果待确认"].includes(item.status)) return;
+      item.status = row.status;
+      item.apiResult = apiResult;
+      item.updatedAt = row.updatedAt;
+      item.lastMessage = `[${row.updatedAt}] 同批 TikTok 定向邀约状态已同步：${item.status}。\n${item.lastMessage || ""}`;
+    });
   }
   pushMessage("建联API状态", targetBlocked
     ? `@${creator(row.creatorId)?.username || "-"} 的触达已提交，TikTok 定向邀约仍需确认官方 schema。`
@@ -3560,11 +3577,35 @@ function saveOutreach(idList) {
     const translatedMessage = editedTranslation && targets.length === 1
       ? editedTranslation
       : (translationLanguage ? translatedInviteDraft(translationLanguage, c, selectedProducts[0] || {}) : "");
+
+    if (targetCollab) {
+      const targetRecordId = Date.now() + index * 100;
+      const targetMessage = `${rendered}\n定向邀约：${targetCollab.name}（${targetCollab.status}）\n商品：${productNames}`;
+      state.outreach.unshift({
+        id: targetRecordId,
+        creatorId: c.id,
+        productId: selectedProducts[0]?.id,
+        productIds: selectedProducts.map((p) => p.id),
+        productsSnapshot: selectedProducts,
+        targetCollaborationId: targetCollab.id,
+        channel: "TikTok定向邀约",
+        channels: ["TikTok定向邀约"],
+        status: "待API发送",
+        messageText: rendered,
+        lastMessage: `${scheduledText} · ${targetMessage}`,
+        translatedMessage: "",
+        translationLanguage,
+        inviteLink: "",
+        updatedAt: nowText(),
+      });
+      created += 1;
+    }
+
     channels.forEach((channel, channelIndex) => {
       const pendingContact = needsContactEnrichment(channel, c);
       if (pendingContact) queueContactEnrichment(c, channel, productNames);
-      const recordId = Date.now() + index * 10 + channelIndex;
-      const status = pendingContact ? "联系方式补充中" : (channel === "TikTok私信" || targetCollab ? "待API发送" : "待回复");
+      const recordId = Date.now() + index * 100 + channelIndex + 1;
+      const status = pendingContact ? "联系方式补充中" : (channel === "TikTok私信" || channel === "Email" ? "待API发送" : "待回复");
       const officialNote = targetCollab ? `定向邀约：${targetCollab.name}（${targetCollab.status}）` : "仅建联消息";
       const messageWithContext = `${rendered}\n${officialNote}\n商品：${productNames}`;
       state.outreach.unshift({
@@ -3573,7 +3614,7 @@ function saveOutreach(idList) {
         productId: selectedProducts[0]?.id,
         productIds: selectedProducts.map((p) => p.id),
         productsSnapshot: selectedProducts,
-        targetCollaborationId: targetCollab?.id || null,
+        targetCollaborationId: null,
         channel,
         channels,
         status,
@@ -3586,7 +3627,7 @@ function saveOutreach(idList) {
       });
       created += 1;
     });
-    const hasPendingApi = channels.includes("TikTok私信") || Boolean(targetCollab);
+    const hasPendingApi = channels.includes("TikTok私信") || channels.includes("Email") || Boolean(targetCollab);
     c.status = channels.includes("Email") && needsContactEnrichment("Email", c) ? "联系方式补充中" : (hasPendingApi ? "待API发送" : "已发送");
   });
   state.bulkCreatorIds = [];

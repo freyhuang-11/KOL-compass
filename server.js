@@ -486,7 +486,7 @@ async function sendCreatorImMessage(conversationId, message) {
 }
 
 function isTikTokImChannel(channel) {
-  return String(channel || "").toLowerCase().includes("tiktok");
+  return String(channel || "") === "TikTok私信";
 }
 
 function commissionPercentToApiRate(value) {
