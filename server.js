@@ -848,6 +848,8 @@ async function getCategories(shop) {
   const shopId = shop?.shop_id || shop?.id || "";
   if (cipher) params.shop_cipher = cipher;
   if (shopId) params.shop_id = shopId;
+  // 请英文目录而非店铺所在地语言（避免越南语）；本地再映射成中文。
+  params.locale = "en-US";
   return tiktokFetch("/product/202309/categories", { params });
 }
 
@@ -858,7 +860,7 @@ function normalizeProducts(upstream) {
     const priceValue = item.price?.sale_price || item.price?.tax_exclusive_price || item.price?.original_price || skuPrice.sale_price || skuPrice.tax_exclusive_price || skuPrice.original_price || "";
     const currency = item.price?.currency || skuPrice.currency || "";
     const price = priceValue && currency ? `${currency} ${priceValue}` : priceValue;
-    const category = item.category_chains?.[0]?.local_name || item.category_name || item.category?.name || "TikTok Shop";
+    const category = normalizeCategoryLabel(item.category_chains?.[0]?.local_name || item.category_name || item.category?.name || "TikTok Shop");
     const imageUrl = item.main_images?.[0]?.urls?.[0] || item.main_images?.[0]?.url || item.images?.[0]?.urls?.[0] || item.images?.[0]?.url || item.product_images?.[0]?.urls?.[0] || item.cover_image?.url || "";
     const rawStatus = item.status || item.audit_status || "SYNCED";
     const normalizedStatus = normalizeProductStatus(rawStatus);
@@ -942,17 +944,17 @@ function normalizeCreators(upstream, categoryMap = readCategoryMap()) {
       tags,
       status: "待联系",
       email: "",
-      whatsapp: "",
       notes: "来自 TikTok Shop Affiliate Seller 达人搜索 API。",
     };
   });
 }
 
 function normalizeCreatorCategory(profile, categoryMap = readCategoryMap(), categoryLabels = []) {
-  if (profile.category || profile.main_category || profile.vertical) return profile.category || profile.main_category || profile.vertical;
   const ids = Array.isArray(profile.category_ids) ? profile.category_ids.filter(Boolean) : [];
   const labels = categoryLabels.length ? categoryLabels : ids.map((id) => categoryMap[String(id)]).filter(Boolean);
-  if (labels.length) return labels[0];
+  if (labels.length) return normalizeCategoryLabel(labels[0]);
+  const raw = profile.category || profile.main_category || profile.vertical;
+  if (raw) return normalizeCategoryLabel(raw);
   if (ids.length) return "TikTok Shop";
   return "TikTok Shop";
 }
@@ -1040,6 +1042,35 @@ function normalizeCategoryLabel(name) {
     "Bộ sưu tập": "收藏品",
     "Thời trang Hồi giáo": "穆斯林时尚",
     "Phụ kiện trang sức & Phái sinh": "珠宝配饰",
+    // 英文目录(locale=en-US)→中文，顶级类目
+    "Womenswear & Underwear": "女装与内衣",
+    "Menswear & Underwear": "男装与内衣",
+    "Beauty & Personal Care": "美妆个护",
+    "Phones & Electronics": "手机数码",
+    "Fashion Accessories": "时尚配饰",
+    "Home Supplies": "家居日用",
+    "Kids' Fashion": "童装童鞋",
+    "Baby & Maternity": "母婴用品",
+    "Shoes": "鞋靴",
+    "Sports & Outdoor": "户外运动",
+    "Toys & Hobbies": "玩具爱好",
+    "Household Appliances": "家用电器",
+    "Computers & Office Equipment": "电脑办公",
+    "Food & Beverages": "食品饮料",
+    "Health": "健康保健",
+    "Pet Supplies": "宠物用品",
+    "Automotive & Motorcycle": "汽车摩托",
+    "Books, Magazines & Audio": "图书文娱",
+    "Furniture": "家具",
+    "Luggage & Bags": "箱包",
+    "Kitchenware": "厨房用品",
+    "Textiles & Soft Furnishings": "家纺布艺",
+    "Home Improvement": "家装维修",
+    "Tools & Hardware": "工具五金",
+    "Collectibles": "收藏品",
+    "Muslim Fashion": "穆斯林时尚",
+    "Jewellery Accessories & Derivatives": "珠宝配饰",
+    "Jewelry Accessories & Derivatives": "珠宝配饰",
   };
   return map[text] || text;
 }
@@ -1118,7 +1149,6 @@ function upsertPlatformCreators(incoming, shop = null) {
         ...payload,
         id: current.id,
         email: payload.email || current.email || "",
-        whatsapp: payload.whatsapp || current.whatsapp || "",
         notes: current.notes && current.notes !== creator.notes ? current.notes : payload.notes,
       });
     } else {
@@ -1323,6 +1353,75 @@ function sanitizeGmvValue(value) {
     .replace(/^(\d+(?:[.,]\d+)?)([KMB]?)\s*[₫đ]\+?$/i, (_, amount, unit) => `VND ${amount}${unit.toUpperCase()}+`);
 }
 
+const TRANSLATE_LANG_CODES = {
+  "中文": "zh-CN",
+  "中文(简体)": "zh-CN",
+  "简体中文": "zh-CN",
+  "英语": "en",
+  "越南语": "vi",
+  "泰语": "th",
+  "马来语": "ms",
+  "印尼语": "id",
+  "菲律宾语": "tl",
+};
+
+function translateLangCode(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  if (TRANSLATE_LANG_CODES[raw]) return TRANSLATE_LANG_CODES[raw];
+  return raw.toLowerCase();
+}
+
+async function translateText({ text, source, target } = {}) {
+  const q = String(text || "").trim();
+  if (!q) {
+    const error = new Error("缺少要翻译的内容。");
+    error.statusCode = 400;
+    error.payload = { ok: false, code: "TRANSLATE_TEXT_MISSING", message: error.message };
+    throw error;
+  }
+  const sourceCode = translateLangCode(source) || "zh-CN";
+  const targetCode = translateLangCode(target) || "en";
+  if (sourceCode === targetCode) {
+    return { ok: true, translatedText: q, source: sourceCode, target: targetCode, provider: "none" };
+  }
+  const url = new URL("https://api.mymemory.translated.net/get");
+  url.searchParams.set("q", q);
+  url.searchParams.set("langpair", `${sourceCode}|${targetCode}`);
+  const email = process.env.MYMEMORY_EMAIL || "";
+  if (email) url.searchParams.set("de", email);
+
+  let response;
+  let data;
+  try {
+    response = await fetch(url);
+    data = await response.json();
+  } catch (cause) {
+    const error = new Error("翻译服务暂时无法访问，请稍后重试。");
+    error.statusCode = 502;
+    error.payload = { ok: false, code: "TRANSLATE_UNREACHABLE", message: error.message };
+    throw error;
+  }
+  const translated = data?.responseData?.translatedText || "";
+  const status = Number(data?.responseStatus || response.status || 0);
+  const looksLikeWarning = /MYMEMORY WARNING|PLEASE SELECT|INVALID/i.test(translated);
+  if (!response.ok || status >= 400 || !translated || looksLikeWarning) {
+    const detail = looksLikeWarning ? "翻译额度已用完，请稍后再试或更换语言。" : (data?.responseDetails || "翻译失败，请稍后重试。");
+    const error = new Error(detail);
+    error.statusCode = 502;
+    error.payload = { ok: false, code: "TRANSLATE_FAILED", message: detail };
+    throw error;
+  }
+  return {
+    ok: true,
+    translatedText: translated,
+    source: sourceCode,
+    target: targetCode,
+    provider: "mymemory",
+    match: data?.responseData?.match,
+  };
+}
+
 async function handle(req, res) {
   if (req.method === "OPTIONS") return json(res, 204, {});
   const requestUrl = new URL(req.url, `http://${req.headers.host || "127.0.0.1"}`);
@@ -1427,6 +1526,12 @@ async function handle(req, res) {
     if (requestUrl.pathname === "/api/email/outreach/send") {
       const body = req.method === "POST" ? await readRequestBody(req) : {};
       const result = await sendSmtpEmail(body);
+      return json(res, 200, result);
+    }
+
+    if (requestUrl.pathname === "/api/translate") {
+      const body = req.method === "POST" ? await readRequestBody(req) : {};
+      const result = await translateText(body);
       return json(res, 200, result);
     }
 
