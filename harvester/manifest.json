@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "KOL Compass 达人库采集器（内部）",
+  "version": "0.1.0",
+  "description": "内部工具：在卖家后台达人广场自动采集达人建库。仅 Samso 运营团队使用，不发给 B 端客户。",
+  "permissions": ["storage"],
+  "host_permissions": [
+    "https://affiliate.tiktok.com/*",
+    "http://127.0.0.1:8015/*"
+  ],
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [
+    {
+      "matches": ["https://affiliate.tiktok.com/connection/creator*"],
+      "js": ["market-inject.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["https://affiliate.tiktok.com/connection/creator*"],
+      "js": ["harvester.js"],
+      "run_at": "document_start"
+    }
+  ]
+}

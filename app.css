@@ -758,7 +758,7 @@ button {
 .object-head,
 .object-row {
   display: grid;
-  grid-template-columns: minmax(420px, 1fr) 130px 96px 120px 170px;
+  grid-template-columns: minmax(360px, 1fr) 120px 80px 110px 200px;
   gap: 16px;
   align-items: center;
 }
@@ -852,6 +852,34 @@ button {
 .product-object-list .object-row > div:nth-child(4) {
   white-space: nowrap;
 }
+/* 商品操作列：不换行，三按钮对齐 */
+.product-object-list .row-actions {
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+/* 达人内容表现：一行紧凑（视频 · 直播），不再两行长文 */
+.metric-inline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  font-size: 13px;
+}
+.metric-inline .dot { color: #cbd5e1; }
+/* 商品状态胶囊（替代原始 API 码） */
+.status-pill {
+  display: inline-block;
+  font-size: 12px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  white-space: nowrap;
+  border: 1px solid var(--border, #e2e8f0);
+  background: #f8fafc;
+  color: #475569;
+}
+.status-pill.success { color: #15803d; border-color: #86efac; background: #f0fdf4; }
+.status-pill.warning { color: #b45309; border-color: #fcd34d; background: #fffbeb; }
+.status-pill.neutral { color: #64748b; border-color: #e2e8f0; background: #f1f5f9; }
 
 .panel-empty {
   padding: 32px;
@@ -1698,7 +1726,15 @@ tr:last-child td {
   color: var(--muted);
   font-size: 13px;
   border-bottom: 2px solid transparent;
+  cursor: pointer;
+  user-select: none;
 }
+.tab:hover { color: var(--primary); }
+/* 详情·基本信息 键值表 */
+.kv-table { width: 100%; border-collapse: collapse; }
+.kv-table th { text-align: left; color: var(--muted, #64748b); font-weight: 500; font-size: 13px; padding: 6px 12px 6px 0; white-space: nowrap; vertical-align: top; width: 96px; }
+.kv-table td { padding: 6px 0; font-size: 13px; }
+.context-banner { display: flex; align-items: center; justify-content: space-between; gap: 12px; background: #eff6ff; border-color: #bfdbfe; }
 
 .tab.active {
   color: var(--primary);
@@ -2102,6 +2138,88 @@ tr:last-child td {
   padding: 2px 8px;
   font-size: 12px;
 }
+
+/* 建联前：出单潜力分 */
+.score-cell { display: flex; align-items: center; gap: 6px; }
+.score-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 9999px;
+  font-weight: 700;
+  font-size: 13px;
+  color: #fff;
+}
+.score-pill.high { background: #16a34a; }
+.score-pill.mid { background: #2563eb; }
+.score-pill.low { background: #94a3b8; }
+.score-tag {
+  font-size: 11px;
+  color: #16a34a;
+  border: 1px solid #16a34a;
+  border-radius: 6px;
+  padding: 0 4px;
+  white-space: nowrap;
+}
+.score-tag.high { color: #16a34a; border-color: #16a34a; }
+.score-tag.mid { color: #2563eb; border-color: #2563eb; }
+.score-tag.low { color: #94a3b8; border-color: #cbd5e1; }
+/* 表头"算法说明"问号 */
+.score-help {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 15px; height: 15px; margin-left: 4px;
+  border-radius: 50%; border: 1px solid #cbd5e1;
+  color: #64748b; font-size: 10px; font-weight: 700;
+  cursor: pointer; vertical-align: middle;
+}
+.score-help:hover { background: #2563eb; color: #fff; border-color: #2563eb; }
+.score-legend { font-size: 12px; color: #475569; display: inline-flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.score-legend b { font-weight: 700; }
+.score-legend .score-pill { color: #fff; font-size: 11px; padding: 0 7px; }
+.help-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.help-table td { padding: 5px 8px; border-bottom: 1px solid #eef2f7; vertical-align: top; }
+.help-table td:nth-child(2) { color: #2563eb; font-weight: 700; white-space: nowrap; text-align: right; width: 44px; }
+.help-table td:last-child { color: #475569; }
+/* 建联前轻提示：仅在确认达人时出现，中性不刺眼 */
+.fresh-hint {
+  font-size: 12px;
+  color: #475569;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-left: 3px solid #94a3b8;
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+}
+/* 历史建联结果徽标 */
+.legacy-pill {
+  display: inline-block;
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  border: 1px solid var(--border, #e2e8f0);
+  color: #475569;
+  background: #f8fafc;
+  margin-right: 4px;
+}
+.legacy-pill.good { color: #15803d; border-color: #86efac; background: #f0fdf4; }
+.legacy-pill.warn { color: #b91c1c; border-color: #fca5a5; background: #fef2f2; }
+/* 建联前评估卡 */
+.eval-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.eval-bars { display: flex; flex-direction: column; gap: 6px; }
+.eval-row { display: grid; grid-template-columns: 64px 1fr 28px; align-items: center; gap: 8px; font-size: 12px; }
+.eval-bar { height: 7px; border-radius: 4px; background: #eef2f7; overflow: hidden; }
+.eval-bar > i { display: block; height: 100%; background: #2563eb; }
+.eval-row b { text-align: right; }
+.eval-hist { margin-top: 10px; font-size: 12px; }
+/* 建联前体检·近期表现 */
+.perf-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 8px; }
+.perf-cell { background: #f8fafc; border: 1px solid #eef2f7; border-radius: 7px; padding: 7px 4px; text-align: center; }
+.perf-cell b { display: block; font-size: 14px; }
+.perf-cell .muted { font-size: 11px; }
 
 /* 可点击的渠道徽标：跳到该渠道详情 */
 .badge.badge-link {

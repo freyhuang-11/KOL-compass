@@ -1,0 +1,19 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="达人建联工具 logo">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3b82f6"/>
+      <stop offset="1" stop-color="#1e3a8a"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="512" height="512" rx="112" fill="url(#bg)"/>
+  <!-- paper plane = outreach / send -->
+  <g fill="#ffffff">
+    <path d="M372 150 L150 256 L246 286 L286 246 Z" opacity="0.95"/>
+    <path d="M372 150 L262 300 L246 286 L286 246 Z" opacity="0.78"/>
+    <path d="M262 300 L262 362 L300 318 Z" opacity="0.6"/>
+  </g>
+  <!-- connection node -->
+  <circle cx="372" cy="150" r="14" fill="#ffffff"/>
+  <!-- wordmark -->
+  <text x="256" y="430" font-family="-apple-system, 'Segoe UI', 'Microsoft YaHei', Roboto, sans-serif" font-size="62" font-weight="700" fill="#ffffff" text-anchor="middle" letter-spacing="2">达人建联</text>
+</svg>

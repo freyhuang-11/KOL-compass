@@ -1,0 +1,31 @@
+{
+  "manifest_version": 3,
+  "name": "KOL Compass 建联前采集器",
+  "version": "0.1.0",
+  "description": "在 BD 已登录的 TikTok 页面采集达人内容信号（粉丝/简介/近期内容/类目契合），回传 KOL Compass 达人库。仅用于自有 BD 工作流。",
+  "permissions": ["storage", "activeTab", "scripting"],
+  "host_permissions": [
+    "https://*.tiktok.com/*",
+    "http://127.0.0.1:8015/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.tiktok.com/@*"],
+      "js": ["inject.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["https://www.tiktok.com/@*"],
+      "js": ["content.js"],
+      "run_at": "document_start"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "KOL Compass 采集器"
+  }
+}

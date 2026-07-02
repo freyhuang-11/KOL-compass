@@ -1,5 +1,7 @@
 # KOL Compass Project Memory
 
+> ⚠️ **产品方向以 `docs/STRATEGY.md` 为准**：核心是【建联前分析】+【建联后管理·投流决策】，建联是地基。本文件是技术事实/边界记录，不代表产品重心。
+
 ## Codex 工作铁律
 
 - 后续开发和验收必须遵守 `docs/CODEX_WORK_RULES.md`。

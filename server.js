@@ -18,16 +18,21 @@ const APP_SECRET = process.env.TIKTOK_SHOP_APP_SECRET || process.env.APP_SECRET 
 const REDIRECT_URI = process.env.TIKTOK_SHOP_REDIRECT_URI || "http://127.0.0.1:8015/api/tiktok/callback";
 const DATA_DIR = path.join(__dirname, ".data");
 const TOKEN_FILE = path.join(DATA_DIR, "tiktok-token.json");
+const TOKENS_FILE = path.join(DATA_DIR, "tiktok-tokens.json");
 const STATE_FILE = path.join(DATA_DIR, "tiktok-oauth-state.json");
 const CREATOR_FILE = path.join(DATA_DIR, "platform-creators.json");
 const CATEGORY_FILE = path.join(DATA_DIR, "tiktok-categories.json");
 const CREATOR_JOB_FILE = path.join(DATA_DIR, "platform-creator-job.json");
+const MERCHANT_CONTEXT_FILE = path.join(DATA_DIR, "merchant-context.json");
+const LEGACY_IMPORT_FILE = path.join(DATA_DIR, "legacy-import", "sg-creators.json");
+const AVATAR_DIR = path.join(DATA_DIR, "avatars");
 const CREATOR_MARKET_PRIORITY = (process.env.KOL_CREATOR_MARKET_PRIORITY || "SG,MY,TH,VN,PH")
   .split(",")
   .map((x) => x.trim().toUpperCase())
   .filter(Boolean);
 const CREATOR_AUTO_IMPORT_ENABLED = process.env.KOL_CREATOR_AUTO_IMPORT_ENABLED !== "false";
-const CREATOR_AUTO_IMPORT_INTERVAL_MS = Number(process.env.KOL_CREATOR_AUTO_IMPORT_INTERVAL_MS || 5 * 1000);
+// 实测：marketplace search 约每翻 4 页就被限流(36009002)。间隔放到 20s 让采集稳在限流线下持续爬，而不是疯狂撞墙触发长退避。
+const CREATOR_AUTO_IMPORT_INTERVAL_MS = Number(process.env.KOL_CREATOR_AUTO_IMPORT_INTERVAL_MS || 20 * 1000);
 const CREATOR_AUTO_IMPORT_INITIAL_DELAY_MS = Number(process.env.KOL_CREATOR_AUTO_IMPORT_INITIAL_DELAY_MS || 5 * 1000);
 const CREATOR_AUTO_IMPORT_PAGE_SIZE = Number(process.env.KOL_CREATOR_AUTO_IMPORT_PAGE_SIZE || 20);
 const CREATOR_AUTO_IMPORT_PAGES_PER_RUN = Number(process.env.KOL_CREATOR_AUTO_IMPORT_PAGES_PER_RUN || 1);
@@ -104,6 +109,55 @@ function readPlatformCreators() {
 
 function writePlatformCreators(rows) {
   writeJson(CREATOR_FILE, Array.isArray(rows) ? rows.map(normalizeStoredCreator) : []);
+}
+
+// 头像缓存：TikTok 签名 CDN 链接会过期/防盗链，落到本地再服务，避免裂图
+const AVATAR_EXT_BY_TYPE = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif" };
+function findCachedAvatar(cid) {
+  for (const [type, ext] of Object.entries(AVATAR_EXT_BY_TYPE)) {
+    const file = path.join(AVATAR_DIR, `${cid}.${ext}`);
+    if (fs.existsSync(file)) return { file, type };
+  }
+  return null;
+}
+// 头像 key：前端达人 id 是重排序号（1,2,3…），跨刷新不稳，会全裂。
+// 改用 username 当 key（TikTok 用户名稳定、跨市场唯一），大小写不敏感。
+function avatarKey(cid) {
+  return String(cid || "").trim().toLowerCase().replace(/[^a-z0-9._-]/g, "_");
+}
+async function serveCreatorAvatar(res, cid) {
+  if (!cid) return json(res, 400, { ok: false, code: "BAD_CID" });
+  const key = avatarKey(cid);
+  let cached = findCachedAvatar(key);
+  if (!cached) {
+    const raw = String(cid || "").trim().toLowerCase();
+    // 兼容老调用：cid 既可能是 username，也可能是历史的 id
+    const creator = readPlatformCreators().find(
+      (c) => String(c.username || "").trim().toLowerCase() === raw || String(c.id) === String(cid)
+    );
+    const url = creator && creator.avatarUrl;
+    if (!url) return json(res, 404, { ok: false, code: "NO_AVATAR" });
+    try {
+      const upstream = await fetch(url);
+      if (!upstream.ok) return json(res, 404, { ok: false, code: "AVATAR_FETCH_FAILED" });
+      const type = (upstream.headers.get("content-type") || "image/jpeg").split(";")[0].trim();
+      const ext = AVATAR_EXT_BY_TYPE[type] || "jpg";
+      const buf = Buffer.from(await upstream.arrayBuffer());
+      if (!fs.existsSync(AVATAR_DIR)) fs.mkdirSync(AVATAR_DIR, { recursive: true });
+      const file = path.join(AVATAR_DIR, `${key}.${ext}`);
+      fs.writeFileSync(file, buf);
+      cached = { file, type: AVATAR_EXT_BY_TYPE[ext] ? type : "image/jpeg" };
+    } catch {
+      return json(res, 404, { ok: false, code: "AVATAR_FETCH_ERROR" });
+    }
+  }
+  const data = fs.readFileSync(cached.file);
+  res.writeHead(200, {
+    "Content-Type": cached.type,
+    "Cache-Control": "public, max-age=604800",
+    "Access-Control-Allow-Origin": "*",
+  });
+  res.end(data);
 }
 
 function metricNumber(value) {
@@ -310,19 +364,83 @@ async function tiktokFetch(apiPath, { method = "GET", params = {}, body = null, 
   return data;
 }
 
+// ——— 多店铺 token 存储（按 open_id 存多份，支持单商家多店并存） ———
+function readTokenStore() {
+  const store = readJson(TOKENS_FILE, null);
+  if (store && store.tokens && typeof store.tokens === "object") return store;
+  // 迁移旧单 token 文件
+  const legacy = readJson(TOKEN_FILE, null);
+  if (legacy && legacy.access_token) {
+    const oid = legacy.open_id || "default";
+    return { tokens: { [oid]: { ...legacy, shops: legacy.shops || [] } }, activeOpenId: oid };
+  }
+  return { tokens: {}, activeOpenId: "" };
+}
+function writeTokenStore(store) {
+  writeJson(TOKENS_FILE, store && typeof store === "object" ? store : { tokens: {}, activeOpenId: "" });
+}
+function activeToken() {
+  const store = readTokenStore();
+  return store.tokens[store.activeOpenId] || Object.values(store.tokens)[0] || null;
+}
 function readToken() {
-  return readJson(TOKEN_FILE, null);
+  return activeToken();
+}
+function shopCipherField(shop) {
+  return shop?.cipher || shop?.shop_cipher || "";
+}
+function upsertTokenEntry(tokenData, shops) {
+  const store = readTokenStore();
+  const oid = tokenData.open_id || tokenData.seller_name || "default";
+  const prev = store.tokens[oid] || {};
+  store.tokens[oid] = {
+    ...prev,
+    ...tokenData,
+    shops: Array.isArray(shops) && shops.length ? shops : (prev.shops || []),
+    saved_at: new Date().toISOString(),
+  };
+  store.activeOpenId = oid;
+  writeTokenStore(store);
+  writeJson(TOKEN_FILE, store.tokens[oid]); // 兼容仍读旧单文件的零散调用
+  return store.tokens[oid];
+}
+// 按 shop_cipher 找到对应店铺的 access_token；找不到回落 active
+function accessTokenForCipher(cipher) {
+  if (cipher) {
+    const store = readTokenStore();
+    for (const t of Object.values(store.tokens)) {
+      if ((t.shops || []).some((s) => shopCipherField(s) === cipher)) return t.access_token;
+    }
+  }
+  return activeToken()?.access_token || null;
+}
+// 所有已授权店铺并集（每个标 owner 卖家）
+function allAuthorizedShops() {
+  const store = readTokenStore();
+  const out = [];
+  for (const t of Object.values(store.tokens)) {
+    for (const s of (t.shops || [])) out.push({ ...s, ownerOpenId: t.open_id || null, ownerSellerName: t.seller_name || null });
+  }
+  return out;
 }
 
 function tokenSummary() {
-  const token = readToken();
-  if (!token) return null;
+  const store = readTokenStore();
+  const token = activeToken();
+  const sellers = Object.values(store.tokens).map((t) => ({
+    open_id: t.open_id || null,
+    seller_name: t.seller_name || null,
+    shops: (t.shops || []).length,
+    active: (t.open_id || "") === store.activeOpenId,
+  }));
+  if (!token) return sellers.length ? { sellers } : null;
   return {
     open_id: token.open_id || null,
     seller_name: token.seller_name || null,
     access_token_expires_in: token.access_token_expires_in || token.expires_in || null,
     refresh_token_expires_in: token.refresh_token_expires_in || token.refresh_expires_in || null,
     saved_at: token.saved_at || null,
+    sellers,
   };
 }
 
@@ -348,13 +466,16 @@ async function exchangeToken(code) {
     throw error;
   }
   const token = { ...data.data, saved_at: new Date().toISOString() };
-  writeJson(TOKEN_FILE, token);
-  return token;
+  // 用新 token 拉它名下店铺，按 open_id 存进多店铺 store（不覆盖其它店）
+  let shops = [];
+  try { shops = await getAuthorizedShops(token.access_token); } catch { shops = []; }
+  return upsertTokenEntry(token, shops);
 }
 
-async function refreshToken() {
-  const existing = readToken();
-  if (!existing?.refresh_token) {
+async function refreshToken(openId) {
+  const store = readTokenStore();
+  const target = openId ? store.tokens[openId] : activeToken();
+  if (!target?.refresh_token) {
     const error = new Error("Refresh token not found. Bind a shop first.");
     error.statusCode = 401;
     error.payload = { ok: false, code: "REFRESH_TOKEN_MISSING", message: error.message };
@@ -370,7 +491,7 @@ async function refreshToken() {
   const url = new URL("/api/v2/token/refresh", AUTH_BASE_URL);
   url.searchParams.set("app_key", APP_KEY);
   url.searchParams.set("app_secret", APP_SECRET);
-  url.searchParams.set("refresh_token", existing.refresh_token);
+  url.searchParams.set("refresh_token", target.refresh_token);
   url.searchParams.set("grant_type", "refresh_token");
   const response = await fetch(url);
   const data = await response.json();
@@ -380,13 +501,13 @@ async function refreshToken() {
     error.payload = { ok: false, code: data.code || "TOKEN_REFRESH_FAILED", message: error.message, upstream: data };
     throw error;
   }
-  const token = { ...data.data, saved_at: new Date().toISOString() };
-  writeJson(TOKEN_FILE, token);
-  return token;
+  const token = { ...target, ...data.data, saved_at: new Date().toISOString() };
+  // 刷新保留原店铺列表
+  return upsertTokenEntry(token, target.shops || []);
 }
 
-async function getAuthorizedShops() {
-  const data = await tiktokFetch("/authorization/202309/shops");
+async function getAuthorizedShops(accessToken = null) {
+  const data = await tiktokFetch("/authorization/202309/shops", accessToken ? { token: accessToken } : {});
   const shops = data.data?.shops || [];
   return shops;
 }
@@ -405,12 +526,12 @@ async function searchProducts(shopCipher, pageSize = 20, pageToken = "") {
   const params = { shop_cipher: shopCipher, page_size: Math.min(Number(pageSize) || 20, 100) };
   if (pageToken) params.page_token = pageToken;
   const body = { status: "ALL" };
-  const upstream = await tiktokFetch("/product/202309/products/search", { method: "POST", params, body });
+  const upstream = await tiktokFetch("/product/202309/products/search", { method: "POST", params, body, token: accessTokenForCipher(shopCipher) });
   return enrichProductSearch(upstream, shopCipher);
 }
 
 async function getProduct(shopCipher, productId) {
-  return tiktokFetch(`/product/202309/products/${productId}`, { params: { shop_cipher: shopCipher } });
+  return tiktokFetch(`/product/202309/products/${productId}`, { params: { shop_cipher: shopCipher }, token: accessTokenForCipher(shopCipher) });
 }
 
 async function enrichProductSearch(upstream, shopCipher) {
@@ -429,7 +550,7 @@ async function enrichProductSearch(upstream, shopCipher) {
   return { ...upstream, data: { ...(upstream.data || {}), products: detailed } };
 }
 
-async function searchCreators(shopCipher, keyword = "", pageSize = 12, pageToken = "") {
+async function searchCreators(shopCipher, keyword = "", pageSize = 12, pageToken = "", extraBody = null) {
   if (!shopCipher) {
     const shops = await getAuthorizedShops();
     shopCipher = shops[0]?.cipher || shops[0]?.shop_cipher;
@@ -442,8 +563,9 @@ async function searchCreators(shopCipher, keyword = "", pageSize = 12, pageToken
   }
   const params = { shop_cipher: shopCipher, page_size: [12, 20].includes(Number(pageSize)) ? Number(pageSize) : 12 };
   if (pageToken) params.page_token = pageToken;
-  const body = keyword ? { query: keyword } : {};
-  return tiktokFetch("/affiliate_seller/202508/marketplace_creators/search", { method: "POST", params, body });
+  // extraBody：实验/分区用，传任意筛选结构（如 {filter:{category_ids:[...]}}）；否则退回文本 query
+  const body = (extraBody && typeof extraBody === "object") ? extraBody : (keyword ? { query: keyword } : {});
+  return tiktokFetch("/affiliate_seller/202508/marketplace_creators/search", { method: "POST", params, body, token: accessTokenForCipher(shopCipher) });
 }
 
 function extractConversationId(upstream) {
@@ -466,6 +588,7 @@ async function createCreatorConversation(shopCipher, creatorOpenId) {
     method: "POST",
     params: { shop_cipher: shopCipher },
     body: { creator_open_id: creatorOpenId },
+    token: accessTokenForCipher(shopCipher),
   });
 }
 
@@ -483,6 +606,67 @@ async function sendCreatorImMessage(conversationId, message) {
       content: JSON.stringify({ content: message }),
     },
   });
+}
+
+// ——— 寄样/履约 API（建联后·样品成功率）。官方端点，零手填。———
+async function resolveShopCipher(shopCipher) {
+  if (shopCipher) return shopCipher;
+  const shops = await getAuthorizedShops();
+  return shops[0] ? shopCipherField(shops[0]) : "";
+}
+
+async function searchSampleApplications(shopCipher, { pageSize = 20, pageToken = "", status = "" } = {}) {
+  shopCipher = await resolveShopCipher(shopCipher);
+  if (!shopCipher) {
+    const error = new Error("No authorized shop cipher. Bind a shop first.");
+    error.statusCode = 404;
+    error.payload = { ok: false, code: "SHOP_CIPHER_MISSING", message: error.message };
+    throw error;
+  }
+  const params = { shop_cipher: shopCipher, page_size: Math.min(Number(pageSize) || 20, 50) };
+  if (pageToken) params.page_token = pageToken;
+  const body = {};
+  if (status) body.status = status;
+  return tiktokFetch("/affiliate_seller/202508/sample_applications/search", {
+    method: "POST", params, body, token: accessTokenForCipher(shopCipher),
+  });
+}
+
+async function searchSampleFulfillments(shopCipher, applicationId) {
+  shopCipher = await resolveShopCipher(shopCipher);
+  if (!shopCipher || !applicationId) {
+    const error = new Error("Missing shop_cipher or application_id for fulfillments.");
+    error.statusCode = 400;
+    error.payload = { ok: false, code: "SAMPLE_FULFILLMENT_PARAM_MISSING", message: error.message };
+    throw error;
+  }
+  return tiktokFetch(`/affiliate_seller/202409/sample_applications/${encodeURIComponent(applicationId)}/fulfillments/search`, {
+    method: "POST", params: { shop_cipher: shopCipher, page_size: 20 }, body: {}, token: accessTokenForCipher(shopCipher),
+  });
+}
+
+// 拉申请 + 各自履约，算"拿样未产出=骗样嫌疑"风险旗标
+async function sampleOverview(shopCipher, options = {}) {
+  shopCipher = await resolveShopCipher(shopCipher);
+  const upstream = await searchSampleApplications(shopCipher, options);
+  const apps = upstream?.data?.sample_applications || upstream?.data?.applications || upstream?.data?.list || [];
+  const enriched = await Promise.all(apps.slice(0, 20).map(async (app) => {
+    const appId = app.id || app.application_id || app.sample_application_id || "";
+    let fulfillments = [];
+    if (appId) {
+      try {
+        const f = await searchSampleFulfillments(shopCipher, appId);
+        fulfillments = f?.data?.fulfillments || f?.data?.list || [];
+      } catch { fulfillments = []; }
+    }
+    // 履约判断：寄出/签收 + 是否产出内容(VIDEO)
+    const blob = JSON.stringify(fulfillments).toUpperCase();
+    const shipped = /SHIP|DELIVER|TRANSIT|SIGNED|RECEIV/.test(blob);
+    const producedContent = /"VIDEO"|CONTENT|PUBLISHED|POSTED/.test(blob);
+    const riskNoOutput = shipped && !producedContent; // 拿样未产出
+    return { ...app, fulfillments, _shipped: shipped, _producedContent: producedContent, _riskNoOutput: riskNoOutput };
+  }));
+  return { ok: true, applications: enriched, next_page_token: upstream?.data?.next_page_token || "", total: apps.length };
 }
 
 function outreachChannelType(outreachOrChannel) {
@@ -637,6 +821,7 @@ async function createTargetCollaboration(target = {}, outreach = {}) {
     method: "POST",
     params: { shop_cipher: shopCipher },
     body,
+    token: accessTokenForCipher(shopCipher),
   });
   return {
     ok: true,
@@ -850,7 +1035,7 @@ async function getCategories(shop) {
   if (shopId) params.shop_id = shopId;
   // 请英文目录而非店铺所在地语言（避免越南语）；本地再映射成中文。
   params.locale = "en-US";
-  return tiktokFetch("/product/202309/categories", { params });
+  return tiktokFetch("/product/202309/categories", { params, token: accessTokenForCipher(cipher) });
 }
 
 function normalizeProducts(upstream) {
@@ -989,12 +1174,14 @@ function shopLabel(shop) {
 }
 
 function platformCreatorKeys(row) {
+  // username 大小写不敏感（老库 IamJamieYeo vs 平台 iamjamieyeo 是同一人）
   const keys = [];
   const shopKey = row.sourceShopCipher || "";
-  const identity = row.sourceId || row.username || "";
+  const uname = String(row.username || "").trim().toLowerCase();
+  const identity = row.sourceId || uname;
   if (shopKey && identity) keys.push(`${shopKey}:${identity}`);
-  if (row.sourceId) keys.push(row.sourceId);
-  if (row.username) keys.push(row.username);
+  if (row.sourceId) keys.push(String(row.sourceId));
+  if (uname) keys.push(`u:${uname}`);
   return keys.filter(Boolean);
 }
 
@@ -1120,7 +1307,7 @@ function relabelPlatformCreators(categoryMap) {
   return rows;
 }
 
-function upsertPlatformCreators(incoming, shop = null) {
+function upsertPlatformCreators(incoming, shop = null, options = {}) {
   const rows = readPlatformCreators();
   const existing = new Map();
   for (const row of rows) {
@@ -1130,6 +1317,7 @@ function upsertPlatformCreators(incoming, shop = null) {
   const sourceShopCipher = shop ? shopCipher(shop) : "";
   const sourceShopName = shop ? shopLabel(shop) : "";
   const sourceShopRegion = shop ? normalizeCreatorRegion(shopRegion(shop)) : "";
+  const defaultSource = options.librarySource || "platform";
   let changed = 0;
 
   for (const creator of incoming || []) {
@@ -1140,17 +1328,43 @@ function upsertPlatformCreators(incoming, shop = null) {
       sourceShopCipher: creator.sourceShopCipher || sourceShopCipher,
       sourceShopName: creator.sourceShopName || sourceShopName,
       sourceShopRegion: creator.sourceShopRegion || sourceShopRegion || region,
-      librarySource: "platform",
+      librarySource: creator.librarySource || defaultSource,
       updatedAt: new Date().toISOString(),
     });
     const current = platformCreatorKeys(payload).map((key) => existing.get(key)).find(Boolean);
     if (current) {
-      Object.assign(current, {
-        ...payload,
-        id: current.id,
+      // 联系方式/建联历史：补缺不抹真值（空值不覆盖已有），双向保护
+      const contacts = {
         email: payload.email || current.email || "",
-        notes: current.notes && current.notes !== creator.notes ? current.notes : payload.notes,
-      });
+        whatsapp: payload.whatsapp || current.whatsapp || "",
+        instagram: payload.instagram || current.instagram || "",
+        wechat: payload.wechat || current.wechat || "",
+        contactPerson: payload.contactPerson || current.contactPerson || "",
+        legacyOutreach: current.legacyOutreach || payload.legacyOutreach || null,
+      };
+      const incomingIsFresh = payload.librarySource !== "legacy-import";
+      if (incomingIsFresh) {
+        // 新鲜 TikTok：指标用新值覆盖、清除估算标，联系方式/建联历史保留
+        Object.assign(current, {
+          ...payload,
+          id: current.id,
+          ...contacts,
+          metricsEstimated: false,
+          notes: current.notes && current.notes !== creator.notes ? current.notes : payload.notes,
+        });
+      } else {
+        // 老库导入：只补联系方式/历史 + 缺失指标，绝不覆盖已有(尤其新鲜)指标
+        Object.assign(current, contacts);
+        const currentEstimated = current.metricsEstimated === true || !current.sourceId;
+        if (currentEstimated) {
+          if (!current.followers) current.followers = payload.followers;
+          if (!current.gmv || current.gmv === "-") current.gmv = payload.gmv;
+          if (!current.avgVideoViews) current.avgVideoViews = payload.avgVideoViews;
+          if (!current.category || current.category === "TikTok Shop") current.category = payload.category;
+          if (!Array.isArray(current.categoryLabels) || !current.categoryLabels.length) current.categoryLabels = payload.categoryLabels;
+          if (current.metricsEstimated == null) current.metricsEstimated = true;
+        }
+      }
     } else {
       const next = {
         ...payload,
@@ -1183,6 +1397,151 @@ async function importPlatformCreatorsFromTikTok(options = {}) {
   };
 }
 
+// 一次性导入老系统历史库（联系方式 + 建联历史为真值，指标为估算待刷新）
+function importLegacyCreators() {
+  const items = readJson(LEGACY_IMPORT_FILE, []);
+  if (!Array.isArray(items) || !items.length) {
+    const err = new Error("未找到老库导入文件或为空，请先跑 scripts/export-legacy-creators.py");
+    err.statusCode = 404;
+    err.payload = { ok: false, code: "LEGACY_FILE_MISSING", file: LEGACY_IMPORT_FILE };
+    throw err;
+  }
+  const incoming = items.map((it) => ({
+    username: String(it.username || "").replace(/^@/, ""),
+    nickname: it.nickname || it.username,
+    email: it.email || "",
+    whatsapp: it.whatsapp || "",
+    instagram: it.instagram || "",
+    wechat: it.wechat || "",
+    contactPerson: it.contactPerson || "",
+    region: it.region || "SG",
+    followers: Number(it.followers || 0),
+    gmv: it.gmv || 0,
+    avgVideoViews: Number(it.avgVideoViews || 0),
+    category: it.category || "",
+    categoryLabels: Array.isArray(it.categoryLabels) ? it.categoryLabels : [],
+    creatorLevel: it.creatorLevel || "",
+    metricsEstimated: true,
+    librarySource: "legacy-import",
+    legacyOutreach: it.legacyOutreach || null,
+    status: "待联系",
+    notes: "来自老系统历史库：联系方式与建联历史为真值，粉丝/GMV/类目为估算待刷新。",
+  })).filter((c) => c.username);
+  const result = upsertPlatformCreators(incoming, null, { librarySource: "legacy-import" });
+  return { ok: true, file: LEGACY_IMPORT_FILE, source: items.length, changed: result.changed, total: result.total };
+}
+
+// 接收 Chrome 扩展（建联前分析）采集的达人内容信号，并入达人库
+function ingestExtensionCreators(payload = {}) {
+  const list = Array.isArray(payload.creators) ? payload.creators : (payload.creator ? [payload.creator] : []);
+  if (!list.length) {
+    const err = new Error("ingest 缺少 creators 数据");
+    err.statusCode = 400;
+    err.payload = { ok: false, code: "INGEST_EMPTY" };
+    throw err;
+  }
+  const incoming = list.map((it) => {
+    const username = String(it.username || it.handle || "").replace(/^@/, "").trim();
+    if (!username) return null;
+    const captions = Array.isArray(it.recentCaptions) ? it.recentCaptions.filter(Boolean).slice(0, 30) : [];
+    const topics = Array.isArray(it.contentTopics) ? it.contentTopics.filter(Boolean).slice(0, 20) : [];
+    // 建联前体检（扩展钩 item_list 算的近期表现）——清洗后存档
+    let recentPerf = null;
+    if (it.recentPerf && typeof it.recentPerf === "object") {
+      const p = it.recentPerf;
+      recentPerf = {
+        sampleCount: Number(p.sampleCount || 0) || 0,
+        avgPlay: Number(p.avgPlay || 0) || 0,
+        avgLike: Number(p.avgLike || 0) || 0,
+        avgComment: Number(p.avgComment || 0) || 0,
+        avgEngagement: Number(p.avgEngagement || 0) || 0,
+        playMin: Number(p.playMin || 0) || 0,
+        playMax: Number(p.playMax || 0) || 0,
+        postsPerWeek: Number(p.postsPerWeek || 0) || 0,
+        lastPostAt: String(p.lastPostAt || ""),
+        // 带货信号（替代评论率）：近期挂商品的视频数 / 占比 + 在带的商品名（产品级匹配用）
+        ecVideoCount: Number(p.ecVideoCount || 0) || 0,
+        ecVideoRatio: Number(p.ecVideoRatio || 0) || 0,
+        ecProductNames: Array.isArray(p.ecProductNames) ? p.ecProductNames.filter(Boolean).map((s) => String(s).slice(0, 80)).slice(0, 20) : [],
+      };
+    }
+    return {
+      username,
+      nickname: it.nickname || username,
+      followers: Number(it.followers || 0) || 0,
+      region: it.region || "",
+      bio: String(it.bio || "").slice(0, 600),
+      recentCaptions: captions,
+      contentTopics: topics,
+      avgVideoViews: Number(it.avgVideoViews || (recentPerf && recentPerf.avgPlay) || 0) || 0,
+      recentPerf,
+      commentIntent: (it.commentIntent && typeof it.commentIntent === "object") ? {
+        sampled: Number(it.commentIntent.sampled || 0) || 0,
+        intentCount: Number(it.commentIntent.intentCount || 0) || 0,
+        intentRatio: Number(it.commentIntent.intentRatio || 0) || 0,
+        samples: Array.isArray(it.commentIntent.samples) ? it.commentIntent.samples.filter(Boolean).slice(0, 5).map((s) => String(s).slice(0, 120)) : [],
+      } : null,
+      sourceUrl: it.sourceUrl || "",
+      extensionCapturedAt: it.capturedAt || new Date().toISOString(),
+      librarySource: "extension",
+    };
+  }).filter(Boolean);
+  if (!incoming.length) {
+    const err = new Error("ingest creators 均缺少 username");
+    err.statusCode = 400;
+    err.payload = { ok: false, code: "INGEST_NO_USERNAME" };
+    throw err;
+  }
+  const result = upsertPlatformCreators(incoming, null, { librarySource: "extension" });
+  return { ok: true, received: list.length, changed: result.changed, total: result.total };
+}
+
+// 达人广场钩子回流：把扩展钩到的达人列表（真实广场数据）入库，扩大达人库广度
+function ingestMarketplaceCreators(payload = {}) {
+  const list = Array.isArray(payload.creators) ? payload.creators : [];
+  if (!list.length) {
+    const err = new Error("marketplace ingest 缺少 creators");
+    err.statusCode = 400;
+    err.payload = { ok: false, code: "MARKET_INGEST_EMPTY" };
+    throw err;
+  }
+  const incoming = list.map((it) => {
+    const username = String(it.username || "").replace(/^@/, "").trim();
+    if (!username) return null;
+    const label = normalizeCategoryLabel(String(it.category || "").split(/[,，]/)[0].trim());
+    const categoryLabels = label ? [label] : [];
+    return {
+      username,
+      nickname: it.nickname || username,
+      followers: Number(it.followers || 0) || 0,
+      avatarUrl: String(it.avatarUrl || ""),
+      gmv: it.gmv || "",
+      avgVideoViews: Number(it.avgVideoViews || 0) || 0,
+      region: normalizeCreatorRegion(it.region || "SG") || "新加坡",
+      category: label || "",
+      categoryLabels,
+      sourceId: it.sourceId ? String(it.sourceId) : "",
+      sourceUrl: it.sourceUrl || ("https://www.tiktok.com/@" + username),
+      librarySource: "marketplace",
+      metricsEstimated: false,
+      // 建联前评估信号（达人广场 find 接口返回，有真实值）
+      unitsSold: Number(it.unitsSold || 0) || 0,
+      videoEngagement: Number(it.videoEngagement || 0) || 0,
+      hasCollaborated: it.hasCollaborated === true,
+      topFollowerAge: String(it.topFollowerAge || ""),
+      topFollowerGender: String(it.topFollowerGender || ""),
+    };
+  }).filter(Boolean);
+  if (!incoming.length) {
+    const err = new Error("marketplace ingest 均缺少 username");
+    err.statusCode = 400;
+    err.payload = { ok: false, code: "MARKET_INGEST_NO_USERNAME" };
+    throw err;
+  }
+  const result = upsertPlatformCreators(incoming, null, { librarySource: "marketplace" });
+  return { ok: true, received: list.length, changed: result.changed, total: result.total };
+}
+
 function marketCode(shop) {
   const raw = String(shopRegion(shop) || "").toUpperCase();
   const aliases = { SGP: "SG", MYS: "MY", THA: "TH", VNM: "VN", PHL: "PH" };
@@ -1199,6 +1558,12 @@ function sortShopsByCreatorPriority(shops) {
   });
 }
 
+// 达人库分片抓取：单次搜索会到顶，按类目名做 query 分片轮搜以扩大覆盖（复用已验证的 keyword 搜索路径）。
+function buildCreatorShardKeywords(categoryMap = {}) {
+  const names = Array.from(new Set(Object.values(categoryMap || {}).map((x) => String(x || "").trim()).filter(Boolean)));
+  return ["", ...names].slice(0, 30);
+}
+
 async function runCreatorAutoImportOnce(reason = "scheduled", options = {}) {
   if (creatorJobRunning) return { skipped: true, reason: "job_already_running" };
   creatorJobRunning = true;
@@ -1213,9 +1578,12 @@ async function runCreatorAutoImportOnce(reason = "scheduled", options = {}) {
   const force = options.force === true;
 
   try {
-    const shops = sortShopsByCreatorPriority(await getAuthorizedShops());
+    // 多店铺：用 store 里所有卖家的店铺并集（按 cipher 各自取 token 抓取）
+    const allShops = allAuthorizedShops();
+    const shops = sortShopsByCreatorPriority(allShops.length ? allShops : await getAuthorizedShops());
     const categoryMap = await refreshCategoryMap(shops);
     relabelPlatformCreators(categoryMap);
+    const shardKeywords = buildCreatorShardKeywords(categoryMap);
 
     for (const shop of shops) {
       const code = marketCode(shop);
@@ -1238,13 +1606,15 @@ async function runCreatorAutoImportOnce(reason = "scheduled", options = {}) {
       }
       let pageToken = marketState.nextPageToken || "";
       if (shouldRefreshSearch || force) pageToken = "";
+      const shardIndex = (Number(marketState.shardIndex) || 0) % shardKeywords.length;
+      const shardKw = shardKeywords[shardIndex] || "";
       let marketImported = 0;
       let pages = 0;
 
       try {
         while (pages < pagesPerRun) {
           if (pages > 0) await sleep(CREATOR_SEARCH_PAGE_DELAY_MS);
-          const upstream = await searchCreators(cipher, "", pageSize, pageToken);
+          const upstream = await searchCreators(cipher, shardKw, pageSize, pageToken);
           const normalized = normalizeCreators(upstream, categoryMap);
           upsertPlatformCreators(normalized, shop);
           marketImported += normalized.length;
@@ -1253,22 +1623,23 @@ async function runCreatorAutoImportOnce(reason = "scheduled", options = {}) {
           pages += 1;
           if (!pageToken) break;
         }
-        const exhausted = !pageToken;
-        const nextRunAt = exhausted ? isoAfter(CREATOR_SEARCH_REFRESH_INTERVAL_MS) : isoAfter(CREATOR_AUTO_IMPORT_INTERVAL_MS);
+        // 当前分片这一页游标结束 → 轮到下一个类目分片（持续扩大覆盖，而不是停在一个搜索）。
+        const cursorDone = !pageToken;
+        const nextShardIndex = cursorDone ? (shardIndex + 1) % shardKeywords.length : shardIndex;
+        const nextRunAt = isoAfter(CREATOR_AUTO_IMPORT_INTERVAL_MS);
         jobState.markets[key] = {
           market: code,
           shop: shopLabel(shop),
-          nextPageToken: pageToken,
+          nextPageToken: cursorDone ? "" : pageToken,
+          shardIndex: nextShardIndex,
           lastImported: marketImported,
           lastRunAt: new Date().toISOString(),
           nextRunAt,
-          exhausted,
-          exhaustedReason: exhausted ? "search_cursor_exhausted" : "",
-          lastExhaustedAt: exhausted ? new Date().toISOString() : marketState.lastExhaustedAt || "",
+          exhausted: false,
           rateLimitCount: 0,
           lastError: "",
         };
-        processed.push({ market: code, shop: shopLabel(shop), imported: marketImported, pages, nextPageToken: Boolean(pageToken), exhausted, nextRunAt, status: "processed" });
+        processed.push({ market: code, shop: shopLabel(shop), imported: marketImported, pages, shard: shardKw || "(默认)", advancedShard: cursorDone, nextRunAt, status: "processed" });
       } catch (error) {
         const message = error.message || "Creator import failed";
         const rateLimited = isTikTokRateLimitError(error);
@@ -1372,54 +1743,101 @@ function translateLangCode(value) {
   return raw.toLowerCase();
 }
 
-async function translateText({ text, source, target } = {}) {
-  const q = String(text || "").trim();
-  if (!q) {
-    const error = new Error("缺少要翻译的内容。");
-    error.statusCode = 400;
-    error.payload = { ok: false, code: "TRANSLATE_TEXT_MISSING", message: error.message };
-    throw error;
-  }
-  const sourceCode = translateLangCode(source) || "zh-CN";
-  const targetCode = translateLangCode(target) || "en";
-  if (sourceCode === targetCode) {
-    return { ok: true, translatedText: q, source: sourceCode, target: targetCode, provider: "none" };
-  }
+// 翻译平台可插拔：上正式只需设 TRANSLATE_PROVIDER + 对应 key，不改代码。
+// 默认 mymemory（免费、有额度限制，仅过渡用）。google/deepl 上正式填 key 后启用。
+const TRANSLATE_PROVIDER = (process.env.TRANSLATE_PROVIDER || "mymemory").toLowerCase();
+
+function translateError(message, code = "TRANSLATE_FAILED", statusCode = 502) {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  error.payload = { ok: false, code, message };
+  return error;
+}
+
+// —— Provider: MyMemory（免费过渡）——
+async function translateViaMyMemory(q, sourceCode, targetCode) {
   const url = new URL("https://api.mymemory.translated.net/get");
   url.searchParams.set("q", q);
   url.searchParams.set("langpair", `${sourceCode}|${targetCode}`);
   const email = process.env.MYMEMORY_EMAIL || "";
   if (email) url.searchParams.set("de", email);
-
-  let response;
-  let data;
+  let response, data;
   try {
     response = await fetch(url);
     data = await response.json();
   } catch (cause) {
-    const error = new Error("翻译服务暂时无法访问，请稍后重试。");
-    error.statusCode = 502;
-    error.payload = { ok: false, code: "TRANSLATE_UNREACHABLE", message: error.message };
-    throw error;
+    throw translateError("翻译服务暂时无法访问，请稍后重试。", "TRANSLATE_UNREACHABLE");
   }
   const translated = data?.responseData?.translatedText || "";
   const status = Number(data?.responseStatus || response.status || 0);
   const looksLikeWarning = /MYMEMORY WARNING|PLEASE SELECT|INVALID/i.test(translated);
   if (!response.ok || status >= 400 || !translated || looksLikeWarning) {
     const detail = looksLikeWarning ? "翻译额度已用完，请稍后再试或更换语言。" : (data?.responseDetails || "翻译失败，请稍后重试。");
-    const error = new Error(detail);
-    error.statusCode = 502;
-    error.payload = { ok: false, code: "TRANSLATE_FAILED", message: detail };
-    throw error;
+    throw translateError(detail);
   }
-  return {
-    ok: true,
-    translatedText: translated,
-    source: sourceCode,
-    target: targetCode,
-    provider: "mymemory",
-    match: data?.responseData?.match,
-  };
+  return { ok: true, translatedText: translated, source: sourceCode, target: targetCode, provider: "mymemory", match: data?.responseData?.match };
+}
+
+// —— Provider: Google Cloud Translation v2（上正式候选，覆盖东南亚语言全）——
+// 上正式：设 TRANSLATE_PROVIDER=google + GOOGLE_TRANSLATE_API_KEY。未实测，启用后需真机验证。
+async function translateViaGoogle(q, sourceCode, targetCode) {
+  const key = process.env.GOOGLE_TRANSLATE_API_KEY || "";
+  if (!key) throw translateError("Google 翻译未配置 API key（GOOGLE_TRANSLATE_API_KEY）。", "TRANSLATE_NO_KEY", 500);
+  const url = new URL("https://translation.googleapis.com/language/translate/v2");
+  url.searchParams.set("key", key);
+  let response, data;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ q, source: sourceCode.split("-")[0], target: targetCode.split("-")[0], format: "text" }),
+    });
+    data = await response.json();
+  } catch (cause) {
+    throw translateError("翻译服务暂时无法访问，请稍后重试。", "TRANSLATE_UNREACHABLE");
+  }
+  const translated = data?.data?.translations?.[0]?.translatedText || "";
+  if (!response.ok || !translated) throw translateError(data?.error?.message || "翻译失败，请稍后重试。");
+  return { ok: true, translatedText: translated, source: sourceCode, target: targetCode, provider: "google" };
+}
+
+// —— Provider: DeepL（上正式候选，质量高但东南亚语种覆盖有限）——
+// 上正式：设 TRANSLATE_PROVIDER=deepl + DEEPL_API_KEY（free 用 api-free 域名）。未实测。
+async function translateViaDeepL(q, sourceCode, targetCode) {
+  const key = process.env.DEEPL_API_KEY || "";
+  if (!key) throw translateError("DeepL 未配置 API key（DEEPL_API_KEY）。", "TRANSLATE_NO_KEY", 500);
+  const host = key.endsWith(":fx") ? "https://api-free.deepl.com" : "https://api.deepl.com";
+  const body = new URLSearchParams();
+  body.set("text", q);
+  body.set("target_lang", targetCode.split("-")[0].toUpperCase());
+  body.set("source_lang", sourceCode.split("-")[0].toUpperCase());
+  let response, data;
+  try {
+    response = await fetch(`${host}/v2/translate`, {
+      method: "POST",
+      headers: { "Authorization": `DeepL-Auth-Key ${key}`, "Content-Type": "application/x-www-form-urlencoded" },
+      body: body.toString(),
+    });
+    data = await response.json();
+  } catch (cause) {
+    throw translateError("翻译服务暂时无法访问，请稍后重试。", "TRANSLATE_UNREACHABLE");
+  }
+  const translated = data?.translations?.[0]?.text || "";
+  if (!response.ok || !translated) throw translateError(data?.message || "翻译失败，请稍后重试。");
+  return { ok: true, translatedText: translated, source: sourceCode, target: targetCode, provider: "deepl" };
+}
+
+async function translateText({ text, source, target } = {}) {
+  const q = String(text || "").trim();
+  if (!q) throw translateError("缺少要翻译的内容。", "TRANSLATE_TEXT_MISSING", 400);
+  const sourceCode = translateLangCode(source) || "zh-CN";
+  const targetCode = translateLangCode(target) || "en";
+  if (sourceCode === targetCode) {
+    return { ok: true, translatedText: q, source: sourceCode, target: targetCode, provider: "none" };
+  }
+  if (TRANSLATE_PROVIDER === "google") return translateViaGoogle(q, sourceCode, targetCode);
+  if (TRANSLATE_PROVIDER === "deepl") return translateViaDeepL(q, sourceCode, targetCode);
+  return translateViaMyMemory(q, sourceCode, targetCode);
 }
 
 async function handle(req, res) {
@@ -1455,21 +1873,62 @@ async function handle(req, res) {
       const code = requestUrl.searchParams.get("code") || requestUrl.searchParams.get("auth_code");
       const state = requestUrl.searchParams.get("state");
       const storedState = readJson(STATE_FILE, null);
+      console.log(`[oauth] callback hit: code=${code ? code.slice(0, 8) + "…" : "(none)"} state=${state ? "yes" : "no"} stateMatch=${storedState?.state ? (storedState.state === state) : "n/a"}`);
       if (!code) return html(res, 400, "<h1>TikTok Shop 授权失败</h1><p>回调缺少 code。</p>");
       if (storedState?.state && state && storedState.state !== state) {
+        console.log("[oauth] callback rejected: state mismatch");
         return html(res, 400, "<h1>TikTok Shop 授权失败</h1><p>state 校验不一致，请重新绑定店铺。</p>");
       }
-      const token = await exchangeToken(code);
-      return html(res, 200, `<h1>TikTok Shop 店铺绑定成功</h1><p>token 已保存到本地后端。可以回到 KOL Compass 同步店铺和商品。</p><script>setTimeout(function(){ location.href=${JSON.stringify(`${FRONTEND_URL}/#admin`)}; }, 1200);</script><pre>${escapeHtml(JSON.stringify(tokenSummary() || token, null, 2))}</pre>`);
+      let token;
+      try {
+        token = await exchangeToken(code);
+      } catch (err) {
+        console.log(`[oauth] exchange FAILED: ${err.message} ${JSON.stringify(err.payload?.upstream || {})}`);
+        throw err;
+      }
+      console.log(`[oauth] exchange OK: seller=${token?.seller_name} open_id=${(token?.open_id || "").slice(0, 12)} shops=${(token?.shops || []).length} | store sellers=${Object.values(readTokenStore().tokens).map((t) => t.seller_name).join(",")}`);
+      const sellerName = (token && token.seller_name) || (tokenSummary() && tokenSummary().seller_name) || "店铺";
+      const backUrl = `${FRONTEND_URL}/#products`;
+      return html(res, 200, `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>店铺已绑定</title>
+        <style>
+          *{box-sizing:border-box} body{margin:0;font-family:-apple-system,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;background:#f1f5f9;color:#0f172a;display:flex;min-height:100vh;align-items:center;justify-content:center}
+          .card{background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:40px 44px;max-width:420px;width:92%;text-align:center;box-shadow:0 10px 40px rgba(15,23,42,.08)}
+          .tick{width:64px;height:64px;border-radius:50%;background:#dcfce7;color:#16a34a;display:flex;align-items:center;justify-content:center;font-size:34px;margin:0 auto 18px}
+          h1{font-size:22px;margin:0 0 8px} p{color:#475569;font-size:14px;line-height:1.6;margin:0 0 6px}
+          .shop{font-weight:600;color:#0f172a}
+          .btn{display:inline-block;margin-top:22px;background:#2563eb;color:#fff;text-decoration:none;padding:11px 26px;border-radius:10px;font-size:15px;font-weight:600}
+          .muted{color:#94a3b8;font-size:12px;margin-top:14px}
+        </style></head>
+        <body><div class="card">
+          <div class="tick">✓</div>
+          <h1>店铺已绑定</h1>
+          <p>已成功授权店铺 <span class="shop">${escapeHtml(sellerName)}</span></p>
+          <p>正在返回 KOL Compass，可同步该店商品并开始建联。</p>
+          <a class="btn" href="${escapeHtml(backUrl)}">返回 KOL Compass</a>
+          <div class="muted">未自动跳转？点上方按钮即可。</div>
+        </div>
+        <script>setTimeout(function(){ location.href=${JSON.stringify(backUrl)}; }, 1500);</script>
+        </body></html>`);
     }
 
     if (requestUrl.pathname === "/api/tiktok/refresh") {
-      await refreshToken();
+      await refreshToken(requestUrl.searchParams.get("open_id") || "");
       return json(res, 200, { ok: true, token: tokenSummary() });
     }
 
     if (requestUrl.pathname === "/api/tiktok/shops") {
-      const shops = await getAuthorizedShops();
+      // 多店铺并集（各卖家 token 名下店铺）。若 active token 还没存 shops（如旧单文件迁移来的），实时拉一次并回填 store。
+      let shops = allAuthorizedShops();
+      if (!shops.length) {
+        const active = activeToken();
+        if (active?.access_token) {
+          try {
+            const live = await getAuthorizedShops(active.access_token);
+            if (live.length) upsertTokenEntry(active, live);
+          } catch { /* ignore */ }
+        }
+        shops = allAuthorizedShops();
+      }
       return json(res, 200, { ok: true, shops, token: tokenSummary() });
     }
 
@@ -1507,14 +1966,65 @@ async function handle(req, res) {
       return json(res, 200, { ok: true, ...result });
     }
 
+    if (requestUrl.pathname === "/api/platform/creators/import-legacy") {
+      const result = importLegacyCreators();
+      return json(res, 200, result);
+    }
+
+    if (requestUrl.pathname === "/api/avatar") {
+      return await serveCreatorAvatar(res, requestUrl.searchParams.get("cid") || "");
+    }
+
+    if (requestUrl.pathname === "/api/creators/ingest") {
+      const body = req.method === "POST" ? await readRequestBody(req) : {};
+      const result = ingestExtensionCreators(body);
+      return json(res, 200, result);
+    }
+
+    // 达人广场钩子回流：扩展在卖家后台达人广场钩到的达人列表 → 入库（扩广度）
+    if (requestUrl.pathname === "/api/creators/ingest-marketplace") {
+      const body = req.method === "POST" ? await readRequestBody(req) : {};
+      const result = ingestMarketplaceCreators(body);
+      return json(res, 200, result);
+    }
+
+    // 商家上下文（当前店铺商品品类）——前端同步商品时写，扩展读来算"内容契合"红绿灯
+    if (requestUrl.pathname === "/api/merchant/context") {
+      if (req.method === "POST") {
+        const body = await readRequestBody(req);
+        const cats = Array.isArray(body.categories) ? body.categories.map((x) => String(x || "").trim()).filter(Boolean).slice(0, 30) : [];
+        // 产品级匹配：存客户产品名 + 提炼的关键词，供扩展做"内容贴近你的产品"判定（不只大类目）
+        const productNames = Array.isArray(body.productNames) ? body.productNames.map((x) => String(x || "").trim()).filter(Boolean).slice(0, 60) : [];
+        const productKeywords = Array.isArray(body.productKeywords) ? body.productKeywords.map((x) => String(x || "").trim().toLowerCase()).filter(Boolean).slice(0, 120) : [];
+        writeJson(MERCHANT_CONTEXT_FILE, { categories: cats, productNames, productKeywords, shopName: String(body.shopName || ""), updatedAt: new Date().toISOString() });
+        return json(res, 200, { ok: true, categories: cats, productKeywords });
+      }
+      const ctx = readJson(MERCHANT_CONTEXT_FILE, { categories: [] });
+      return json(res, 200, {
+        ok: true,
+        categories: Array.isArray(ctx.categories) ? ctx.categories : [],
+        productNames: Array.isArray(ctx.productNames) ? ctx.productNames : [],
+        productKeywords: Array.isArray(ctx.productKeywords) ? ctx.productKeywords : [],
+        shopName: ctx.shopName || "",
+      });
+    }
+
     if (requestUrl.pathname === "/api/tiktok/creators/search") {
       const body = req.method === "POST" ? await readRequestBody(req) : {};
       const shopCipher = body.shop_cipher || requestUrl.searchParams.get("shop_cipher") || "";
       const keyword = body.keyword || requestUrl.searchParams.get("keyword") || "";
       const pageSize = body.page_size || requestUrl.searchParams.get("page_size") || 12;
       const pageToken = body.page_token || requestUrl.searchParams.get("page_token") || "";
-      const upstream = await searchCreators(shopCipher, keyword, pageSize, pageToken);
+      const extraBody = body.raw && typeof body.raw === "object" ? body.raw : null; // 实验：透传任意搜索 body
+      const upstream = await searchCreators(shopCipher, keyword, pageSize, pageToken, extraBody);
       return json(res, 200, { ok: true, upstream, creators: normalizeCreators(upstream) });
+    }
+
+    if (requestUrl.pathname === "/api/tiktok/samples") {
+      const body = req.method === "POST" ? await readRequestBody(req) : {};
+      const shopCipher = body.shop_cipher || requestUrl.searchParams.get("shop_cipher") || "";
+      const result = await sampleOverview(shopCipher, { pageSize: body.page_size || 20, pageToken: body.page_token || "", status: body.status || "" });
+      return json(res, 200, result);
     }
 
     if (requestUrl.pathname === "/api/tiktok/outreach/submit") {

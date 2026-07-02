@@ -32,7 +32,8 @@ const PLATFORM_ONLY_PAGES = new Set(["admin"]);
 const fixedTags = ["高ROI", "可复投", "需催发", "内容优质", "低效合作"];
 const outputStatuses = ["全部", "待产出", "已发视频", "已直播", "视频+直播", "逾期未产出", "有订单未匹配内容", "合作结束"];
 const creatorTypeOptions = ["短视频达人", "直播达人", "短视频+直播达人"];
-const tiktokCategoryOptions = ["美妆个护", "女装与内衣", "男装与运动", "鞋包配饰", "手机数码", "家居日用", "食品饮料", "母婴用品", "健康保健", "宠物用品", "汽车摩托", "图书文具", "玩具爱好", "户外运动"];
+// 官方 TikTok Shop L1 类目（canonical）。达人类目一律映射到这套，避免脏变体/拼接串污染筛选。
+const tiktokCategoryOptions = ["美妆个护", "食品饮料", "女装与内衣", "男装与内衣", "手机数码", "家居日用", "健康保健", "时尚配饰", "箱包", "家用电器", "户外运动", "母婴用品", "厨房用品", "鞋靴", "家纺布艺", "珠宝配饰", "宠物用品", "家具", "电脑办公", "穆斯林时尚", "童装童鞋", "汽车摩托", "工具五金", "家装维修", "玩具爱好", "收藏品", "图书文具", "其他"];
 const marketOptions = ["新加坡", "越南", "马来西亚", "泰国", "菲律宾", "印尼", "美国", "英国", "沙特", "墨西哥"];
 const marketRegionLabels = {
   SG: "新加坡",
@@ -59,7 +60,7 @@ const marketRegionLabels = {
 };
 const followerTierOptions = ["<10K", "10K-100K", "100K-1M", ">1M"];
 const replyRateOptions = [">=60%", "40%-60%", "<40%"];
-const gmvRangeOptions = ["有GMV", "无GMV"];
+const gmvRangeOptions = ["<10K", "10K-100K", "100K-1M", ">1M", "有GMV", "无GMV"];
 const contactOptions = ["有Email", "无联系方式"];
 const tiktokScopeOptions = [["product", "商品"], ["affiliate", "联盟/达人"], ["messaging", "消息"], ["order", "订单"]];
 const planQuotas = { "免费版": 100, "基础版": 1000, "专业版": 5000, "企业版": Infinity };
@@ -459,15 +460,42 @@ function creatorGmvNumber(value) {
 
 function creatorGmvRangeOk(gmv, range) {
   const value = creatorGmvNumber(gmv);
+  if (range === "<10K") return value > 0 && value < 10000;
+  if (range === "10K-100K") return value >= 10000 && value < 100000;
+  if (range === "100K-1M") return value >= 100000 && value < 1000000;
+  if (range === ">1M") return value >= 1000000;
   if (range === "有GMV") return value > 0 || (gmv && gmv !== "-");
   if (range === "无GMV") return !value && (!gmv || gmv === "-");
   return true;
 }
 
+// GMV 官方 K/M 口径（10K / 200K / 1.5M），B 端按 TikTok 习惯看
+function gmvCompact(n) {
+  n = Number(n) || 0;
+  if (n <= 0) return "-";
+  if (n >= 1e6) return (n / 1e6).toFixed(1).replace(/\.0$/, "") + "M";
+  if (n >= 1e3) return (n / 1e3).toFixed(1).replace(/\.0$/, "") + "K";
+  return String(Math.round(n));
+}
 function creatorGmvDisplay(gmv) {
   const text = String(gmv || "-").trim();
   if (!text || text === "-") return "-";
+  // 单值(可带货币前缀，如 "USD 104,486" / "200000" / "10K") → 压成官方 K/M 口径
+  const m = text.match(/^([A-Za-z$¥₫]{0,4})\s*([\d.,]+)\s*([KMB]?)\s*\+?$/);
+  if (m) {
+    const prefix = (m[1] || "").trim();
+    let num = parseFloat(m[2].replace(/,/g, ""));
+    const unit = (m[3] || "").toUpperCase();
+    if (unit === "K") num *= 1e3; else if (unit === "M") num *= 1e6; else if (unit === "B") num *= 1e9;
+    if (num >= 1000) return (prefix ? prefix + " " : "") + gmvCompact(num);
+    if (num > 0) return (prefix ? prefix + " " : "") + Math.round(num);
+  }
   return normalizeGmvDisplay(text);
+}
+// 回复率展示：legacy 没有时显示 "-"，不露 undefined
+function creatorReplyRateDisplay(v) {
+  if (v === undefined || v === null || v === "" || v === "undefined" || v === "-") return "-";
+  return String(v);
 }
 
 function normalizeGmvDisplay(value) {
@@ -510,20 +538,40 @@ function normalizeCreatorTags(tags, metrics = {}) {
   return Array.from(new Set(values));
 }
 
+// 紧凑数字：5万 / 20.5万 / 1.2亿（中文阅读习惯，列不再拖那么长）
+function compactCount(n) {
+  n = Number(n) || 0;
+  if (n <= 0) return "0";
+  if (n >= 1e8) return (n / 1e8).toFixed(1).replace(/\.0$/, "") + "亿";
+  if (n >= 1e4) return (n / 1e4).toFixed(1).replace(/\.0$/, "") + "万";
+  if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, "") + "千";
+  return String(Math.round(n));
+}
 function creatorMetricValue(c, key) {
   const value = metricNumber(c?.[key]);
-  return value ? value.toLocaleString() : "-";
+  return value ? compactCount(value) : "-";
 }
 
 function creatorVisibleTags(c) {
   return normalizeCreatorTags(c?.tags || []).map((t) => `<span class="tag">${escapeHtml(t)}</span>`).join("");
 }
 
+// 头像走后端缓存端点（解决 TikTok 签名链接过期/防盗链裂图）；无头像→空串走首字母
+function creatorAvatarSrc(c) {
+  // 用 username 当 key（前端 id 是重排序号，跨刷新会错位→头像全裂）
+  return c && c.avatarUrl && c.username ? `${API_BASE}/api/avatar?cid=${encodeURIComponent(c.username)}` : "";
+}
+// 达人 TikTok 主页链接（B 端自行核对）：优先真实 url，否则用 username 构造
+function creatorProfileUrl(c) {
+  if (!c) return "";
+  return c.profileUrl || c.sourceUrl || (c.username ? `https://www.tiktok.com/@${encodeURIComponent(String(c.username).replace(/^@/, ""))}` : "");
+}
 function creatorPortrait(c, className = "creator-portrait") {
   if (!c) return `<span class="${className}">?</span>`;
   const initial = escapeHtml(String(c.username || c.nickname || "?").slice(0, 1).toUpperCase());
-  return c.avatarUrl
-    ? `<span class="${className}"><img src="${escapeHtml(c.avatarUrl)}" alt="${escapeHtml(c.username || c.nickname || "达人头像")}" /></span>`
+  const src = creatorAvatarSrc(c);
+  return src
+    ? `<span class="${className}"><img src="${escapeHtml(src)}" alt="${escapeHtml(c.username || c.nickname || "达人头像")}" loading="lazy" onerror="this.parentNode.textContent='${initial}'" /></span>`
     : `<span class="${className}">${initial}</span>`;
 }
 
@@ -550,22 +598,48 @@ function multiFilterOk(selected, value) {
 }
 
 function creatorCategoryValues(c) {
-  const values = [c?.category, ...(Array.isArray(c?.categoryLabels) ? c.categoryLabels : [])];
-  return Array.from(new Set(values.map(normalizeCreatorCategoryLabel).filter(Boolean)));
+  const raw = [c?.category, ...(Array.isArray(c?.categoryLabels) ? c.categoryLabels : [])];
+  // 拼接串(逗号/分号/斜杠/顿号)拆开，每个归一到官方 L1
+  const parts = raw.flatMap((v) => String(v || "").split(/[,;；/、]/));
+  return Array.from(new Set(parts.map(normalizeCreatorCategoryLabel).filter(Boolean)));
 }
 
+// 类目归一：越南语 + 中文各种变体 → 官方 L1（tiktokCategoryOptions）
+const CREATOR_CATEGORY_SYNONYMS = {
+  // 越南语
+  "Sửa chữa nhà cửa": "家装维修", "Sữa chữa nhà cửa": "家装维修",
+  "Công cụ & Phần cứng": "工具五金", "Máy tính & Thiết bị Văn phòng": "电脑办公",
+  "Bộ sưu tập": "收藏品", "Thời trang Hồi giáo": "穆斯林时尚",
+  "Phụ kiện trang sức & Phái sinh": "珠宝配饰",
+  // 中文变体 → 官方
+  "女装内衣": "女装与内衣", "女装与女士内衣": "女装与内衣",
+  "男装内衣": "男装与内衣", "男装与男士内衣": "男装与内衣",
+  "3C": "手机数码", "手机与数码": "手机数码",
+  "居家用品": "家居日用", "居家": "家居日用",
+  "保健品": "健康保健", "健康": "健康保健",
+  "家电": "家用电器",
+  "运动与户外": "户外运动",
+  "母婴": "母婴用品",
+  "厨房用具": "厨房用品",
+  "鞋": "鞋靴",
+  "家纺": "家纺布艺",
+  "珠宝首饰": "珠宝配饰", "珠宝与衍生品": "珠宝配饰",
+  "宠物": "宠物用品",
+  "儿童时尚": "童装童鞋",
+  "汽车与摩托车": "汽车摩托",
+  "五金工具": "工具五金",
+  "家装建材": "家装维修", "家装": "家装维修",
+  "玩具": "玩具爱好", "玩具和爱好": "玩具爱好",
+  "二手收藏": "收藏品",
+  "图书": "图书文具", "图书音像": "图书文具", "杂志&音频": "图书文具", "图书文娱": "图书文具",
+  "其它": "其他", "TikTok Shop": "",
+};
 function normalizeCreatorCategoryLabel(value) {
   const text = String(value || "").trim();
-  const map = {
-    "Sửa chữa nhà cửa": "家装维修",
-    "Sữa chữa nhà cửa": "家装维修",
-    "Công cụ & Phần cứng": "工具五金",
-    "Máy tính & Thiết bị Văn phòng": "电脑办公",
-    "Bộ sưu tập": "收藏品",
-    "Thời trang Hồi giáo": "穆斯林时尚",
-    "Phụ kiện trang sức & Phái sinh": "珠宝配饰",
-  };
-  return map[text] || text;
+  if (!text) return "";
+  if (Object.prototype.hasOwnProperty.call(CREATOR_CATEGORY_SYNONYMS, text)) return CREATOR_CATEGORY_SYNONYMS[text];
+  if (tiktokCategoryOptions.includes(text)) return text;
+  return "其他"; // 官方类目之外（如 voucher）一律归到「其他」
 }
 
 function creatorCategoryFilterOk(selected, c) {
@@ -826,13 +900,20 @@ function renderProducts() {
   const shops = state.settings.tiktokShops || [];
   const selectedShop = shops.find((shop) => shopCipher(shop) === state.settings.selectedTikTokShopCipher) || shops[0];
   maybeAutoSyncProducts();
+  const productStatusFilter = state.filters.productStatus || "全部";
   const rows = state.products.filter((p) => {
+    if (productStatusFilter === "可用" && !productPromotable(p)) return false;
+    if (productStatusFilter === "不可用" && productPromotable(p)) return false;
     const kw = state.filters.productSearch.trim().toLowerCase();
     if (!kw) return true;
     if (state.filters.productSearchField === "商品ID") return String(p.sourceId || p.id || "").toLowerCase().includes(kw);
     return String(p.name || "").toLowerCase().includes(kw);
   });
-  const activeCount = rows.filter((p) => ["可选", "在售"].includes(p.status)).length;
+  const activeCount = rows.filter((p) => productPromotable(p)).length;
+  const pageSize = Number(state.filters.productPageSize) || 20;
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  const currentPage = Math.min(Math.max(1, Number(state.filters.productPage) || 1), totalPages);
+  const pagedRows = rows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
   return `
     ${pageHead("产品管理", "第一步绑定店铺并读取商品；第二步进入达人库筛选达人并发起建联。", `<button class="btn primary" onclick="setPage('kol')">下一步：筛选达人</button>`)}
     <section class="store-panel">
@@ -847,14 +928,15 @@ function renderProducts() {
       </div>
       <div class="store-actions">
         ${shops.length ? `
-          <select class="select" onchange="selectTikTokShop(this.value)">
+          <select class="select" onchange="switchTikTokShop(this.value)">
             ${shops.map((shop) => {
               const cipher = shopCipher(shop);
               return `<option value="${escapeHtml(cipher)}" ${cipher === state.settings.selectedTikTokShopCipher ? "selected" : ""}>${escapeHtml(shopLabel(shop))}</option>`;
             }).join("")}
           </select>
-          <button class="btn" onclick="setPage('admin')">管理授权</button>
-          <button class="btn primary" onclick="syncProducts()">重新同步商品</button>
+          <button class="btn primary" onclick="startTikTokAuth()">+ 添加店铺</button>
+          <button class="btn" onclick="setPage('admin')">店铺授权管理</button>
+          <button class="btn" onclick="syncProducts()">重新同步商品</button>
           <button class="btn" onclick="setPage('kol')">进入达人库</button>
         ` : `
           <button class="btn primary" onclick="startTikTokAuth()">绑定店铺</button>
@@ -875,15 +957,308 @@ function renderProducts() {
         <select class="select compact-select" onchange="setFilter('productSearchField', this.value)">
           ${["商品名", "商品ID"].map((x) => `<option ${state.filters.productSearchField === x ? "selected" : ""}>${escapeHtml(x)}</option>`).join("")}
         </select>
-        <input class="input product-search-input" placeholder="请输入" value="${escapeHtml(state.filters.productSearch)}" oninput="setFilter('productSearch', this.value)" />
+        <input id="productSearchInput" class="input product-search-input" placeholder="请输入" value="${escapeHtml(state.filters.productSearch)}" oninput="setFilter('productSearch', this.value)" />
+        <select class="select compact-select" onchange="setFilter('productStatus', this.value)">
+          ${["全部", "可用", "不可用"].map((x) => `<option ${productStatusFilter === x ? "selected" : ""}>${escapeHtml(x)}</option>`).join("")}
+        </select>
       </div>
       <div class="filters">
         <button class="btn" onclick="addProduct()">商品来源说明</button>
       </div>
     </div>
-    ${productList(rows)}
+    ${productList(pagedRows)}
+    ${rows.length > pageSize ? paginationBar("product", currentPage, totalPages, pageSize, rows.length, { unit: "个商品", onPage: "setProductPage", onSize: "setProductPageSize" }) : ""}
     </div>
   `;
+}
+
+// ——— 建联前：出单潜力分（全自动，纯用已有数据，不要求客户录入） ———
+// 从字符串/范围里取数字（gmv 可能是 "S$0-S$100"、replyRate 可能是 "60%"）
+function scoreNum(v) {
+  if (typeof v === "number") return Number.isFinite(v) ? v : 0;
+  const m = String(v ?? "").replace(/,/g, "").match(/[\d.]+/g);
+  if (!m) return 0;
+  const nums = m.map(Number).filter((x) => Number.isFinite(x));
+  return nums.length ? Math.max(...nums) : 0;
+}
+
+// 对数归一到 0-100：value 达到 fullAt 记满分（粉丝/GMV/播放这类长尾量用对数更合理）
+function logScore(value, fullAt) {
+  const v = Math.max(0, scoreNum(value));
+  if (v <= 0) return 0;
+  const s = (Math.log10(v + 1) / Math.log10(fullAt + 1)) * 100;
+  return Math.max(0, Math.min(100, s));
+}
+
+function merchantProductCategories() {
+  const set = new Set();
+  (state.products || []).forEach((p) => { if (p.category) set.add(String(p.category)); });
+  return set;
+}
+
+// 内容主题(扩展采集，英/中) → 官方类目。用于"内容实证契合"
+const TOPIC_TO_CATEGORY = {
+  beauty: "美妆个护", skincare: "美妆个护", makeup: "美妆个护", hair: "美妆个护", nails: "美妆个护", fragrance: "美妆个护",
+  fashion: "时尚配饰", outfit: "女装与内衣", haul: "女装与内衣",
+  food: "食品饮料", recipe: "食品饮料",
+  home: "家居日用", kitchen: "厨房用品",
+  tech: "手机数码", gadget: "手机数码",
+  pet: "宠物用品", baby: "母婴用品", mom: "母婴用品",
+  fitness: "户外运动", health: "健康保健", supplement: "健康保健",
+  "美妆": "美妆个护", "护肤": "美妆个护", "穿搭": "时尚配饰", "美食": "食品饮料",
+  "母婴": "母婴用品", "宠物": "宠物用品", "健康": "健康保健", "数码": "手机数码", "居家": "家居日用",
+};
+function creatorHasContentData(c) {
+  return Boolean((c?.contentTopics && c.contentTopics.length) || (c?.recentCaptions && c.recentCaptions.length) || c?.bio || c?.recentPerf || c?.commentIntent);
+}
+// 达人近期内容实际涉及的品类（扩展采集的 topics + bio/文案关键词扫描）
+function creatorContentCategories(c) {
+  const out = new Set();
+  (c?.contentTopics || []).forEach((t) => { const cat = TOPIC_TO_CATEGORY[String(t).toLowerCase()]; if (cat) out.add(cat); });
+  const blob = [c?.bio || "", ...(c?.recentCaptions || [])].join(" ").toLowerCase();
+  Object.keys(TOPIC_TO_CATEGORY).forEach((k) => { if (blob.includes(k.toLowerCase())) out.add(TOPIC_TO_CATEGORY[k]); });
+  return Array.from(out);
+}
+
+// 产品名 → 关键词：给扩展做"内容贴近你的产品"的产品级匹配（不只大类目）。
+// 去营销噪声词，保留有辨识度的名词（英文 token + 中文整词/双字）。
+// 停用词：功能词 + 营销修饰词，绝不当产品关键词（避免 and/power/can 这种垃圾命中）
+const PRODUCT_STOPWORDS = new Set(["the","and","for","with","without","from","your","you","our","this","that","these","those","are","was","can","will","just","not","all","any","per","via","new","now","get","got","use","used","using","one","two","set","pcs","pack","kit","piece","pieces","size","sizes","sized","color","colour","colors","style","type","item","items","free","hot","sale","best","top","good","great","super","more","most","plus","pro","max","mini","big","small","large","light","soft","high","low","off","out","has","have","its","only","each","portable","electric","rechargeable","wireless","waterproof","premium","quality","original","multi","multifunction","multifunctional","adjustable","foldable","compact","pocket","powerful","power","airflow","usb","led","gift","home","fashion","women","men","unisex","kids","brand","cute","ml","cm","mm","inch","pin","deal","deals","promo","code","voucher","discount","offer","offers","link","buy","shop","store","official","order","cart","price","cheap","seller","ready","stock","restock","local","fast","delivery","shipping","ship","review","haul","unboxing","tiktok","shopee","lazada"]);
+function productNamesToKeywords(names) {
+  const kw = new Set();
+  for (const name of names || []) {
+    const lower = String(name || "").toLowerCase();
+    // 英文 token：>=3 字母、非停用词、非纯数字 → 留产品核心词
+    (lower.match(/[a-z][a-z0-9]{2,}/g) || []).forEach((t) => { if (!PRODUCT_STOPWORDS.has(t) && !/^\d+$/.test(t)) kw.add(t); });
+    // 中文整词（>=2 字）+ 双字 gram，便于近似命中
+    (lower.match(/[一-龥]{2,}/g) || []).forEach((seg) => {
+      kw.add(seg);
+      for (let i = 0; i + 2 <= seg.length; i++) kw.add(seg.slice(i, i + 2));
+    });
+  }
+  return [...kw].slice(0, 120);
+}
+
+// 店铺产品关键词（核验后做产品级精准契合用）
+function merchantProductKeywords() {
+  const names = [...new Set((state.products || []).map((p) => String(p.name || p.title || "").trim()).filter(Boolean))].slice(0, 60);
+  return productNamesToKeywords(names);
+}
+// 达人内容（带货商品名+文案+话题）拆关键词（过停用词）
+function creatorContentKeywords(c) {
+  const p = c && c.recentPerf;
+  const blob = [
+    (p && Array.isArray(p.ecProductNames) ? p.ecProductNames.join(" ") : ""),
+    (c && Array.isArray(c.contentTopics) ? c.contentTopics.join(" ") : ""),
+    (c && Array.isArray(c.recentCaptions) ? c.recentCaptions.join(" ") : ""),
+  ].join(" ").toLowerCase();
+  const out = new Set();
+  (blob.match(/[a-z][a-z0-9]{2,}/g) || []).forEach((t) => { if (!PRODUCT_STOPWORDS.has(t) && !/^\d+$/.test(t)) out.add(t); });
+  (blob.match(/[一-龥]{2,}/g) || []).forEach((seg) => { out.add(seg); for (let i = 0; i + 2 <= seg.length; i++) out.add(seg.slice(i, i + 2)); });
+  return [...out];
+}
+const kcStem = (w) => (w.length > 4 && w.endsWith("s") ? w.slice(0, -1) : w);
+function kcTokenSet(blob) {
+  const out = new Set();
+  const lower = String(blob || "").toLowerCase();
+  (lower.match(/[a-z][a-z0-9]{2,}/g) || []).forEach((t) => { if (!PRODUCT_STOPWORDS.has(t) && !/^\d+$/.test(t)) out.add(kcStem(t)); });
+  (lower.match(/[一-龥]{2,}/g) || []).forEach((seg) => { for (let i = 0; i + 2 <= seg.length; i++) out.add(seg.slice(i, i + 2)); });
+  return out;
+}
+function productShortName(name) {
+  const en = (String(name).toLowerCase().match(/[a-z][a-z0-9]{2,}/g) || []).filter((t) => !PRODUCT_STOPWORDS.has(t));
+  const zh = String(name).match(/[一-龥]{2,}/g) || [];
+  if (zh.length) return zh.slice(0, 2).join("");
+  return en.slice(0, 3).join(" ") || String(name).slice(0, 16);
+}
+// 产品级精准契合：核验过的达人，看 TA 在带/在发的东西贴近你哪个产品。返回匹配到的产品名（无内容则 null）
+function creatorProductFitMatches(c) {
+  if (!creatorHasContentData(c)) return null;
+  const names = [...new Set((state.products || []).map((p) => String(p.name || p.title || "").trim()).filter(Boolean))];
+  if (!names.length) return null;
+  const terms = kcTokenSet([
+    (c.recentPerf && Array.isArray(c.recentPerf.ecProductNames) ? c.recentPerf.ecProductNames.join(" ") : ""),
+    (c.contentTopics || []).join(" "),
+    (c.recentCaptions || []).join(" "),
+  ].join(" "));
+  const hits = [];
+  for (const pname of names) {
+    const pkw = [...kcTokenSet(pname)];
+    if (!pkw.length) continue;
+    const n = pkw.filter((k) => terms.has(k)).length;
+    if (n >= 1) hits.push({ name: productShortName(pname), n });
+  }
+  hits.sort((a, b) => b.n - a.n);
+  const seen = new Set();
+  return hits.map((h) => h.name).filter((x) => x && !seen.has(x) && seen.add(x)).slice(0, 4);
+}
+
+// 品类"抓接近"：不靠补全映射表（全网类目太多维护不动），用字符相似度近似匹配。
+// 处理两类脏数据：① 命名变体（健康/健康保健、家电/家用电器、居家日用/家居日用…）② 同义不同写。
+function categorySimilarity(a, b) {
+  // 去掉连接词 + 通用后缀(用品/用具)，抓核心词
+  const clean = (s) => String(s || "").replace(/[与和的&\s]/g, "").replace(/(用品|用具)$/, "");
+  a = clean(a); b = clean(b);
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+  if (a.includes(b) || b.includes(a)) return 0.9;
+  const sa = new Set(a), sb = new Set(b);
+  let inter = 0; sa.forEach((ch) => { if (sb.has(ch)) inter++; });
+  return (2 * inter) / (sa.size + sb.size); // 字符集 Dice 系数
+}
+// 一个达人类目 vs 一组店铺类目，取最佳相似度
+function bestCategorySimilarity(v, merchantCats) {
+  let best = 0;
+  for (const m of merchantCats) { best = Math.max(best, categorySimilarity(v, m)); if (best >= 1) break; }
+  return best;
+}
+
+// 类目契合：达人内容类目 vs 当前商家商品类目。无商品时返回 null（该项不计、权重摊回其它项）
+// 内容实证契合(扩展采集)是最强信号：达人近期真的在发你这个品类 → 直接满分。
+function creatorCategoryFitScore(c) {
+  const cats = [...merchantProductCategories()];
+  if (!cats.length) return null;
+  // 产品级精准契合（核验后最强）：TA 在带/在发的东西命中你的产品关键词
+  const prodMatches = creatorProductFitMatches(c);
+  if (prodMatches && prodMatches.length) return 100;
+  const contentCats = creatorContentCategories(c);
+  if (contentCats.length) {
+    // 内容实证：近似匹配上店铺品类 → 满分；明确发别的品类 → 强负信号
+    return contentCats.some((v) => bestCategorySimilarity(v, cats) >= 0.7) ? 100 : 12;
+  }
+  const vals = creatorCategoryValues(c).map(String).filter(Boolean);
+  if (!vals.length) return 25;
+  const best = Math.max(0, ...vals.map((v) => bestCategorySimilarity(v, cats)));
+  if (best >= 0.7) return 100; // 基本同类（含变体/缩写近似）
+  if (best >= 0.45) return 70; // 接近
+  return 25;
+}
+
+// 出单潜力分（0-100，出单/履约导向）。自有履约数据(1B回流后)有则纳入。
+function creatorPotentialScore(c) {
+  const sells = logScore(c.gmv, 50000);
+  const reach = logScore(c.followers, 1000000) * 0.5 + logScore(c.avgVideoViews, 200000) * 0.5;
+  // 回复率未知（"-"/空/无数字）时不计入——否则全库被一个 0 拖垮（建联前几乎没人有回复历史）
+  const replyKnown = c.replyRate != null && String(c.replyRate).trim() !== "" && String(c.replyRate).trim() !== "-" && /\d/.test(String(c.replyRate));
+  const reply = replyKnown ? Math.max(0, Math.min(100, scoreNum(c.replyRate))) : null;
+  const fit = creatorCategoryFitScore(c);
+  const fulfill = c.fulfillmentRate != null ? Math.max(0, Math.min(100, scoreNum(c.fulfillmentRate))) : null;
+  let parts = [
+    { key: "出单能力", v: sells, w: 0.35 },
+    { key: "类目契合", v: fit, w: 0.25 },
+    { key: "内容触达", v: reach, w: 0.20 },
+    { key: "建联效率", v: reply, w: 0.20 },
+  ];
+  // 带货频率（扩展采集 item_list）：近期挂商品的视频越多→越懂带货、合作越易出单
+  const perf = c.recentPerf;
+  if (perf && Number(perf.sampleCount) > 0 && perf.ecVideoCount != null) {
+    const ecScore = Math.max(0, Math.min(100, Number(perf.ecVideoCount || 0) * 25)); // 4 条带货 = 满分
+    parts.push({ key: "带货频率", v: ecScore, w: 0.18 });
+  }
+  if (fulfill != null) parts.push({ key: "历史履约", v: fulfill, w: 0.15 });
+  parts = parts.filter((p) => p.v != null);
+  const wsum = parts.reduce((s, p) => s + p.w, 0) || 1;
+  const score = Math.round(parts.reduce((s, p) => s + p.v * (p.w / wsum), 0));
+  return { score: Math.max(0, Math.min(100, score)), parts };
+}
+
+// 合作档位（用户拍板）：≥65 建议建联 / 40-64 可考虑 / <40 谨慎
+function scoreTier(score) {
+  if (score >= 65) return { cls: "high", label: "建议建联" };
+  if (score >= 40) return { cls: "mid", label: "可考虑" };
+  return { cls: "low", label: "谨慎" };
+}
+
+function potentialScoreCell(c) {
+  const { score, parts } = creatorPotentialScore(c);
+  const t = scoreTier(score);
+  const tip = parts.map((p) => `${p.key} ${Math.round(p.v)}`).join(" · ");
+  return `<div class="score-cell" title="${escapeHtml(tip)}">
+    <span class="score-pill ${t.cls}">${score}</span>
+    <span class="score-tag ${t.cls}">${t.label}</span>
+  </div>`;
+}
+
+// 算分说明弹窗（给客户看：算法 6 维度 + 合作档位）
+function openScoreHelp() {
+  const body = `
+    <p style="margin:0 0 10px">出单潜力分（0–100）是系统按这个达人的真实数据自动算的，<b>越高越值得优先建联</b>。缺数据的项会自动剔除、权重摊到其余项。</p>
+    <table class="help-table">
+      <tr><td><b>出单能力</b></td><td>35%</td><td>该达人 TikTok 历史 GMV，越能带货越高</td></tr>
+      <tr><td><b>类目契合</b></td><td>25%</td><td>达人内容/类目和你店铺商品越搭越高</td></tr>
+      <tr><td><b>内容触达</b></td><td>20%</td><td>粉丝量 + 视频均播</td></tr>
+      <tr><td><b>建联效率</b></td><td>20%</td><td>历史回复率，越愿意回越高</td></tr>
+      <tr><td>带货频率<span class="muted">*</span></td><td>18%</td><td>近期挂商品的视频数（采集到才计）</td></tr>
+      <tr><td>历史履约<span class="muted">*</span></td><td>15%</td><td>合作过的履约率（有才计）</td></tr>
+    </table>
+    <p class="muted" style="margin:8px 0 14px">*带星的是"有数据才纳入"。</p>
+    <div style="margin-bottom:6px"><b>合作档位</b></div>
+    <div class="score-legend">
+      <span><span class="score-pill high" style="min-width:0;height:18px">≥65</span> 建议建联</span>
+      <span><span class="score-pill mid" style="min-width:0;height:18px">40–64</span> 可考虑</span>
+      <span><span class="score-pill low" style="min-width:0;height:18px">&lt;40</span> 谨慎</span>
+    </div>
+    <p class="muted" style="margin:12px 0 0">提示：分数是"潜力"不是"保证"。鼠标悬浮某个达人的分数，可看到它各维度的得分拆解。</p>`;
+  openModal("出单潜力分怎么算的", body, `<button class="btn primary" onclick="closeModal()">知道了</button>`);
+}
+
+// 历史建联结果徽标（来自老库 legacyOutreach）
+function legacyOutreachBadge(c) {
+  const lo = c && c.legacyOutreach;
+  if (!lo) return "";
+  if (lo.replyLabel) {
+    const cls = /有意向/.test(lo.replyLabel) ? "good" : /拒绝/.test(lo.replyLabel) ? "warn" : "";
+    return `<span class="legacy-pill ${cls}" title="历史建联结果">${escapeHtml(lo.replyLabel)}</span>`;
+  }
+  if (lo.partnershipStatus) {
+    const cls = lo.partnershipStatus === "已合作" ? "good" : lo.partnershipStatus === "已拒绝" ? "warn" : "";
+    return `<span class="legacy-pill ${cls}" title="历史合作状态">曾${escapeHtml(lo.partnershipStatus)}</span>`;
+  }
+  if (lo.lastContactedAt) return `<span class="legacy-pill" title="曾建联，未回复">曾建联</span>`;
+  return "";
+}
+
+// 详情页「建联前评估」卡：潜力分拆解 + 历史建联结果 + 估算说明
+function creatorPreEvalCard(c) {
+  const { score, parts } = creatorPotentialScore(c);
+  const t = scoreTier(score);
+  const tier = t.cls;
+  const bars = parts.map((p) => `<div class="eval-row"><span>${escapeHtml(p.key)}</span><div class="eval-bar"><i style="width:${Math.round(p.v)}%"></i></div><b>${Math.round(p.v)}</b></div>`).join("");
+  // 内容信号（扩展采集）：近期内容品类 + 与商家商品的契合
+  let contentBlock = "";
+  if (creatorHasContentData(c)) {
+    const contentCats = creatorContentCategories(c);
+    const merchant = merchantProductCategories();
+    const matched = contentCats.filter((v) => merchant.has(v));
+    const catTags = contentCats.map((v) => `<span class="legacy-pill ${matched.includes(v) ? "good" : ""}">${escapeHtml(v)}</span>`).join("") || `<span class="muted">未识别明确品类</span>`;
+    const p = c.recentPerf;
+    const perfBlock = p ? `
+      <div class="perf-grid">
+        <div class="perf-cell"><b>${compactCount(p.avgPlay)}</b><span class="muted">近期均播</span></div>
+        <div class="perf-cell"><b>${Number(p.avgEngagement || 0)}%</b><span class="muted">互动率</span></div>
+        <div class="perf-cell"><b>${Number(p.postsPerWeek || 0)}</b><span class="muted">条/周</span></div>
+        <div class="perf-cell"><b>${Number(p.ecVideoCount || 0)}</b><span class="muted">带货视频</span></div>
+      </div>
+      <div class="muted" style="margin-top:4px">播放区间 ${compactCount(p.playMin)}~${compactCount(p.playMax)}（近 ${p.sampleCount} 条）</div>` : "";
+    const ecBlock = (p && p.ecVideoCount != null) ? `
+      <div style="margin-top:10px">
+        <div class="muted">近期带货 · <b style="color:${p.ecVideoCount >= 3 ? "#15803d" : p.ecVideoCount >= 1 ? "#b45309" : "#b91c1c"}">${p.ecVideoCount}/${p.sampleCount} 条</b>视频挂了商品（带货占比 ${p.ecVideoRatio || 0}%）</div>
+      </div>` : "";
+    contentBlock = `
+      <div class="eval-content">
+        <div class="muted" style="margin:10px 0 4px">内容信号（扩展采集）${matched.length ? ` · <span style="color:#15803d">命中你的品类 ${matched.length} 项</span>` : ""}</div>
+        <div class="tags">${catTags}</div>
+        ${perfBlock}
+        ${ecBlock}
+        ${c.bio ? `<p class="muted" style="margin:6px 0 0">简介：${escapeHtml(c.bio.slice(0, 120))}</p>` : ""}
+      </div>`;
+  }
+  return `<div class="card">
+    <h3>建联前评估</h3>
+    <div class="eval-head"><span class="score-pill ${tier}">${score}</span><span class="score-tag ${tier}">${t.label}</span><span class="muted">出单潜力分 <span class="score-help" onclick="openScoreHelp()" title="算法与档位说明">?</span></span></div>
+    <div class="eval-bars">${bars}</div>
+    ${contentBlock}
+  </div>`;
 }
 
 function renderKolPool() {
@@ -895,10 +1270,10 @@ function renderKolPool() {
   const realMarketCreators = marketCreators.filter((c) => c.sourceId);
   const localCreators = marketCreators.filter((c) => !c.sourceId);
   const typeOptions = creatorTypeOptions;
-  const categories = fixedOptions(tiktokCategoryOptions, state.creators.flatMap((c) => creatorCategoryValues(c)));
+  const categories = tiktokCategoryOptions;
   state.filters.kolTypes = filterValues(state.filters.kolTypes).filter((x) => typeOptions.includes(x));
   state.filters.kolCategories = filterValues(state.filters.kolCategories).filter((x) => categories.includes(x));
-  const rows = marketCreators.filter((c) => {
+  let rows = marketCreators.filter((c) => {
     const kw = state.filters.kolSearch.trim().toLowerCase();
     const typeOk = multiFilterOk(state.filters.kolTypes, c.type);
     const categoryOk = creatorCategoryFilterOk(state.filters.kolCategories, c);
@@ -911,7 +1286,17 @@ function renderKolPool() {
     const interestOk = state.filters.kolInterest === "显示不感兴趣" ? c.status !== "黑名单" : c.status !== "黑名单" && !isNotInterestedBlocked(c);
     return typeOk && categoryOk && followersOk && replyRateOk && gmvOk && contactOk && libraryOk && kwOk && interestOk;
   });
-  rows.sort((a, b) => (creatorOutreachBlockReason(a) ? 1 : 0) - (creatorOutreachBlockReason(b) ? 1 : 0));
+  // #6 相似达人：选了标杆就按相似度过滤 + 排序，否则按潜力分排
+  const similarTo = state.similarToCreatorId ? creator(state.similarToCreatorId) : null;
+  let simRows = rows;
+  if (similarTo) {
+    const simMap = new Map(rows.map((c) => [c.id, creatorSimilarity(c, similarTo)]));
+    simRows = rows.filter((c) => (simMap.get(c.id) || -1) >= 0);
+    simRows.sort((a, b) => ((creatorOutreachBlockReason(a) ? 1 : 0) - (creatorOutreachBlockReason(b) ? 1 : 0)) || ((simMap.get(b.id) || 0) - (simMap.get(a.id) || 0)));
+  }
+  const kolScoreMap = new Map(rows.map((c) => [c.id, creatorPotentialScore(c).score]));
+  if (!similarTo) rows.sort((a, b) => ((creatorOutreachBlockReason(a) ? 1 : 0) - (creatorOutreachBlockReason(b) ? 1 : 0)) || ((kolScoreMap.get(b.id) || 0) - (kolScoreMap.get(a.id) || 0)));
+  rows = simRows;
   const availableRows = rows.filter((c) => !creatorOutreachBlockReason(c));
   const blockedRows = rows.filter((c) => creatorOutreachBlockReason(c));
   state.bulkCreatorIds = (state.bulkCreatorIds || []).filter((id) => availableRows.some((c) => c.id === id));
@@ -942,20 +1327,19 @@ function renderKolPool() {
         <h3>${escapeHtml(selectedShop ? shopLabel(selectedShop) : "请先绑定 TikTok Shop 店铺")}</h3>
         <p>${selectedShop ? `当前店铺市场：${escapeHtml(currentMarket || "未识别")}。系统只展示该市场达人，不再让客户手动选择国家；达人基础资料来自我们平台达人库。` : "客户第一步必须先完成店铺绑定，否则无法按店铺市场筛选达人。"}</p>
         <div class="store-meta">
-          <span>当前市场真实达人：${realMarketCreators.length}</span>
-          <span>全部真实达人：${realCreators.length}</span>
-          <span>平台补充达人：${localCreators.length}</span>
-          <span>资料来源：平台达人库</span>
+          <span>当前市场达人：${marketCreators.length} 位</span>
+          <span>可联系（有 Email/WhatsApp）：${marketCreators.filter((c) => c.email || c.whatsapp).length} 位</span>
         </div>
       </div>
       <div class="store-actions">
         ${shops.length ? `
-          <select class="select" onchange="selectTikTokShop(this.value)">
+          <select class="select" onchange="switchTikTokShop(this.value)">
             ${shops.map((shop) => {
               const cipher = shopCipher(shop);
               return `<option value="${escapeHtml(cipher)}" ${cipher === state.settings.selectedTikTokShopCipher ? "selected" : ""}>${escapeHtml(shopLabel(shop))}</option>`;
             }).join("")}
           </select>
+          <button class="btn primary" onclick="startTikTokAuth()">+ 添加店铺</button>
         ` : `
           <button class="btn primary" onclick="startTikTokAuth()">绑定店铺</button>
           <button class="btn" onclick="checkTikTokShops()">读取已授权店铺</button>
@@ -964,6 +1348,8 @@ function renderKolPool() {
       </div>
     </section>
     ${selectedShop && !realMarketCreators.length ? `<div class="notice" style="margin-bottom:12px">当前店铺市场暂时没有平台真实达人数据。下方如果看到达人，是平台补充数据；客户侧不提供导入或新增达人入口。</div>` : ""}
+    ${(() => { const cp = state.outreachContextProductId ? product(state.outreachContextProductId) : null; return cp ? `<div class="notice context-banner" style="margin-bottom:12px">正在为商品「${escapeHtml(cp.name)}」物色达人，选中达人后一键建联会自动带上该商品。<button class="btn ghost" onclick="clearOutreachContext()">取消</button></div>` : ""; })()}
+    ${similarTo ? `<div class="notice context-banner" style="margin-bottom:12px">正在找与 <b>@${escapeHtml(similarTo.username)}</b> 相似的达人（按类目 / 粉丝量级 / 带货度加权排序，已剔除不同类目），共 ${rows.length} 位。<button class="btn ghost" onclick="clearSimilar()">返回全部达人</button></div>` : ""}
     <div class="notice" style="margin-bottom:12px">当前套餐：${escapeHtml(state.settings.planName)}，本月建联配额已用 ${quotaLabel()}。同一达人 24 小时内只能建联一次；标记不感兴趣后 30 天内不可建联。</div>
     <div class="grid grid-4" style="margin-bottom:16px">
       ${stat("当前筛选", rows.length, "符合筛选条件的达人")}
@@ -974,7 +1360,7 @@ function renderKolPool() {
     <div class="toolbar filter-toolbar">
       <div class="kol-filter-panel">
         <div class="filter-search-row">
-          <input class="input kol-search-input" placeholder="搜索达人、用户名、标签..." value="${escapeHtml(state.filters.kolSearch)}" oninput="setFilter('kolSearch', this.value)" />
+          <input id="kolSearchInput" class="input kol-search-input" placeholder="搜索达人、用户名、标签..." value="${escapeHtml(state.filters.kolSearch)}" oninput="setFilter('kolSearch', this.value)" />
           ${singleFilterSelect("kolFollowers", "粉丝量级", followerTierOptions)}
           ${singleFilterSelect("kolGmv", "TikTok GMV", gmvRangeOptions)}
           ${singleFilterSelect("kolReplyRate", "回复率", replyRateOptions)}
@@ -1001,21 +1387,23 @@ function renderKolPool() {
           <button class="btn" onclick="selectVisibleCreators(${pageAvailableIds})">全选本页可建联</button>
           <button class="btn" onclick="selectVisibleCreators(${filteredAvailableIds})">全选筛选结果</button>
           <button class="btn ghost" onclick="clearBulkSelection()">清空选择</button>
-          <button class="btn primary" onclick="openOutreachModal()">一键建联(${state.bulkCreatorIds.length})</button>
+          <button class="btn primary" onclick="startBulkOutreach()">一键建联(${state.bulkCreatorIds.length})</button>
         </div>
       </div>
-      ${table([`<label class="table-check"><input type="checkbox" ${pageAllSelected ? "checked" : ""} onchange="toggleCreatorPageSelection(${pageAvailableIds}, this.checked)" /> 本页</label>`, "达人", "类型", "类目/地区", "粉丝", "TikTok GMV（当地币种）", "内容表现", "回复率", "状态/标签", "操作"], pagedRows.map((c) => {
+      ${table([`<label class="table-check"><input type="checkbox" ${pageAllSelected ? "checked" : ""} onchange="toggleCreatorPageSelection(${pageAvailableIds}, this.checked)" /> 本页</label>`, "达人", `出单潜力分<span class="score-help" onclick="openScoreHelp()" title="算法与档位说明">?</span>`, "类型", "类目/地区", "粉丝", "TikTok GMV", "视频均播", "直播均观", "回复率", "状态/标签", "操作"], pagedRows.map((c) => {
       const blockReason = creatorOutreachBlockReason(c);
       return [
       blockReason ? `<span class="muted">${escapeHtml(blockReason)}</span>` : `<input type="checkbox" ${state.bulkCreatorIds.includes(c.id) ? "checked" : ""} onchange="toggleCreatorSelection(${c.id}, this.checked)" aria-label="选择 @${escapeHtml(c.username)}" />`,
       personCell(c),
+      potentialScoreCell(c),
       normalizeCreatorType(c.type, c),
       `${creatorCategoryValues(c).map(escapeHtml).join(" / ")}<br><span class="muted">${escapeHtml(c.region)}</span>`,
-      c.followers.toLocaleString(),
+      compactCount(c.followers),
       creatorGmvDisplay(c.gmv),
-      `<div class="metric-stack"><span>视频平均播放 ${creatorMetricValue(c, "avgVideoViews")}</span><span>直播观看人数 ${creatorMetricValue(c, "avgLiveUv")}</span></div>`,
-      c.replyRate,
-      `${c.status === "不感兴趣" ? badge("不感兴趣") : ""} ${creatorVisibleTags(c)}`,
+      creatorMetricValue(c, "avgVideoViews"),
+      creatorMetricValue(c, "avgLiveUv"),
+      creatorReplyRateDisplay(c.replyRate),
+      `${c.status === "不感兴趣" ? badge("不感兴趣") : ""} ${creatorHasContentData(c) ? `<span class="legacy-pill good" title="已采集近期内容信号">内容✓</span>` : ""} ${creatorVisibleTags(c)}`,
       `${blockReason ? "" : `<button class="btn" onclick="openOutreachModal(${c.id})">建联</button>`} <button class="btn ghost" onclick="showCreator(${c.id})">详情</button> ${c.status === "不感兴趣" ? `<button class="btn ghost" onclick="clearNotInterested(${c.id})">恢复建联</button>` : `<button class="btn ghost" onclick="markNotInterested(${c.id})">不感兴趣</button>`} <button class="btn ghost" onclick="blacklistCreator(${c.id})">拉黑</button>`,
     ];
       }))}
@@ -1324,7 +1712,7 @@ function renderOutreach() {
     </div>
     <div class="toolbar">
       <div class="filters">
-        <input class="input" placeholder="搜索达人、产品、消息..." value="${escapeHtml(state.filters.outreachSearch)}" oninput="setFilter('outreachSearch', this.value)" />
+        <input id="outreachSearchInput" class="input" placeholder="搜索达人、产品、消息..." value="${escapeHtml(state.filters.outreachSearch)}" oninput="setFilter('outreachSearch', this.value)" />
         <select class="select" onchange="setFilter('outreachStatus', this.value)">
           ${[["全部", "全部"], ...statusFilterOptions].map(([val, label]) => `<option value="${escapeHtml(val)}" ${state.filters.outreachStatus === val ? "selected" : ""}>${escapeHtml(label)}</option>`).join("")}
         </select>
@@ -1364,7 +1752,12 @@ function outreachTargetPreview(targets) {
   if (!targets.length) {
     return `<div class="empty-state compact">还没有选择达人。请返回达人库选择可建联达人。</div>`;
   }
+  const staleCount = targets.filter((c) => c.metricsEstimated).length;
+  const freshHint = staleCount
+    ? `<div class="fresh-hint">部分达人的粉丝/GMV 为既往数据，建联前可在「达人详情」核对一下最新表现，沟通更有把握。</div>`
+    : "";
   return `
+    ${freshHint}
     <div class="workbench-creator-list">
       ${targets.slice(0, 4).map((c) => {
         const reason = creatorOutreachBlockReason(c);
@@ -1420,7 +1813,9 @@ function renderOutreachWorkbench() {
   const emailNotice = emailAccountConfigured()
     ? `邮箱已绑定：${escapeHtml(state.settings.emailAddress)}`
     : `Email 尚未绑定，选择 Email 前请先完成邮箱配置。`;
-  const selectedProductIds = state.products.slice(0, 3).map((p) => p.id);
+  const selectedProductIds = state.outreachContextProductId && product(state.outreachContextProductId)
+    ? [state.outreachContextProductId]
+    : state.products.slice(0, 3).map((p) => p.id);
 
   return `
     <div class="workbench-page">
@@ -1611,7 +2006,7 @@ function renderBlacklist() {
     </div>
     <div class="toolbar">
       <div class="filters">
-        <input class="input" placeholder="搜索达人、类目、地区、原因..." value="${escapeHtml(state.filters.blacklistSearch)}" oninput="setFilter('blacklistSearch', this.value)" />
+        <input id="blacklistSearchInput" class="input" placeholder="搜索达人、类目、地区、原因..." value="${escapeHtml(state.filters.blacklistSearch)}" oninput="setFilter('blacklistSearch', this.value)" />
       </div>
       <div class="filters">
         <span class="muted">移出黑名单后达人回到待联系，但仍受 24 小时限发和不感兴趣规则约束。</span>
@@ -1627,47 +2022,108 @@ function renderBlacklist() {
   `;
 }
 
+// 官方寄样申请状态 → 中文（不给 B 端看原始码）
+function sampleStatusLabel(status) {
+  const s = String(status || "").trim().toUpperCase();
+  const map = {
+    PENDING: "待审核", TO_APPROVE: "待审核", WAIT_APPROVE: "待审核", SUBMITTED: "待审核",
+    APPROVED: "已批准", PASS: "已批准",
+    REJECTED: "已拒绝", REJECT: "已拒绝", REJECT_CANCELLED: "已取消", CANCELLED: "已取消", CANCEL: "已取消",
+    SHIPPED: "已寄出", DELIVERING: "运输中", IN_TRANSIT: "运输中",
+    DELIVERED: "已签收", SIGNED: "已签收", RECEIVED: "已签收",
+    COMPLETED: "已完成", FULFILLED: "已完成", FINISHED: "已完成",
+    EXPIRED: "已过期",
+  };
+  return map[s] || (status ? "处理中" : "-");
+}
+function sampleStatusClass(status) {
+  const l = sampleStatusLabel(status);
+  if (["已完成", "已批准", "已签收"].includes(l)) return "success";
+  if (["已拒绝", "已取消", "已过期"].includes(l)) return "neutral";
+  return "warning";
+}
+// 单条申请的风险判读（喂样品成功率）
+function sampleRisk(app) {
+  const c = app.creator || {};
+  const fulfillPct = Number(String(c.fulfillment_percentage || "0").replace("%", "")) || 0;
+  if (app._riskNoOutput) return { level: "high", text: "拿样未产出" };
+  const manual = sampleManualFlag(c.username || c.creator_open_id);
+  if (manual) return { level: "high", text: manual };
+  if (fulfillPct > 0 && fulfillPct < 30) return { level: "mid", text: `历史履约 ${fulfillPct}%` };
+  return { level: "", text: "" };
+}
+function sampleManualFlag(key) {
+  const m = (state.creatorRiskFlags || {})[key];
+  return m || "";
+}
+
 function renderSamples() {
-  const statuses = Array.from(new Set(state.samples.map((s) => s.status).filter(Boolean)));
-  const rows = state.samples.filter((s) => {
-    const c = creator(s.creatorId);
-    const p = product(s.productId);
-    const kw = state.filters.sampleSearch.trim().toLowerCase();
-    const kwOk = !kw || [c?.username, c?.nickname, p?.name, s.status, s.tracking].join(" ").toLowerCase().includes(kw);
-    const statusOk = state.filters.sampleStatus === "全部" || s.status === state.filters.sampleStatus;
+  maybeAutoLoadSamples();
+  const apps = state.tiktokSamples || [];
+  const kw = (state.filters.sampleSearch || "").trim().toLowerCase();
+  const statusFilter = state.filters.sampleStatus || "全部";
+  const rows = apps.filter((a) => {
+    const c = a.creator || {};
+    const kwOk = !kw || [c.username, c.nickname, a.product?.title].join(" ").toLowerCase().includes(kw);
+    const statusOk = statusFilter === "全部" || sampleStatusLabel(a.status) === statusFilter;
     return kwOk && statusOk;
   });
-  const openCount = state.samples.filter((s) => !["已签收", "已拒绝"].includes(s.status)).length;
-  const signedCount = state.samples.filter((s) => s.status === "已签收").length;
-  const rejectedCount = state.samples.filter((s) => s.status === "已拒绝").length;
+  const statuses = Array.from(new Set(apps.map((a) => sampleStatusLabel(a.status)).filter((x) => x !== "-")));
+  const pending = apps.filter((a) => sampleStatusLabel(a.status) === "待审核").length;
+  const inFlight = apps.filter((a) => ["已批准", "已寄出", "运输中", "已签收", "处理中"].includes(sampleStatusLabel(a.status))).length;
+  const riskRows = apps.map((a) => ({ a, r: sampleRisk(a) })).filter((x) => x.r.level);
   return `
-    ${pageHead("寄样管理", "样品由建联 / 合作流程安排；这里更新审核、发货、签收状态。")}
+    ${pageHead("寄样管理", "数据来自 TikTok Shop 官方寄样接口，自动同步；风险清单自动标记拿样未产出的达人。", `<button class="btn" onclick="loadTikTokSamples()">刷新</button>`)}
     <div class="grid grid-4">
-      ${stat("寄样总数", state.samples.length, "本地样品台账")}
-      ${stat("处理中", openCount, "待审核/待发货/已发货")}
-      ${stat("已签收", signedCount, "可转合作")}
-      ${stat("已拒绝", rejectedCount, "不再推进")}
+      ${stat("寄样申请", apps.length, "官方接口同步", "")}
+      ${stat("待审核", pending, "需要处理")}
+      ${stat("履约中", inFlight, "已批准/寄出/签收")}
+      ${stat("风险达人", riskRows.length, "拿样未产出/低履约/已标记")}
     </div>
+    ${riskRows.length ? `
+    <div class="surface-panel" style="margin-bottom:16px">
+      <h3 style="margin:0 0 10px">⚠️ 风险清单（自动 + 手动标记）</h3>
+      ${table(["达人", "商品", "风险", "履约率", "操作"], riskRows.map(({ a, r }) => {
+        const c = a.creator || {};
+        return [
+          sampleCreatorCell(c),
+          escapeHtml((a.product?.title || "-").slice(0, 40)),
+          `<span class="status-pill ${r.level === "high" ? "neutral" : "warning"}" style="${r.level === "high" ? "color:#b91c1c;border-color:#fca5a5;background:#fef2f2" : ""}">${escapeHtml(r.text)}</span>`,
+          escapeHtml(String(c.fulfillment_percentage || "0") + "%"),
+          `<button class="btn ghost" onclick="clearRiskFlag('${escapeJs(c.username || c.creator_open_id)}')">移除标记</button>`,
+        ];
+      }))}
+    </div>` : ""}
     <div class="toolbar">
       <div class="filters">
-        <input class="input" placeholder="搜索达人、产品、物流单号..." value="${escapeHtml(state.filters.sampleSearch)}" oninput="setFilter('sampleSearch', this.value)" />
+        <input id="sampleSearchInput" class="input" placeholder="搜索达人、商品..." value="${escapeHtml(state.filters.sampleSearch || "")}" oninput="setFilter('sampleSearch', this.value)" />
         <select class="select" onchange="setFilter('sampleStatus', this.value)">
-          ${["全部", ...statuses].map((x) => `<option ${state.filters.sampleStatus === x ? "selected" : ""}>${escapeHtml(x)}</option>`).join("")}
+          ${["全部", ...statuses].map((x) => `<option ${statusFilter === x ? "selected" : ""}>${escapeHtml(x)}</option>`).join("")}
         </select>
       </div>
-      <div class="filters">
-        <span class="muted">当前显示 ${rows.length} 条</span>
-      </div>
+      <div class="filters"><span class="muted">当前显示 ${rows.length} / ${apps.length} 条</span></div>
     </div>
-    ${table(["达人", "产品", "状态", "物流单号", "更新时间", "操作"], rows.map((s) => [
-      personCell(creator(s.creatorId)),
-      product(s.productId)?.name || "-",
-      badge(s.status),
-      s.tracking || "-",
-      s.updatedAt,
-      sampleActions(s),
-    ]))}
+    ${apps.length ? table(["达人", "商品", "状态", "佣金", "履约率", "内容产出", "风险", "操作"], rows.map((a) => {
+      const c = a.creator || {};
+      const r = sampleRisk(a);
+      return [
+        sampleCreatorCell(c),
+        escapeHtml((a.product?.title || "-").slice(0, 36)),
+        `<span class="status-pill ${sampleStatusClass(a.status)}">${escapeHtml(sampleStatusLabel(a.status))}</span>`,
+        a.commission_rate ? Math.round(Number(a.commission_rate) * 100) + "%" : "-",
+        escapeHtml(String(c.fulfillment_percentage || "0") + "%"),
+        `${Number(c.content_count || 0)} 条`,
+        r.level ? `<span class="legacy-pill warn">${escapeHtml(r.text)}</span>` : `<span class="muted">-</span>`,
+        `<button class="btn ghost" onclick="flagRiskCreator('${escapeJs(c.username || c.creator_open_id)}')">标记风险</button>`,
+      ];
+    })) : `<div class="empty-state">当前店铺暂无寄样申请（官方接口返回空）。达人通过 TikTok 申请样品后会自动出现在这里。</div>`}
   `;
+}
+
+function sampleCreatorCell(c) {
+  const initial = escapeHtml(String(c.username || c.nickname || "?").slice(0, 1).toUpperCase());
+  const av = c.avatar_url ? `<img src="${escapeHtml(c.avatar_url)}" alt="" onerror="this.parentNode.textContent='${initial}'" />` : initial;
+  return `<div class="person-cell"><span class="avatar">${av}</span><div><b>${escapeHtml(c.nickname || c.username || "-")}</b><div class="muted">@${escapeHtml(c.username || "-")} · 粉丝 ${compactCount(c.follower_count)}</div></div></div>`;
 }
 
 function renderCooperations() {
@@ -1705,7 +2161,7 @@ function renderCooperations() {
     </div>
     <div class="toolbar">
       <div class="filters">
-        <input class="input" placeholder="搜索达人、产品、负责人、备注..." value="${escapeHtml(state.filters.coopSearch)}" oninput="setFilter('coopSearch', this.value)" />
+        <input id="coopSearchInput" class="input" placeholder="搜索达人、产品、负责人、备注..." value="${escapeHtml(state.filters.coopSearch)}" oninput="setFilter('coopSearch', this.value)" />
         <select class="select" onchange="setFilter('coopOutput', this.value)">
           ${["全部", "已产出", "未产出"].map((x) => `<option ${state.filters.coopOutput === x ? "selected" : ""}>${x}</option>`).join("")}
         </select>
@@ -2038,8 +2494,9 @@ function renderCreatorDetail() {
   if (!c) return renderKolPool();
   const records = state.outreach.filter((x) => x.creatorId === c.id);
   const coops = state.cooperations.filter((x) => x.creatorId === c.id);
+  const detailTab = state.detailTab || "沟通记录";
   return `
-    ${pageHead("KOL详情", "管理并沉淀达人基础资料与沟通记录；合作履约数据请进入合作管理查看。", `<button class="btn" onclick="setPage('kol')">返回达人库</button> <button class="btn primary" onclick="openOutreachModal(${c.id})">发起建联</button>`)}
+    ${pageHead("KOL详情", "管理并沉淀达人基础资料与沟通记录；合作履约数据请进入合作管理查看。", `<button class="btn" onclick="setPage('kol')">返回达人库</button> <button class="btn" onclick="findSimilarCreators(${c.id})" title="按当前达人内容品类，在库内找相似达人">相似达人</button> <button class="btn" onclick="reviewCreatorOnTikTok(${c.id})" title="打开 TikTok 主页，插件自动体检最新内容并回流更新评分">审查达人 ↗</button> <button class="btn primary" onclick="openOutreachModal(${c.id})">发起建联</button>`)}
     <div class="detail-shell">
       <aside class="profile-panel">
         <div class="card creator-profile">
@@ -2048,48 +2505,75 @@ function renderCreatorDetail() {
           <div class="link">@${escapeHtml(c.username)}</div>
           <div style="margin-top:10px">${creatorVisibleTags(c)}</div>
           <div class="metric-pair">
-            <div class="mini-metric"><b>${c.followers.toLocaleString()}</b><span class="muted">粉丝</span></div>
+            <div class="mini-metric"><b>${compactCount(c.followers)}</b><span class="muted">粉丝</span></div>
             <div class="mini-metric"><b>${escapeHtml(c.replyRate || "-")}</b><span class="muted">回复率</span></div>
           </div>
         </div>
+        ${creatorPreEvalCard(c)}
         <div class="card">
           <h3>联系方式</h3>
-          <p><b>TikTok站内：</b>@${escapeHtml(c.username)}</p>
+          <p><b>TikTok主页：</b>${creatorProfileUrl(c) ? `<a class="link" href="${escapeHtml(creatorProfileUrl(c))}" target="_blank" rel="noopener">@${escapeHtml(c.username)} ↗</a>` : `@${escapeHtml(c.username)}`}</p>
           <p><b>WhatsApp：</b>${escapeHtml(c.whatsapp || "未提供")}</p>
           <p><b>Email：</b>${escapeHtml(c.email || "未提供")}</p>
-        </div>
-        <div class="card">
-          <h3>标签备注</h3>
-          <p>${escapeHtml(c.notes)}</p>
         </div>
       </aside>
       <div class="work-panel">
         <div class="card chat-frame">
-          <div class="tabs"><span class="tab active">沟通记录</span><span class="tab">合作记录</span><span class="tab">基本信息</span></div>
-          <div class="chat-thread">
-          ${records.map((r) => `<div class="message ${r.status === "待我方回复" ? "inbound" : "outbound"}"><span class="badge">${escapeHtml(channelLabel(r.channel))}</span> ${badge(r.status)}<div class="message-body">${outreachMessageCell(r)}</div><span class="muted">${escapeHtml(r.updatedAt)}</span></div>`).join("") || `<div class="empty">暂无沟通记录。</div>`}
+          <div class="tabs">
+            ${["沟通记录", "合作记录", "基本信息"].map((t) => `<span class="tab ${detailTab === t ? "active" : ""}" onclick="setDetailTab('${t}')">${t}${t === "沟通记录" && records.length ? `(${records.length})` : ""}${t === "合作记录" && coops.length ? `(${coops.length})` : ""}</span>`).join("")}
           </div>
-          <div class="chat-input-bar">
-            ${records[0]
-              ? `<button class="btn primary" onclick="openConversation(${records[0].id})">进入会话回复（私信/邮箱自动区分）</button>`
-              : `<button class="btn primary" onclick="openOutreachModal(${c.id})">发起建联</button>`}
-          </div>
-        </div>
-        <div class="card">
-          <h3>合作记录入口</h3>
-          <div class="timeline">
-            ${coops.map((x) => `
-              <div class="message">
-                <b>${escapeHtml(product(x.productId)?.name || "-")}</b>
-                <div style="margin-top:6px">${badge(detailCoopStage(x))} <span class="muted">负责人：${escapeHtml(x.owner || "-")}</span></div>
-                <div style="margin-top:10px"><button class="btn ghost" onclick="setPage('cooperations')">进入合作详情</button></div>
-              </div>
-            `).join("") || `<div class="empty">暂无合作记录。</div>`}
-          </div>
+          ${detailTab === "沟通记录" ? `
+            <div class="chat-thread">
+            ${records.map((r) => `<div class="message ${r.status === "待我方回复" ? "inbound" : "outbound"}"><span class="badge">${escapeHtml(channelLabel(r.channel))}</span> ${badge(r.status)}<div class="message-body">${outreachMessageCell(r)}</div><span class="muted">${escapeHtml(r.updatedAt)}</span></div>`).join("") || `<div class="empty">暂无沟通记录。从达人库或下方按钮发起建联后，这里会沉淀全部对话。</div>`}
+            </div>
+            <div class="chat-input-bar">
+              ${records[0]
+                ? `<button class="btn primary" onclick="openConversation(${records[0].id})">进入会话回复（私信/邮箱自动区分）</button>`
+                : `<button class="btn primary" onclick="openOutreachModal(${c.id})">发起建联</button>`}
+            </div>
+          ` : ""}
+          ${detailTab === "合作记录" ? `
+            <div class="timeline" style="padding:14px">
+              ${coops.map((x) => `
+                <div class="message">
+                  <b>${escapeHtml(product(x.productId)?.name || "-")}</b>
+                  <div style="margin-top:6px">${badge(detailCoopStage(x))} <span class="muted">负责人：${escapeHtml(x.owner || "-")}</span></div>
+                  <div style="margin-top:10px"><button class="btn ghost" onclick="setPage('cooperations')">进入合作详情</button></div>
+                </div>
+              `).join("") || `<div class="empty">暂无合作记录。达人建联并产生合作后，这里会展示出单/履约。</div>`}
+            </div>
+          ` : ""}
+          ${detailTab === "基本信息" ? creatorBasicInfoPanel(c) : ""}
         </div>
       </div>
     </div>
   `;
+}
+
+// 详情·基本信息面板
+function creatorBasicInfoPanel(c) {
+  const rows = [
+    ["昵称", c.nickname || "-"],
+    ["用户名", "@" + c.username],
+    ["TikTok 主页", creatorProfileUrl(c) ? `<a class="link" href="${escapeHtml(creatorProfileUrl(c))}" target="_blank" rel="noopener">打开 ↗</a>` : "-"],
+    ["达人类型", escapeHtml(normalizeCreatorType(c.type, c))],
+    ["内容类目", creatorCategoryValues(c).map(escapeHtml).join(" / ") || "-"],
+    ["地区", escapeHtml(c.region || "-")],
+    ["粉丝", compactCount(c.followers)],
+    ["TikTok GMV", escapeHtml(creatorGmvDisplay(c.gmv))],
+    ["视频均播", creatorMetricValue(c, "avgVideoViews")],
+    ["直播均观", creatorMetricValue(c, "avgLiveUv")],
+    ["回复率", escapeHtml(creatorReplyRateDisplay(c.replyRate))],
+  ];
+  const contentCats = creatorContentCategories(c);
+  if (creatorHasContentData(c)) {
+    rows.push(["近期内容主题", (c.contentTopics || []).map(escapeHtml).join("、") || "-"]);
+    rows.push(["内容涉及品类", contentCats.map(escapeHtml).join(" / ") || "-"]);
+  }
+  return `<div class="basic-info" style="padding:14px">
+    <table class="kv-table">${rows.map(([k, v]) => `<tr><th>${k}</th><td>${v}</td></tr>`).join("")}</table>
+    ${c.bio ? `<p class="muted" style="margin-top:10px"><b>简介：</b>${escapeHtml(c.bio)}</p>` : ""}
+  </div>`;
 }
 
 function table(headers, rows) {
@@ -2104,7 +2588,10 @@ function table(headers, rows) {
   `;
 }
 
-function paginationBar(scope, currentPage, totalPages, pageSize, totalRows) {
+function paginationBar(scope, currentPage, totalPages, pageSize, totalRows, opts = {}) {
+  const unit = opts.unit || "位达人";
+  const onPage = opts.onPage || "setKolPage";
+  const onSize = opts.onSize || "setKolPageSize";
   const pages = Array.from(new Set([
     1,
     Math.max(1, currentPage - 1),
@@ -2114,12 +2601,12 @@ function paginationBar(scope, currentPage, totalPages, pageSize, totalRows) {
   ])).filter((x) => x >= 1 && x <= totalPages).sort((a, b) => a - b);
   return `
     <div class="pagination-bar">
-      <div class="muted">共 ${totalRows} 位达人</div>
+      <div class="muted">共 ${totalRows} ${unit}</div>
       <div class="pagination-controls">
-        <button class="btn" ${currentPage <= 1 ? "disabled" : ""} onclick="setKolPage(${currentPage - 1})">上一页</button>
-        ${pages.map((page, index) => `${index > 0 && page - pages[index - 1] > 1 ? `<span class="muted">...</span>` : ""}<button class="btn ${page === currentPage ? "primary" : ""}" onclick="setKolPage(${page})">${page}</button>`).join("")}
-        <button class="btn" ${currentPage >= totalPages ? "disabled" : ""} onclick="setKolPage(${currentPage + 1})">下一页</button>
-        <select class="select" onchange="setKolPageSize(this.value)">
+        <button class="btn" ${currentPage <= 1 ? "disabled" : ""} onclick="${onPage}(${currentPage - 1})">上一页</button>
+        ${pages.map((page, index) => `${index > 0 && page - pages[index - 1] > 1 ? `<span class="muted">...</span>` : ""}<button class="btn ${page === currentPage ? "primary" : ""}" onclick="${onPage}(${page})">${page}</button>`).join("")}
+        <button class="btn" ${currentPage >= totalPages ? "disabled" : ""} onclick="${onPage}(${currentPage + 1})">下一页</button>
+        <select class="select" onchange="${onSize}(this.value)">
           ${[20, 50, 100].map((size) => `<option value="${size}" ${Number(pageSize) === size ? "selected" : ""}>${size} 条/页</option>`).join("")}
         </select>
       </div>
@@ -2144,6 +2631,26 @@ function productThumb(product) {
   return `<span>${escapeHtml(letter)}</span>`;
 }
 
+// 商品状态原始码 → 干净中文（不给 B 端看 API 原始码）
+function productStatusLabel(status) {
+  const s = String(status || "").trim().toUpperCase();
+  const map = {
+    ACTIVATE: "在售", ACTIVE: "在售", LIVE: "在售", PUBLISHED: "在售",
+    SELLER_DEACTIVATED: "卖家下架", PLATFORM_DEACTIVATED: "平台下架",
+    DEACTIVATED: "已下架", FROZEN: "已冻结", FREEZE: "已冻结",
+    DELETED: "已删除", DRAFT: "草稿", PENDING: "审核中", REVIEWING: "审核中",
+    FAILED: "审核未过", SUSPENDED: "已暂停",
+  };
+  return map[s] || (status ? "已同步" : "已同步");
+}
+function productStatusClass(status) {
+  const s = String(status || "").trim().toUpperCase();
+  if (["ACTIVATE", "ACTIVE", "LIVE", "PUBLISHED"].includes(s)) return "success";
+  if (["SELLER_DEACTIVATED", "PLATFORM_DEACTIVATED", "DEACTIVATED", "DELETED", "FAILED", "FROZEN", "FREEZE", "SUSPENDED"].includes(s)) return "neutral";
+  if (["DRAFT", "PENDING", "REVIEWING"].includes(s)) return "warning";
+  return "neutral";
+}
+
 function productList(rows) {
   if (!rows.length) return `<div class="empty panel-empty">当前筛选下暂无商品。绑定店铺并同步后，商品会自动进入建联和邀约流程。</div>`;
   return `
@@ -2166,11 +2673,11 @@ function productList(rows) {
           </div>
           <div>${escapeHtml(p.price || "-")}</div>
           <div>${Number.isFinite(Number(p.stock)) ? Number(p.stock) : "-"}</div>
-          <div>${badge(p.status || "已同步")}</div>
+          <div><span class="status-pill ${productStatusClass(p.status)}">${escapeHtml(productStatusLabel(p.status))}</span></div>
           <div class="row-actions">
             <button class="btn" onclick="openProductModal(${p.id})">详情</button>
-            <button class="btn ghost" onclick="goProductCoops(${p.id})">合作</button>
-            <button class="btn ghost" onclick="goProductOutreach(${p.id})">建联</button>
+            <button class="btn ghost" onclick="goProductCoops(${p.id})">合作记录</button>
+            <button class="btn ghost" onclick="startProductOutreach(${p.id})" ${productPromotable(p) ? "" : "disabled title='下架商品不可建联'"}>建联</button>
           </div>
         </div>
       `).join("")}
@@ -2182,9 +2689,10 @@ function productPicker(selectedId = state.products[0]?.id) {
   if (!state.products.length) {
     return `<div class="empty panel-empty">还没有同步商品。请先完成店铺授权并同步商品，再发起建联。</div>`;
   }
+  const sortedProducts = [...state.products].sort((a, b) => (productPromotable(b) ? 1 : 0) - (productPromotable(a) ? 1 : 0));
   return `
     <div class="product-picker">
-      ${state.products.map((p) => `
+      ${sortedProducts.map((p) => `
         <label class="product-pick ${Number(selectedId) === Number(p.id) ? "selected" : ""}">
           <input type="radio" name="outreachProductId" value="${p.id}" ${Number(selectedId) === Number(p.id) ? "checked" : ""} />
           <span class="product-thumb">${productThumb(p)}</span>
@@ -2205,9 +2713,16 @@ function commissionDefault(product) {
 }
 
 function productPromotable(p) {
-  const status = String(p?.status || "").trim();
-  const blocked = ["下架", "已下架", "停售", "售罄", "失效", "草稿", "冻结", "不可推广", "未上架"];
-  return !blocked.some((s) => status.includes(s));
+  const raw = String(p?.status || "").trim();
+  if (!raw) return true; // 无状态默认可推广
+  // 英文状态码：只有在售/激活可推广，下架/删除/冻结/草稿/审核一律不可
+  const label = productStatusLabel(raw);
+  const blockedLabels = ["卖家下架", "平台下架", "已下架", "已删除", "已冻结", "草稿", "审核中", "审核未过", "已暂停"];
+  if (blockedLabels.includes(label)) return false;
+  // 中文旧状态兜底
+  const blockedZh = ["下架", "停售", "售罄", "失效", "草稿", "冻结", "不可推广", "未上架"];
+  if (blockedZh.some((s) => raw.includes(s))) return false;
+  return true;
 }
 
 function productMultiPicker(selectedIds = [state.products[0]?.id].filter(Boolean)) {
@@ -2215,6 +2730,8 @@ function productMultiPicker(selectedIds = [state.products[0]?.id].filter(Boolean
     return `<div class="empty panel-empty">还没有同步商品。请先完成店铺授权并同步商品，再发起定向邀约。</div>`;
   }
   const selected = new Set(selectedIds.map(Number));
+  // 可用商品前置，不可用(下架等)全部沉底
+  const sortedProducts = [...state.products].sort((a, b) => (productPromotable(b) ? 1 : 0) - (productPromotable(a) ? 1 : 0));
   return `
     <div id="selectedOutreachProducts" class="outreach-product-table">
       <div class="outreach-product-head">
@@ -2224,7 +2741,7 @@ function productMultiPicker(selectedIds = [state.products[0]?.id].filter(Boolean
         <span>标准佣金率</span>
         <span>广告佣金</span>
       </div>
-      ${state.products.map((p) => {
+      ${sortedProducts.map((p) => {
         const promotable = productPromotable(p);
         const checked = promotable && selected.has(Number(p.id));
         const defaultRate = commissionDefault(p);
@@ -2358,7 +2875,7 @@ function personCell(c) {
   if (!c) return "-";
   return `
     <div class="person">
-      <span class="avatar">${c.avatarUrl ? `<img src="${escapeHtml(c.avatarUrl)}" alt="${escapeHtml(c.username)}" />` : escapeHtml(c.username.slice(0, 1).toUpperCase())}</span>
+      <span class="avatar">${creatorAvatarSrc(c) ? `<img src="${escapeHtml(creatorAvatarSrc(c))}" alt="${escapeHtml(c.username)}" loading="lazy" onerror="this.parentNode.textContent='${escapeHtml(c.username.slice(0, 1).toUpperCase())}'" />` : escapeHtml(c.username.slice(0, 1).toUpperCase())}</span>
       <div>
         <button class="link" onclick="showCreator(${c.id})">@${escapeHtml(c.username)}</button>
         <div class="muted">${escapeHtml(c.nickname || "-")}</div>
@@ -2408,8 +2925,22 @@ function render() {
     billing: renderBilling,
     admin: renderAdmin,
   };
+  // 重渲染会重建 DOM → 输入框失焦（搜索栏打一个字就停）。先记住焦点+光标，渲染后还原。
+  const active = document.activeElement;
+  const focusId = active && active.id ? active.id : null;
+  const selStart = active && typeof active.selectionStart === "number" ? active.selectionStart : null;
+  const selEnd = active && typeof active.selectionEnd === "number" ? active.selectionEnd : null;
   const content = state.selectedCreatorId ? renderCreatorDetail() : (routes[state.page] || renderDashboard)();
   document.getElementById("app").innerHTML = appLayout(content);
+  if (focusId) {
+    const el = document.getElementById(focusId);
+    if (el) {
+      el.focus();
+      if (selStart != null && typeof el.setSelectionRange === "function") {
+        try { el.setSelectionRange(selStart, selEnd); } catch (e) {}
+      }
+    }
+  }
 }
 
 function setFilter(key, value) {
@@ -2448,6 +2979,25 @@ function setKolPageSize(size) {
   render();
 }
 
+function setProductPage(page) {
+  state.filters.productPage = Math.max(1, Number(page) || 1);
+  saveState();
+  render();
+}
+
+function setProductPageSize(size) {
+  state.filters.productPageSize = Number(size) || 20;
+  state.filters.productPage = 1;
+  saveState();
+  render();
+}
+
+function setDetailTab(tab) {
+  state.detailTab = tab;
+  saveState();
+  render();
+}
+
 function dashboardGo(page, filterKey = "", value = "") {
   if (page === "outreach") {
     state.filters.outreachSearch = "";
@@ -2466,6 +3016,7 @@ function dashboardGo(page, filterKey = "", value = "") {
 }
 
 function showCreator(id) {
+  state.detailTab = "沟通记录";
   navigateHash(`kol/creator/${Number(id)}`);
 }
 
@@ -2530,6 +3081,16 @@ function selectTikTokShop(cipher) {
   addSyncLog("店铺选择", "已切换", `当前同步店铺：${state.settings.tiktokShopName}`);
   saveState();
   render();
+}
+
+// 切换店铺并静默重拉该店商品（多店铺：每店商品独立）
+function switchTikTokShop(cipher) {
+  const prev = state.settings.selectedTikTokShopCipher;
+  selectTikTokShop(cipher);
+  if (state.settings.selectedTikTokShopCipher && state.settings.selectedTikTokShopCipher !== prev) {
+    state.tiktokSamples = undefined; // 切店重载样品
+    syncProducts({ silent: true });
+  }
 }
 
 function channelOptionsForCreators(targets, currentChannel = "") {
@@ -2681,12 +3242,15 @@ async function startTikTokAuth() {
   }
 }
 
-async function checkTikTokShops() {
+async function checkTikTokShops(options = {}) {
+  const silent = Boolean(options.silent);
   try {
     const data = await apiRequest("/api/tiktok/shops");
     const shops = data.shops || [];
     const firstShop = shops[0];
-    const selected = shops.find((shop) => shopCipher(shop) === state.settings.selectedTikTokShopCipher) || firstShop;
+    const prevCipher = state.settings.selectedTikTokShopCipher;
+    const selected = shops.find((shop) => shopCipher(shop) === prevCipher) || firstShop;
+    const shopsChanged = JSON.stringify((state.settings.tiktokShops || []).map(shopCipher)) !== JSON.stringify(shops.map(shopCipher));
     state.settings.tiktokConnected = true;
     state.settings.apiStatus = firstShop ? "已绑定店铺" : "未返回店铺";
     state.settings.tiktokBackendStatus = "已连接 TikTok";
@@ -2696,20 +3260,25 @@ async function checkTikTokShops() {
     state.settings.tiktokShopCipher = selected ? shopCipher(selected) : "";
     state.settings.tiktokTokenSavedAt = data.token?.saved_at || state.settings.tiktokTokenSavedAt || "";
     state.settings.tiktokLastAuthCheck = nowText();
-    addSyncLog("店铺绑定", state.settings.apiStatus, firstShop ? `已读取 ${shops.length} 个授权店铺；当前同步：${state.settings.tiktokShopName}` : "TikTok 已授权，但没有返回店铺列表。");
-    pushMessage("店铺绑定", firstShop ? `已读取 TikTok Shop 授权店铺 ${shops.length} 个；当前同步：${state.settings.tiktokShopName}` : "TikTok Shop 已授权，但未返回店铺列表。");
+    if (!silent) {
+      addSyncLog("店铺绑定", state.settings.apiStatus, firstShop ? `已读取 ${shops.length} 个授权店铺；当前同步：${state.settings.tiktokShopName}` : "TikTok 已授权，但没有返回店铺列表。");
+      pushMessage("店铺绑定", firstShop ? `已读取 TikTok Shop 授权店铺 ${shops.length} 个；当前同步：${state.settings.tiktokShopName}` : "TikTok Shop 已授权，但未返回店铺列表。");
+    }
     saveState();
     render();
-    if (firstShop) {
+    // 仅在店铺列表有变化（如新授权了店）时才重拉商品，避免每次进页面都拉
+    if (firstShop && (!silent || shopsChanged)) {
       await syncProducts({ silent: true });
     }
   } catch (error) {
     const reason = error.message || "读取已授权店铺失败。";
-    state.settings.apiStatus = "店铺读取失败";
-    addSyncLog("店铺绑定", "失败", reason);
-    saveState();
-    render();
-    showApiHandoffSteps("店铺绑定", reason);
+    if (!silent) {
+      state.settings.apiStatus = "店铺读取失败";
+      addSyncLog("店铺绑定", "失败", reason);
+      saveState();
+      render();
+      showApiHandoffSteps("店铺绑定", reason);
+    }
   }
 }
 
@@ -2733,6 +3302,43 @@ function maybeAutoSyncProducts() {
   }, 0);
 }
 
+// 拉官方寄样申请（建联后·样品成功率）
+async function loadTikTokSamples(options = {}) {
+  try {
+    const data = await apiRequest("/api/tiktok/samples", {
+      method: "POST",
+      body: JSON.stringify({ shop_cipher: state.settings.tiktokShopCipher || "" }),
+    });
+    state.tiktokSamples = Array.isArray(data.applications) ? data.applications : [];
+    state.settings.lastSampleSync = nowText();
+    if (!options.silent) pushMessage("寄样同步", `已从官方接口同步 ${state.tiktokSamples.length} 条寄样申请。`);
+    saveState();
+    render();
+  } catch (e) {
+    state.tiktokSamples = state.tiktokSamples || [];
+    if (!options.silent) pushMessage("寄样同步失败", e.message || "拉取官方寄样数据失败。");
+  }
+}
+function maybeAutoLoadSamples() {
+  if (state.tiktokSamples !== undefined) return;
+  state.tiktokSamples = []; // 占位，防重复触发
+  setTimeout(() => loadTikTokSamples({ silent: true }), 0);
+}
+function flagRiskCreator(key) {
+  if (!key) return;
+  const reason = prompt("标记风险类型（骗样 / 不履约 / 沟通差 / 未按时发布）", "不履约");
+  if (reason == null) return;
+  state.creatorRiskFlags = state.creatorRiskFlags || {};
+  state.creatorRiskFlags[key] = reason.trim() || "已标记风险";
+  saveState();
+  render();
+}
+function clearRiskFlag(key) {
+  if (state.creatorRiskFlags) delete state.creatorRiskFlags[key];
+  saveState();
+  render();
+}
+
 async function syncProducts(options = {}) {
   const silent = Boolean(options.silent);
   state.settings.lastProductSync = nowText();
@@ -2748,6 +3354,13 @@ async function syncProducts(options = {}) {
     if (Array.isArray(data.products) && data.products.length) {
       state.products = data.products;
     }
+    // 把当前店铺商品品类 + 产品名/关键词推给后端，供扩展算"内容契合"（产品级，不只大类目）
+    try {
+      const cats = [...new Set(state.products.map((p) => normalizeCreatorCategoryLabel(String(p.category || "").trim())).filter(Boolean))];
+      const productNames = [...new Set(state.products.map((p) => String(p.name || p.title || "").trim()).filter(Boolean))].slice(0, 60);
+      const productKeywords = productNamesToKeywords(productNames);
+      apiRequest("/api/merchant/context", { method: "POST", body: JSON.stringify({ categories: cats, productNames, productKeywords, shopName: state.settings.tiktokShopName || "" }) }).catch(() => {});
+    } catch (e) { /* ignore */ }
     state.settings.apiStatus = "商品已同步";
     state.settings.tiktokBackendStatus = "已连接 TikTok";
     addSyncLog("商品同步", "成功", `已从 TikTok Shop 同步 ${data.products?.length || 0} 个商品。`);
@@ -2778,11 +3391,61 @@ function creatorNextPageToken(data) {
 function creatorImportKeys(row) {
   const keys = [];
   const shopKey = row.sourceShopCipher || "";
-  const identity = row.sourceId || row.username || "";
+  const uname = String(row.username || "").trim().toLowerCase();
+  const identity = row.sourceId || uname || "";
   if (shopKey && identity) keys.push(`${shopKey}:${identity}`);
-  if (!shopKey && row.sourceId) keys.push(row.sourceId);
-  if (!shopKey && row.username) keys.push(row.username);
+  if (!shopKey && row.sourceId) keys.push(String(row.sourceId));
+  if (!shopKey && uname) keys.push(`u:${uname}`);
   return keys;
+}
+
+// 前端去重：localStorage 里可能残留旧的重复达人（同一 username 两行）。
+// 按小写 username 合并成一行——保留资料最全的，并入联系方式/建联历史。
+function dedupeStateCreators() {
+  const groups = new Map();
+  for (const c of state.creators) {
+    const u = String(c.username || "").trim().toLowerCase();
+    const key = u || ("__id_" + c.id);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(c);
+  }
+  let removed = 0;
+  const merged = [];
+  const pick = (...vals) => vals.find((v) => v !== undefined && v !== null && v !== "" && v !== "-");
+  for (const rows of groups.values()) {
+    if (rows.length === 1) { merged.push(rows[0]); continue; }
+    removed += rows.length - 1;
+    const fresh = rows.find((r) => r.sourceId) || rows[0];
+    const base = { ...fresh, id: Math.min(...rows.map((r) => Number(r.id) || Infinity)) };
+    for (const f of ["email", "whatsapp", "instagram", "wechat", "contactPerson"]) base[f] = pick(base[f], ...rows.map((r) => r[f])) || base[f] || "";
+    base.legacyOutreach = pick(base.legacyOutreach, ...rows.map((r) => r.legacyOutreach)) || null;
+    base.recentPerf = pick(base.recentPerf, ...rows.map((r) => r.recentPerf)) || base.recentPerf || null;
+    merged.push(base);
+  }
+  // 第二遍：交叉合并老库"用户名/昵称写反"的孤儿——legacy 行的 nickname 命中了某平台行的 username。
+  // （老库把人名存进了 username、真 handle 存进 nickname；平台行才有正确 handle+头像+sourceId）
+  const norm = (s) => String(s || "").trim().toLowerCase();
+  const platByUser = new Map();
+  for (const c of merged) if (c.sourceId) platByUser.set(norm(c.username), c);
+  const keep = [];
+  for (const c of merged) {
+    if (!c.sourceId) {
+      const t = platByUser.get(norm(c.nickname));
+      if (t && norm(c.username) !== norm(t.username)) {
+        for (const f of ["email", "whatsapp", "instagram", "wechat", "contactPerson"]) t[f] = pick(t[f], c[f]) || t[f] || "";
+        t.legacyOutreach = pick(t.legacyOutreach, c.legacyOutreach) || null;
+        removed += 1;
+        continue; // 丢弃孤儿
+      }
+    }
+    keep.push(c);
+  }
+  if (removed) {
+    state.creators = keep;
+    // 选中项/批量选若指向被合并掉的 id，清理
+    state.bulkCreatorIds = (state.bulkCreatorIds || []).filter((id) => keep.some((c) => c.id === id));
+  }
+  return removed;
 }
 
 function creatorLegacyImportKeys(row) {
@@ -2921,6 +3584,8 @@ async function loadPlatformCreatorLibrary(options = {}) {
     const data = await apiRequest("/api/platform/creators");
     const creators = Array.isArray(data.creators) ? data.creators : [];
     const changed = upsertPlatformCreatorLibrary(creators);
+    const deduped = dedupeStateCreators();
+    if (deduped) addSyncLog("平台达人库", "去重", `合并了 ${deduped} 个重复达人。`);
     platformCreatorLibraryLoaded = true;
     if (creators.length) {
       addSyncLog("平台达人库", "已读取", `已从平台达人库读取 ${creators.length} 个达人。`);
@@ -3162,6 +3827,82 @@ function goProductOutreach(id) {
   state.filters.outreachChannel = "全部";
   closeModal();
   navigateHash("outreach");
+}
+
+// 商品「建联」：建联从达人库发起。带上商品上下文，进达人库选人，一键建联时自动选中该商品。
+function startProductOutreach(id) {
+  const row = product(id);
+  if (!row) return;
+  if (!productPromotable(row)) return alert("该商品当前状态不可推广，无法用于建联。");
+  state.outreachContextProductId = id;
+  closeModal();
+  saveState();
+  navigateHash("kol");
+}
+function clearOutreachContext() {
+  state.outreachContextProductId = null;
+  saveState();
+  render();
+}
+
+// #4/#8 审查达人：打开其 TikTok 主页 → Compass 采集器自动体检最新内容 → 回流更新评分。
+// BD 只点一个按钮，不用手动操作扩展。
+function reviewCreatorOnTikTok(id) {
+  const c = creator(id);
+  if (!c) return;
+  const url = creatorProfileUrl(c);
+  if (!url) return alert("缺少该达人的 TikTok 主页地址，无法审查。");
+  window.open(url, "_blank", "noopener");
+  pushMessage("审查达人", `已打开 @${c.username} 的 TikTok 主页。装了 Compass 采集器会自动体检其最新内容并回流；稍后回到本页刷新，评分与带货信号即更新。`);
+}
+
+// 标杆达人的全部品类（内容实证 + 库存类目）
+function creatorAllCategories(c) {
+  const set = new Set();
+  creatorContentCategories(c).forEach((v) => v && set.add(v));
+  (typeof creatorCategoryValues === "function" ? creatorCategoryValues(c) : []).forEach((v) => v && set.add(String(v)));
+  return [...set];
+}
+
+// 相似度（0-130）：和标杆达人比 —— 类目重合(主) + 粉丝量级相近 + 带货度相近。
+// 不同类目直接判不相似（返回 -1，从结果剔除）。
+function creatorSimilarity(c, b) {
+  if (!c || !b || c.id === b.id) return -1;
+  const bCats = new Set(creatorAllCategories(b));
+  if (!bCats.size) return -1;
+  const overlap = creatorAllCategories(c).filter((x) => bCats.has(x)).length;
+  if (!overlap) return -1; // 类目不重合 = 不相似
+  let score = Math.min(overlap, 3) * 30; // 类目重合，最多 90
+  const bf = Math.log10((Number(b.followers) || 0) + 10);
+  const cf = Math.log10((Number(c.followers) || 0) + 10);
+  score += Math.max(0, 25 - Math.abs(bf - cf) * 18); // 粉丝量级越接近越高，最多 25
+  const be = (b.recentPerf && Number(b.recentPerf.ecVideoCount)) || 0;
+  const ce = (c.recentPerf && Number(c.recentPerf.ecVideoCount)) || 0;
+  if (be > 0 && ce > 0) score += 15; // 都有带货频率
+  else if (ce > 0) score += 8;
+  return Math.round(score);
+}
+
+// #6 相似达人：在库内按"和标杆达人的类目+粉丝量级+带货度"加权排序（官方"找相似"需服务商权限，先用库内）
+function findSimilarCreators(id) {
+  const c = creator(id);
+  if (!c) return;
+  if (!creatorAllCategories(c).length) return alert("该达人暂无可用于匹配的内容品类。建议先点「审查达人」采集近期内容后再找相似。");
+  state.similarToCreatorId = id;
+  state.filters.kolCategories = []; // 由相似度统一排序，不再用粗筛
+  state.filters.kolSearch = "";
+  state.filters.kolPage = 1;
+  state.selectedCreatorId = null;
+  saveState();
+  navigateHash("kol");
+  pushMessage("相似达人", `已按 @${c.username} 的类目 / 粉丝量级 / 带货度，在达人库加权排序相似达人。`);
+}
+
+function clearSimilar() {
+  state.similarToCreatorId = null;
+  state.filters.kolPage = 1;
+  saveState();
+  render();
 }
 
 function dateAfter(days) {
@@ -4030,7 +4771,7 @@ function renderConversation() {
           const channelsLabel = Array.from(new Set(records.map((r) => channelLabel(r.channel)))).join(" / ");
           return `
             <button class="conversation-item ${cid === selectedId ? "active" : ""}" onclick="selectConversation(${cid})">
-              <span class="avatar">${c?.avatarUrl ? `<img src="${escapeHtml(c.avatarUrl)}" alt="" />` : escapeHtml((c?.username || "?").slice(0, 1).toUpperCase())}</span>
+              <span class="avatar">${creatorAvatarSrc(c) ? `<img src="${escapeHtml(creatorAvatarSrc(c))}" alt="" loading="lazy" onerror="this.parentNode.textContent='${escapeHtml((c?.username || '?').slice(0, 1).toUpperCase())}'" />` : escapeHtml((c?.username || "?").slice(0, 1).toUpperCase())}</span>
               <span class="conversation-item-main">
                 <b>@${escapeHtml(c?.username || "-")}</b>
                 <span class="muted">${escapeHtml(channelsLabel)} · ${escapeHtml(outreachStatusLabel(rollupOutreachStatus(records)))}</span>
@@ -4322,6 +5063,80 @@ function clearBulkSelection() {
   state.bulkCreatorIds = [];
   saveState();
   render();
+}
+
+// ===== 建联前核验向导（逐个看真实体检再决定建联；核验后用产品精准匹配重打分）=====
+function bulkOutreachIds() {
+  return (state.bulkCreatorIds || []).filter((id) => { const c = creator(id); return c && !creatorOutreachBlockReason(c); });
+}
+function startBulkOutreach() {
+  const ids = bulkOutreachIds();
+  if (!ids.length) return alert("请先选择至少一位可建联达人。黑名单、不感兴趣和 24 小时内已建联达人会被拦截。");
+  if (!state.products.length) { alert("请先完成店铺授权并同步商品，再发起建联。"); navigateHash("products"); return; }
+  if (ids.length < 2) { openOutreachModal(); return; }
+  const body = `
+    <p style="margin:0 0 10px;line-height:1.7">已选 <b>${ids.length}</b> 位达人。<b>建联前核验</b>会逐个打开达人 TikTok 主页，采集器自动抓取 TA 近期真实视频内容，<b>跟你的产品精确匹配后重新打分</b>——比库里基于历史类目的粗略分准得多，尤其能看出 TA 近期是不是真在带跟你产品相近的货。看完逐个勾选要不要建联。</p>
+    <p class="muted" style="margin:0">也可以不核验，直接用库内现有分建联。</p>`;
+  openModal("建联前核验", body, `
+    <button class="btn ghost" onclick="closeModal()">取消</button>
+    <button class="btn" onclick="skipVerifyOutreach()">跳过，直接建联</button>
+    <button class="btn primary" onclick="startVerifyWizard()">逐个核验</button>`);
+}
+function skipVerifyOutreach() { closeModal(); openOutreachModal(); }
+function startVerifyWizard() {
+  state.verify = { ids: bulkOutreachIds(), idx: 0, decisions: {}, opened: {} };
+  saveState();
+  renderVerifyWizard();
+}
+function renderVerifyWizard() {
+  const v = state.verify;
+  if (!v || !v.ids.length) { closeModal(); return; }
+  if (v.idx >= v.ids.length) return finishVerify();
+  const c = creator(v.ids[v.idx]);
+  if (!c) { v.idx++; return renderVerifyWizard(); }
+  const opened = Boolean(v.opened[c.id]);
+  const prod = creatorProductFitMatches(c);
+  const matchLine = prod && prod.length
+    ? `<div class="fresh-hint" style="color:#15803d">✓ 贴近你的产品：${prod.slice(0, 5).map(escapeHtml).join("、")}</div>`
+    : (creatorHasContentData(c) ? `<div class="fresh-hint" style="color:#b91c1c">近期内容未见跟你产品相近的</div>` : `<div class="fresh-hint">未核验，当前是库内粗略分</div>`);
+  const body = `
+    <div class="muted" style="margin-bottom:8px">进度 ${v.idx + 1} / ${v.ids.length} · 核验后打分更准（真实内容 + 产品精确匹配 + 带货）</div>
+    ${creatorPreEvalCard(c)}
+    ${matchLine}
+    <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn primary" onclick="verifyOpenTikTok()">${opened ? "重新打开核验" : "打开 TikTok 核验 ↗"}</button>
+      <button class="btn" onclick="verifyRefresh()">刷新体检</button>
+    </div>
+    ${opened ? `<p class="muted" style="margin:8px 0 0">已打开 TA 主页，等几秒采集器体检完，点「刷新体检」看更新后的分。</p>` : ""}`;
+  openModal("逐个核验", body, `
+    <span class="muted" style="margin-right:auto">已勾建联 ${Object.values(v.decisions).filter((d) => d === "outreach").length}</span>
+    <button class="btn ghost" onclick="verifyDecide('skip')">✗ 跳过</button>
+    <button class="btn primary" onclick="verifyDecide('outreach')">✓ 加入建联</button>`);
+}
+function verifyOpenTikTok() {
+  const v = state.verify; if (!v) return;
+  const c = creator(v.ids[v.idx]); if (!c) return;
+  const url = creatorProfileUrl(c); if (!url) return alert("缺少该达人的 TikTok 主页地址。");
+  window.open(url, "_blank", "noopener");
+  v.opened[c.id] = true; saveState(); renderVerifyWizard();
+}
+async function verifyRefresh() {
+  if (typeof loadPlatformCreatorLibrary === "function") { try { await loadPlatformCreatorLibrary({ silent: true }); } catch (e) {} }
+  renderVerifyWizard();
+}
+function verifyDecide(decision) {
+  const v = state.verify; if (!v) return;
+  v.decisions[v.ids[v.idx]] = decision; v.idx += 1; saveState();
+  renderVerifyWizard();
+}
+function finishVerify() {
+  const v = state.verify || { ids: [], decisions: {} };
+  const chosen = v.ids.filter((id) => v.decisions[id] === "outreach");
+  state.verify = null; saveState();
+  if (!chosen.length) { closeModal(); alert("没有勾选要建联的达人，已退出核验。"); render(); return; }
+  state.bulkCreatorIds = chosen;
+  closeModal();
+  openOutreachModal();
 }
 
 function openOutreachModal(creatorId = 0) {
@@ -5512,6 +6327,10 @@ window.checkTikTokBackend = checkTikTokBackend;
 window.startTikTokAuth = startTikTokAuth;
 window.checkTikTokShops = checkTikTokShops;
 window.selectTikTokShop = selectTikTokShop;
+window.switchTikTokShop = switchTikTokShop;
+window.loadTikTokSamples = loadTikTokSamples;
+window.flagRiskCreator = flagRiskCreator;
+window.clearRiskFlag = clearRiskFlag;
 window.markMessageRead = markMessageRead;
 window.markAllMessagesRead = markAllMessagesRead;
 window.deleteMessage = deleteMessage;
@@ -5528,12 +6347,27 @@ window.addProduct = addProduct;
 window.openProductModal = openProductModal;
 window.goProductCoops = goProductCoops;
 window.goProductOutreach = goProductOutreach;
+window.startProductOutreach = startProductOutreach;
+window.clearOutreachContext = clearOutreachContext;
+window.reviewCreatorOnTikTok = reviewCreatorOnTikTok;
+window.findSimilarCreators = findSimilarCreators;
+window.clearSimilar = clearSimilar;
+window.openScoreHelp = openScoreHelp;
+window.startBulkOutreach = startBulkOutreach;
+window.skipVerifyOutreach = skipVerifyOutreach;
+window.startVerifyWizard = startVerifyWizard;
+window.verifyOpenTikTok = verifyOpenTikTok;
+window.verifyRefresh = verifyRefresh;
+window.verifyDecide = verifyDecide;
 window.markNotInterested = markNotInterested;
 window.clearNotInterested = clearNotInterested;
 window.toggleCreatorSelection = toggleCreatorSelection;
 window.toggleCreatorPageSelection = toggleCreatorPageSelection;
 window.setKolPage = setKolPage;
 window.setKolPageSize = setKolPageSize;
+window.setProductPage = setProductPage;
+window.setProductPageSize = setProductPageSize;
+window.setDetailTab = setDetailTab;
 window.openOutreachModal = openOutreachModal;
 window.saveOutreachDraft = saveOutreachDraft;
 window.bulkSetCommission = bulkSetCommission;
@@ -5587,3 +6421,5 @@ window.addEventListener("hashchange", () => {
 
 render();
 setTimeout(() => loadPlatformCreatorLibrary({ silent: true }), 0);
+// 启动时从后端拉真实授权店铺（多店铺并集），覆盖可能过期的本地缓存
+setTimeout(() => checkTikTokShops({ silent: true }), 0);

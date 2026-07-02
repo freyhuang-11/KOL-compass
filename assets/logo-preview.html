@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>Logo 预览 / 导出 PNG</title>
+<style>
+  body{font:15px/1.6 -apple-system,Segoe UI,Roboto,sans-serif;color:#1f2937;max-width:680px;margin:40px auto;padding:0 20px}
+  .row{display:flex;gap:24px;align-items:center;flex-wrap:wrap;margin:20px 0}
+  .chip{text-align:center}
+  .chip img{display:block;border:1px solid #e2e8f0;border-radius:12px}
+  .muted{color:#64748b;font-size:13px}
+  button{padding:8px 14px;border:1px solid #2563eb;background:#2563eb;color:#fff;border-radius:8px;cursor:pointer;font:inherit}
+  code{background:#f1f5f9;padding:1px 5px;border-radius:4px}
+</style>
+</head>
+<body>
+<h2>达人建联工具 — Logo</h2>
+<p class="muted">TikTok 发品审核要求 logo：1:1、≤150×150、png。下面预览 + 一键导出 150×150 PNG。</p>
+
+<div class="row">
+  <div class="chip"><img src="logo.svg" width="150" height="150" alt="logo 150" /><div class="muted">150×150</div></div>
+  <div class="chip"><img src="logo.svg" width="96" height="96" alt="logo 96" /><div class="muted">96×96</div></div>
+  <div class="chip"><img src="logo.svg" width="48" height="48" alt="logo 48" /><div class="muted">48×48</div></div>
+</div>
+
+<button onclick="exportPng()">下载 logo-150.png</button>
+<canvas id="cv" width="150" height="150" style="display:none"></canvas>
+
+<p class="muted" style="margin-top:24px">导出失败时（本地直接打开 file:// 可能被浏览器限制）：右键上面 150×150 那张图「图片另存为」，或在已部署的网址下打开本页再点导出。</p>
+
+<script>
+function exportPng(){
+  var img = new Image();
+  img.onload = function(){
+    var cv = document.getElementById('cv');
+    var ctx = cv.getContext('2d');
+    ctx.clearRect(0,0,150,150);
+    ctx.drawImage(img,0,0,150,150);
+    try{
+      var a = document.createElement('a');
+      a.download = 'logo-150.png';
+      a.href = cv.toDataURL('image/png');
+      a.click();
+    }catch(e){ alert('导出受浏览器限制，请用「图片另存为」。'); }
+  };
+  img.src = 'logo.svg';
+}
+</script>
+</body>
+</html>
