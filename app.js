@@ -1253,10 +1253,23 @@ function creatorPreEvalCard(c) {
         ${c.bio ? `<p class="muted" style="margin:6px 0 0">简介：${escapeHtml(c.bio.slice(0, 120))}</p>` : ""}
       </div>`;
   }
+  // 达人广场数据（采集器从 marketplace/find 采回，有值才显示）
+  const genderCn = (g) => (/male/i.test(g) && !/female/i.test(g)) ? "男" : (/female/i.test(g) ? "女" : g);
+  const mCells = [];
+  if (Number(c.unitsSold) > 0) mCells.push(`<div class="perf-cell"><b>${compactCount(c.unitsSold)}</b><span class="muted">带货件数</span></div>`);
+  if (Number(c.videoEngagement) > 0) mCells.push(`<div class="perf-cell"><b>${compactCount(c.videoEngagement)}</b><span class="muted">视频互动</span></div>`);
+  if (c.topFollowerGender) mCells.push(`<div class="perf-cell"><b>${escapeHtml(genderCn(c.topFollowerGender))}</b><span class="muted">主要粉丝性别</span></div>`);
+  if (c.topFollowerAge) mCells.push(`<div class="perf-cell"><b>${escapeHtml(String(c.topFollowerAge))}</b><span class="muted">主要粉丝年龄</span></div>`);
+  const marketBlock = (mCells.length || c.hasCollaborated) ? `
+    <div class="eval-content">
+      <div class="muted" style="margin:10px 0 4px">达人广场数据${c.hasCollaborated ? ` · <span style="color:#15803d">曾与本店合作</span>` : ""}</div>
+      ${mCells.length ? `<div class="perf-grid">${mCells.join("")}</div>` : ""}
+    </div>` : "";
   return `<div class="card">
     <h3>建联前评估</h3>
     <div class="eval-head"><span class="score-pill ${tier}">${score}</span><span class="score-tag ${tier}">${t.label}</span><span class="muted">出单潜力分 <span class="score-help" onclick="openScoreHelp()" title="算法与档位说明">?</span></span></div>
     <div class="eval-bars">${bars}</div>
+    ${marketBlock}
     ${contentBlock}
   </div>`;
 }
