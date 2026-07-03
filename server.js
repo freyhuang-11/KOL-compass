@@ -138,7 +138,20 @@ async function serveCreatorAvatar(res, cid) {
     const url = creator && creator.avatarUrl;
     if (!url) return json(res, 404, { ok: false, code: "NO_AVATAR" });
     try {
-      const upstream = await fetch(url);
+      // TikTok CDN 头像：必须带浏览器 UA + Referer 过防盗链，并加超时防止裸 fetch 永久挂起
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 6000);
+      let upstream;
+      try {
+        upstream = await fetch(url, {
+          signal: controller.signal,
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "Referer": "https://www.tiktok.com/",
+            "Accept": "image/avif,image/webp,image/apng,image/*,*/*",
+          },
+        });
+      } finally { clearTimeout(timer); }
       if (!upstream.ok) return json(res, 404, { ok: false, code: "AVATAR_FETCH_FAILED" });
       const type = (upstream.headers.get("content-type") || "image/jpeg").split(";")[0].trim();
       const ext = AVATAR_EXT_BY_TYPE[type] || "jpg";
