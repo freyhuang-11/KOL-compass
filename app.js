@@ -833,6 +833,52 @@ function renderDashboard() {
     return { name, rows, produced, gmv: rows.reduce((sum, x) => sum + Number(x.gmv || 0), 0) };
   }).filter((x) => x.rows.length > 0);
   const maxOwnerGmv = Math.max(0, ...ownerRows.map((x) => x.gmv));
+  // —— 北极星漏斗（按达人数去重）：触达→回复→寄样→产出→出单→复投 + 三个率 ——
+  const nsUniq = (arr) => new Set(arr.map((x) => x.creatorId).filter(Boolean));
+  const nsRepliedStatuses = new Set(["待我方回复", "已回复", "洽谈中", "已成交", "合作中"]);
+  const nsReached = nsUniq(dashboardOutreach);
+  const nsReplied = nsUniq(dashboardOutreach.filter((x) => nsRepliedStatuses.has(x.status)));
+  const nsSampled = nsUniq(dashboardSamples);
+  const nsProduced = nsUniq(dashboardCoops.filter((x) => x.videos > 0 || x.lives > 0));
+  const nsOrdered = nsUniq(dashboardCoops.filter((x) => Number(x.gmv || 0) > 0 || Number(x.orders || 0) > 0));
+  const nsCoopCount = {};
+  dashboardCoops.forEach((x) => { if (x.creatorId) nsCoopCount[x.creatorId] = (nsCoopCount[x.creatorId] || 0) + 1; });
+  const nsRepeat = new Set([...nsOrdered].filter((id) => nsCoopCount[id] > 1));
+  const nsPct = (a, b) => (b > 0 ? Math.round((a / b) * 100) : 0);
+  const nsRateColor = (r) => (r >= 30 ? "#15803d" : r >= 10 ? "#b45309" : "#64748b");
+  const nsRateCard = (label, rate, sub, help) => `
+    <div class="card" style="flex:1;min-width:150px;text-align:center;padding:14px">
+      <div style="font-size:28px;font-weight:800;color:${nsRateColor(rate)}">${rate}%</div>
+      <div style="font-weight:600;margin-top:2px">${label}</div>
+      <div class="muted" style="font-size:12px;margin-top:4px">${sub}</div>
+      <div class="muted" style="font-size:11px;margin-top:2px">${help}</div>
+    </div>`;
+  const nsFunnel = [
+    { k: "触达", v: nsReached.size, go: "dashboardGo('outreach','outreachStatus','全部')" },
+    { k: "回复", v: nsReplied.size, go: "dashboardGo('outreach','outreachStatus','待我方回复')" },
+    { k: "寄样", v: nsSampled.size, go: "dashboardGo('samples')" },
+    { k: "产出", v: nsProduced.size, go: "dashboardGo('cooperations','coopOutput','已产出')" },
+    { k: "出单", v: nsOrdered.size, go: "dashboardGo('cooperations','coopStatus','全部')" },
+    { k: "复投", v: nsRepeat.size, go: "dashboardGo('cooperations','coopStatus','全部')" },
+  ];
+  const nsFunnelHtml = nsFunnel.map((s, i) => `
+    <div onclick="${s.go}" style="cursor:pointer;flex:1;min-width:82px;text-align:center;padding:12px 8px;background:linear-gradient(180deg,#eff6ff,#ffffff);border:1px solid #dbeafe;border-radius:10px">
+      <div style="font-size:22px;font-weight:700;color:#1d4ed8">${s.v}</div>
+      <div class="muted" style="font-size:12px">${s.k}</div>
+    </div>${i < nsFunnel.length - 1 ? '<div style="display:flex;align-items:center;color:#94a3b8;font-weight:700;font-size:18px">›</div>' : ""}`).join("");
+  const northStarCard = `
+    <div class="card" style="margin-bottom:16px">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <h3 style="margin:0">🌟 北极星漏斗 · ${range}</h3>
+        <span class="muted">按达人数去重统计（回复率 / 样品成功率 / 成交率）</span>
+      </div>
+      <div style="display:flex;gap:12px;margin:12px 0;flex-wrap:wrap">
+        ${nsRateCard("回复率", nsPct(nsReplied.size, nsReached.size), `${nsReplied.size}/${nsReached.size} 达人回复`, "回复达人 ÷ 触达达人")}
+        ${nsRateCard("样品成功率", nsPct(nsProduced.size, nsSampled.size), `${nsProduced.size}/${nsSampled.size} 达人产出`, "产出内容达人 ÷ 寄样达人")}
+        ${nsRateCard("成交率", nsPct(nsOrdered.size, nsReached.size), `${nsOrdered.size}/${nsReached.size} 达人出单`, "出单达人 ÷ 触达达人 · <span style='color:#b45309'>联盟订单API待接,暂按合作台账</span>")}
+      </div>
+      <div style="display:flex;align-items:stretch;gap:6px;overflow-x:auto;padding-bottom:4px">${nsFunnelHtml}</div>
+    </div>`;
   return `
     ${pageHead("控制台", "查看建联、寄样、合作履约和归因 GMV 的整体状态。")}
     <div class="toolbar">
@@ -850,6 +896,7 @@ function renderDashboard() {
         <button class="btn" onclick="dashboardGo('cooperations')">进入合作管理</button>
       </div>
     </div>
+    ${northStarCard}
     <div class="grid grid-4">
       ${stat(`${range}建联数`, totalOutreach, "进入建联记录查看明细", "dashboardGo('outreach','outreachStatus','全部')")}
       ${stat("待我方回复", replied, "需要 BD 处理", "dashboardGo('outreach','outreachStatus','待我方回复')")}
