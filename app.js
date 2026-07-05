@@ -1330,6 +1330,11 @@ function creatorPreEvalCard(c) {
 }
 
 function renderKolPool() {
+  // 达人库改从后端拉后，首次加载 2万+条约需几秒。加载完成前显示"加载中"，别渲染成误导性的 0。
+  if (!platformCreatorLibraryLoaded && !(state.creators && state.creators.length)) {
+    return `${pageHead("达人库", "正在从平台达人库读取达人…")}
+      <div class="card"><div class="empty">达人库加载中…（首次读取约 3–5 秒，请稍候，勿反复刷新）</div></div>`;
+  }
   const shops = state.settings.tiktokShops || [];
   const selectedShop = shops.find((shop) => shopCipher(shop) === state.settings.selectedTikTokShopCipher) || shops[0];
   const currentMarket = selectedShop ? selectedShopMarket(selectedShop) : "";
