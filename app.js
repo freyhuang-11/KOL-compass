@@ -283,7 +283,15 @@ function normalizeTeamMember(member) {
 }
 
 function saveState() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  // 达人库(creators)不进 localStorage：量大(几万条 >20MB)会撑爆 ~5MB 配额、导致 QuotaExceededError
+  // 保存失败 → 全库存不下 → 前端只显示上次存得下的几千条。达人库每次从后端 /api/platform/creators 拉。
+  try {
+    const { creators, ...rest } = state;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(rest));
+  } catch (e) {
+    // localStorage 满/不可用兜底：退一步只存关键设置，绝不让保存失败拖垮应用
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ settings: state.settings, filters: state.filters, page: state.page })); } catch (e2) {}
+  }
 }
 
 function routeFromHash() {
