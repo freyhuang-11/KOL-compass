@@ -1189,8 +1189,26 @@ function creatorCategoryFitScore(c) {
   return 25;
 }
 
-// 出单潜力分（0-100，出单/履约导向）。自有履约数据(1B回流后)有则纳入。
+// 出单潜力分缓存：达人库 2 万条时，每次渲染(翻页/搜索/筛选)都重算全库评分会卡死。
+// 缓存 key = 达人id|更新时间|商家契合口径；达人更新或商家商品变了才重算，否则命中缓存→翻页/筛选瞬间完成。
+const _scoreCache = new Map();
+let _scoreCacheFitKey = "__init__";
+function merchantFitKey() {
+  try { return [...merchantProductCategories()].sort().join(",") + "|" + ((state.products || []).length); } catch (e) { return ""; }
+}
 function creatorPotentialScore(c) {
+  if (!c) return { score: 0, parts: [] };
+  const fk = merchantFitKey();
+  if (fk !== _scoreCacheFitKey) { _scoreCache.clear(); _scoreCacheFitKey = fk; } // 商家品类/商品变→整体失效
+  const ck = (c.id != null ? c.id : c.username) + "|" + (c.updatedAt || "");
+  const hit = _scoreCache.get(ck);
+  if (hit) return hit;
+  const res = _computePotentialScore(c);
+  _scoreCache.set(ck, res);
+  return res;
+}
+// 出单潜力分（0-100，出单/履约导向）。自有履约数据(1B回流后)有则纳入。
+function _computePotentialScore(c) {
   const sells = logScore(c.gmv, 50000);
   const reach = logScore(c.followers, 1000000) * 0.5 + logScore(c.avgVideoViews, 200000) * 0.5;
   // 回复率未知（"-"/空/无数字）时不计入——否则全库被一个 0 拖垮（建联前几乎没人有回复历史）
@@ -3626,8 +3644,11 @@ async function syncCreators(options = {}) {
 
 function upsertPlatformCreatorLibrary(creators) {
   const existing = new Map();
+  // 建索引的同时算出当前最大 id（O(n) 一次）——避免下面每插入一条就 nextId() 扫全表(O(n²)、2万条会冻死)
+  let maxId = 0;
   for (const row of state.creators) {
     for (const key of creatorImportKeys(row)) existing.set(key, row);
+    const rid = Number(row.id) || 0; if (rid > maxId) maxId = rid;
   }
   let changed = 0;
   for (const creator of creators || []) {
@@ -3647,7 +3668,7 @@ function upsertPlatformCreatorLibrary(creators) {
         notes: current.notes && current.librarySource === "platform" ? current.notes : payload.notes,
       });
     } else {
-      const next = { ...payload, id: nextId(state.creators) };
+      const next = { ...payload, id: ++maxId }; // O(1) 递增，替代 nextId(state.creators) 的全表扫描
       state.creators.push(next);
       for (const key of creatorImportKeys(next)) existing.set(key, next);
     }
