@@ -1204,6 +1204,10 @@ function creatorPotentialScore(c) {
     { key: "内容触达", v: reach, w: 0.20 },
     { key: "建联效率", v: reply, w: 0.20 },
   ];
+  // 近期带货量（达人广场 units_sold）：TA 近期真卖出多少件——最直接的"能出单"信号，有数据才计入
+  if (Number(c.unitsSold) > 0) {
+    parts.push({ key: "近期带货量", v: logScore(c.unitsSold, 3000), w: 0.22 }); // ~3000 件封顶
+  }
   // 带货频率（扩展采集 item_list）：近期挂商品的视频越多→越懂带货、合作越易出单
   const perf = c.recentPerf;
   if (perf && Number(perf.sampleCount) > 0 && perf.ecVideoCount != null) {
@@ -1243,6 +1247,7 @@ function openScoreHelp() {
       <tr><td><b>类目契合</b></td><td>25%</td><td>达人内容/类目和你店铺商品越搭越高</td></tr>
       <tr><td><b>内容触达</b></td><td>20%</td><td>粉丝量 + 视频均播</td></tr>
       <tr><td><b>建联效率</b></td><td>20%</td><td>历史回复率，越愿意回越高</td></tr>
+      <tr><td>近期带货量<span class="muted">*</span></td><td>22%</td><td>达人广场近期真实卖出件数，越能出单越高（采集到才计）</td></tr>
       <tr><td>带货频率<span class="muted">*</span></td><td>18%</td><td>近期挂商品的视频数（采集到才计）</td></tr>
       <tr><td>历史履约<span class="muted">*</span></td><td>15%</td><td>合作过的履约率（有才计）</td></tr>
     </table>
